@@ -119,7 +119,7 @@
     }
 
     #__nuxt {
-        @apply relative grow flex-col;
+        @apply relative grow flex-col bg-sidebar min-h-screen;
     }
 }
 
