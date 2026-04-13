@@ -1,8 +1,9 @@
 {
     "name": "usage-board",
     "type": "module",
-    "description": "An all-in-one dashboard to quickly analyze token usage from local json files",
     "packageManager": "pnpm@10.33.0",
+    "description": "An all-in-one dashboard to quickly analyze token usage from local json files",
+    "license": "MIT",
     "homepage": "https://github.com/lonewolfyx/usage-board",
     "bugs": {
         "url": "https://github.com/lonewolfyx/usage-board/issues"
@@ -48,7 +49,6 @@
         "pre-commit": "npx lint-staged",
         "commit-msg": "node scripts/verify-commit.js"
     },
-    "license": "MIT",
     "lint-staged": {
         "*": "eslint --fix"
     }
