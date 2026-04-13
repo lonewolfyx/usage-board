@@ -15,7 +15,7 @@ jobs:
     permissions:
       issues: write # for actions-cool/maintain-one-comment to modify or create issue comments
       pull-requests: write # for actions-cool/maintain-one-comment to modify or create PR comments
-    if: github.event.pull_request.merged == true && github.repository == 'lonewolfyx-template/nuxt-template'
+    if: github.event.pull_request.merged == true && github.repository == 'lonewolfyx/usage-board'
     runs-on: ubuntu-latest
     steps:
       - name: get commit count
