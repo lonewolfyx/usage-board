@@ -21,4 +21,9 @@ export default antfu({
             'yaml/indent': ['error', 2],
         },
     },
+    rules: {
+        'no-console': 'off',
+        'regexp/no-unused-capturing-group': 'off',
+        'node/prefer-global/process': 'off',
+    },
 }).append(withNuxt)
