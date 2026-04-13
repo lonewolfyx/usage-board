@@ -1,7 +1,0 @@
-{
-    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "extends": [
-        "github>config-preset/renovate-config/default.json"
-    ],
-    "automerge": true
-}
