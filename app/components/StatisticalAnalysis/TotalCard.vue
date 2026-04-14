@@ -1,41 +1,57 @@
 <template>
-    <div class="rounded-xl border bg-card p-4 flex flex-col justify-between gap-3">
-        <div class="flex items-center justify-between">
-            <span
-                :class="cn(
-                    'text-xs font-medium text-muted-foreground uppercase tracking-wide',
-                )"
-            >{{ name }}</span>
-            <div class="size-7 rounded-lg flex items-center justify-center bg-primary/8">
-                <Icon mode="svg" :name="icon" />
-            </div>
-        </div>
+    <StatisticalAnalysisPanel compact :icon="icon" :title="name">
         <div class="flex justify-between items-center">
-            <span class="text-2xl font-bold tracking-tight">${{ number }}</span>
+            <span class="text-2xl font-bold tracking-tight">{{ value }}</span>
             <div class="flex items-center gap-1">
-                <Icon class="size-3 text-emerald-500" mode="svg" name="lucide:trending-up" />
-                <span class="text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                    +12.4% vs last month
+                <Icon :class="trendMeta.iconClass" mode="svg" :name="trendMeta.icon" />
+                <span :class="trendMeta.textClass">
+                    {{ trend }}
                 </span>
             </div>
         </div>
-    </div>
+    </StatisticalAnalysisPanel>
 </template>
 
 <script setup lang="ts">
-import { cn } from '~/lib/utils'
+import { computed } from 'vue'
+
+type TrendTone = 'down' | 'neutral' | 'up'
 
 defineOptions({
     name: 'StatisticalAnalysisTotalCard',
 })
 
-defineProps<{
+const props = withDefaults(defineProps<{
     name: string
-    number: number
+    value: string
     icon: string
-}>()
+    trend: string
+    trendTone?: TrendTone
+}>(), {
+    trendTone: 'neutral',
+})
+
+const trendMeta = computed(() => {
+    if (props.trendTone === 'down') {
+        return {
+            icon: 'lucide:trending-down',
+            iconClass: 'size-3 text-red-500',
+            textClass: 'text-xs font-medium text-red-500',
+        }
+    }
+
+    if (props.trendTone === 'up') {
+        return {
+            icon: 'lucide:trending-up',
+            iconClass: 'size-3 text-emerald-500',
+            textClass: 'text-xs font-medium text-emerald-600 dark:text-emerald-400',
+        }
+    }
+
+    return {
+        icon: 'lucide:minus',
+        iconClass: 'size-3 text-muted-foreground',
+        textClass: 'text-xs font-medium text-muted-foreground',
+    }
+})
 </script>
-
-<style scoped>
-
-</style>

@@ -1,26 +1,75 @@
 <template>
     <div class="grow container mx-auto space-y-8">
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatisticalAnalysisTotalCard :number="24850" icon="lucide:wallet" name="总消费金额" />
-            <StatisticalAnalysisTotalCard :number="24850" icon="solar:cpu-line-duotone" name="token 总消耗数量" />
-            <StatisticalAnalysisTotalCard :number="24850" icon="lucide:wallet" name="缓存命中占比" />
-            <StatisticalAnalysisTotalCard :number="24850" icon="lucide:wallet" name="平均单次会话成本" />
+            <StatisticalAnalysisTotalCard
+                v-for="card in overviewCards"
+                :key="card.name"
+                :icon="card.icon"
+                :name="card.name"
+                :trend="card.trend"
+                :trend-tone="card.trendTone"
+                :value="card.value"
+            />
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>活跃使用度 https://blocks.so/stats [Plan overview]</div>
-            <div>模型使用率 https://preview.keenthemes.com/metronic8/demo55/ [Stats by Department]</div>
-            <div>消息</div>
+            <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" />
+            <StatisticalAnalysisProjectUsagePanel :items="projectUsage" />
+            <StatisticalAnalysisTimeTrendPanel class="md:col-span-2" :items="dailyTokenUsage" />
+            <StatisticalAnalysisSessionAnalysisPanel :items="sessionUsage" :total-sessions="totalSessions" />
+            <StatisticalAnalysisEfficiencyCachePanel :daily-items="dailyTokenUsage" :items="efficiencyMetrics" />
+            <StatisticalAnalysisTokensUsage />
         </div>
-        <div class="">
-            <span>每日消费趋势</span>
-            <span />
-        </div>
-        <StatisticalAnalysisTokensUsage />
     </div>
 </template>
 
 <script lang="ts" setup>
+import { computed } from 'vue'
+import { formatCompactNumber, formatCurrency, formatPercent, useUsageDashboard } from '~/composables/useUsageDashboard'
+
+const {
+    cachedInputTokens,
+    dailyTokenUsage,
+    efficiencyMetrics,
+    inputTokens,
+    monthlyModelUsage,
+    projectUsage,
+    sessionUsage,
+    totalCost,
+    totalSessions,
+    totalTokens,
+} = useUsageDashboard()
+
+const overviewCards = computed(() => [
+    {
+        icon: 'lucide:wallet',
+        name: 'Total Spend',
+        trend: 'vs last week -12.4%',
+        trendTone: 'down' as const,
+        value: formatCurrency(totalCost.value),
+    },
+    {
+        icon: 'solar:cpu-line-duotone',
+        name: 'Token Usage',
+        trend: 'this week -8.1%',
+        trendTone: 'down' as const,
+        value: formatCompactNumber(totalTokens.value),
+    },
+    {
+        icon: 'lucide:database-zap',
+        name: 'Cache Hit Rate',
+        trend: 'cache efficiency +6.2%',
+        trendTone: 'up' as const,
+        value: formatPercent(cachedInputTokens.value / inputTokens.value),
+    },
+    {
+        icon: 'lucide:receipt-text',
+        name: 'Avg Session Cost',
+        trend: `${totalSessions.value} sessions steady`,
+        trendTone: 'neutral' as const,
+        value: formatCurrency(totalCost.value / totalSessions.value),
+    },
+])
 </script>
 
 <style scoped>
