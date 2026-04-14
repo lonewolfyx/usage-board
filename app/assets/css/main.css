@@ -116,10 +116,28 @@
 @layer base {
     * {
         @apply border-border outline-ring/50;
+        scrollbar-width: none;
+        -ms-overflow-style: none;
+    }
+
+    *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+    }
+
+    html {
+        height: 100%;
+        overflow: hidden;
+    }
+
+    body {
+        @apply bg-background text-foreground overflow-hidden;
+        height: 100%;
     }
 
     #__nuxt {
-        @apply relative grow flex-col bg-sidebar min-h-screen;
+        @apply relative flex min-h-0 h-dvh grow flex-col bg-sidebar overflow-x-hidden overflow-y-auto overscroll-y-none touch-auto;
     }
 }
 
