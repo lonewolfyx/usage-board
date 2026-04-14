@@ -12,12 +12,12 @@
             />
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" />
-            <StatisticalAnalysisProjectUsagePanel :items="projectUsage" />
-            <StatisticalAnalysisTimeTrendPanel class="md:col-span-2" :items="dailyTokenUsage" />
-            <StatisticalAnalysisSessionAnalysisPanel :items="sessionUsage" :total-sessions="totalSessions" />
-            <StatisticalAnalysisEfficiencyCachePanel :daily-items="dailyTokenUsage" :items="efficiencyMetrics" />
+        <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+            <StatisticalAnalysisModelUsagePanel class="md:col-span-8" :monthly-items="monthlyModelUsage" />
+            <StatisticalAnalysisProjectUsagePanel class="md:col-span-4" :items="projectUsage" />
+            <StatisticalAnalysisTimeTrendPanel class="md:col-span-12" :items="dailyTokenUsage" />
+            <StatisticalAnalysisSessionAnalysisPanel class="md:col-span-6" :items="sessionUsage" :total-sessions="totalSessions" />
+            <StatisticalAnalysisEfficiencyCachePanel class="md:col-span-6" :daily-items="dailyTokenUsage" :items="efficiencyMetrics" />
             <StatisticalAnalysisTokensUsage />
         </div>
     </div>

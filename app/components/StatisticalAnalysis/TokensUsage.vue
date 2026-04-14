@@ -1,5 +1,5 @@
 <template>
-    <div class="md:col-span-2">
+    <div class="md:col-span-12">
         <Table>
             <TableHeader>
                 <TableRow>
