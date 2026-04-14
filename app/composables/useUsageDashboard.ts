@@ -403,13 +403,17 @@ export function useUsageDashboard() {
     const projectUsage = computed<ProjectUsageItem[]>(() => {
         const projects = [
             { label: 'web-jetbrains-git', repository: 'lonewolfyx/web-jetbrains-git', sessions: 53, tokenTotal: 52600000, costUSD: 24.6 },
+            { label: 'codex-desktop', repository: 'lonewolfyx/codex-desktop', sessions: 29, tokenTotal: 18400000, costUSD: 8.92 },
             { label: 'uni-deps-fix', repository: 'lonewolfyx/uni-deps-fix', sessions: 11, tokenTotal: 13300000, costUSD: 6.1 },
+            { label: 'nuxt-dashboard', repository: 'lonewolfyx/nuxt-dashboard', sessions: 16, tokenTotal: 9800000, costUSD: 4.88 },
             { label: 'sixninenine', repository: 'lonewolfyx/sixninenine', sessions: 12, tokenTotal: 7600000, costUSD: 3.76 },
             { label: 'x', repository: 'lonewolfyx/x', sessions: 5, tokenTotal: 7400000, costUSD: 3.37 },
+            { label: 'billing-insights', repository: 'lonewolfyx/billing-insights', sessions: 9, tokenTotal: 6100000, costUSD: 2.84 },
             { label: 'dnmp', repository: 'lonewolfyx/dnmp', sessions: 3, tokenTotal: 4700000, costUSD: 2.09 },
+            { label: 'design-system', repository: 'lonewolfyx/design-system', sessions: 7, tokenTotal: 3900000, costUSD: 1.76 },
             { label: 'codex-register', repository: 'lonewolfyx/codex-register', sessions: 4, tokenTotal: 3300000, costUSD: 1.31 },
-            { label: 'usage-board', repository: 'lonewolfyx/usage-board', sessions: 1, tokenTotal: 453225, costUSD: 0.51 },
             { label: 'talks', repository: 'lonewolfyx/talks', sessions: 2, tokenTotal: 1400000, costUSD: 0.64 },
+            { label: 'usage-board', repository: 'lonewolfyx/usage-board', sessions: 1, tokenTotal: 453225, costUSD: 0.51 },
         ]
         const maxCost = Math.max(...projects.map(project => project.costUSD))
 
