@@ -27,40 +27,81 @@
             <div
                 :class="cn(
                     'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
                 )"
             >
                 <IconAi name="claude_code" />
                 <span class="capitalize text-xs font-medium font-mono">Claude Code</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="codex" />
                 <span class="capitalize text-xs font-medium font-mono">Codex</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="cursor" />
                 <span class="capitalize text-xs font-medium font-mono">Cursor</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="open_code" />
                 <span class="capitalize text-xs font-medium font-mono">open code</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="copilot" />
                 <span class="capitalize text-xs font-medium font-mono">copilot</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="gemini" />
                 <span class="capitalize text-xs font-medium font-mono">gemini</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="kimi_code" />
                 <span class="capitalize text-xs font-medium font-mono">Kimi</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_svg]:fill-foreground/50',
+                )"
+            >
                 <IconAi name="antigravity" />
                 <span class="capitalize text-xs font-medium font-mono">antigravity</span>
             </div>
-            <div class="flex flex-col items-center gap-1.5">
+            <div
+                :class="cn(
+                    'relative flex flex-col items-center gap-1.5',
+                    'text-foreground/50 [&_path]:fill-current!',
+                )"
+            >
                 <IconAi name="amp" />
                 <span class="capitalize text-xs font-medium font-mono">amp</span>
             </div>
