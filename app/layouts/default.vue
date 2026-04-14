@@ -1,6 +1,7 @@
 <template>
     <SiteNavbar />
     <slot />
+    <SiteFooter />
 </template>
 
 <script setup lang="ts">

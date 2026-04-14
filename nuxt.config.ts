@@ -1,4 +1,5 @@
 import tailwindcss from '@tailwindcss/vite'
+import { version } from './package.json'
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -35,6 +36,12 @@ export default defineNuxtConfig({
         '~/assets/css/main.css',
     ],
     compatibilityDate: '2026-04-13',
+
+    runtimeConfig: {
+        public: {
+            appVersion: version,
+        },
+    },
 
     vite: {
         plugins: [
