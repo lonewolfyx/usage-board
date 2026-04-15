@@ -68,6 +68,7 @@ defineOptions({
 
 const props = defineProps<{
     monthlyItems: MonthlyModelUsage[]
+    year?: number
 }>()
 
 interface ModelSeriesDatum {
@@ -95,19 +96,27 @@ const chartMargin = {
 
 const yDomain = [0, undefined] satisfies [number, undefined]
 
-const months = computed(() => Array.from(new Set(props.monthlyItems.map(item => item.month))).sort())
+const selectedYear = computed(() => props.year ?? getLatestUsageYear(props.monthlyItems) ?? new Date().getFullYear())
+
+const months = computed(() => Array.from({ length: 12 }, (_, index) => {
+    const monthNumber = `${index + 1}`.padStart(2, '0')
+
+    return `${selectedYear.value}-${monthNumber}`
+}))
 
 const xDomain = computed<[number, number]>(() => [0, Math.max(months.value.length - 1, 0)])
 
 const monthTicks = computed(() => months.value.map((_, index) => index))
 
-const models = computed(() => Array.from(new Set(props.monthlyItems.map(item => item.model))))
+const yearlyItems = computed(() => props.monthlyItems.filter(item => item.month.startsWith(`${selectedYear.value}-`)))
+
+const models = computed(() => Array.from(new Set(yearlyItems.value.map(item => item.model))))
 
 const chartData = computed<ModelSeriesDatum[]>(() => months.value.map((month, monthIndex) => {
     const tokensByModel = Object.fromEntries(
         models.value.map(model => [
             model,
-            props.monthlyItems.find(item => item.month === month && item.model === model)?.tokenTotal ?? 0,
+            yearlyItems.value.find(item => item.month === month && item.model === model)?.tokenTotal ?? 0,
         ]),
     )
 
@@ -221,10 +230,17 @@ function formatTokenAxis(tick: number | Date) {
 }
 
 function formatMonthLabel(month: string) {
-    const [, monthNumber] = month.split('-')
-    const date = new Date(2026, Number(monthNumber) - 1, 1)
+    const [year, monthNumber] = month.split('-')
+    const date = new Date(Number(year), Number(monthNumber) - 1, 1)
 
     return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(date)
+}
+
+function getLatestUsageYear(items: MonthlyModelUsage[]) {
+    const latestMonth = [...items].sort((a, b) => b.month.localeCompare(a.month))[0]?.month
+    const year = latestMonth?.split('-')[0]
+
+    return year ? Number(year) : null
 }
 
 function getGradientId(model: string) {
