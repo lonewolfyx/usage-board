@@ -19,6 +19,7 @@ export default defineNuxtConfig({
 
     app: {
         head: {
+            title: 'Tokens Usage Analysis',
             viewport: 'width=device-width,initial-scale=1',
             link: [
                 { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
