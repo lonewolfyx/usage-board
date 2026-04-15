@@ -1,3 +1,5 @@
+import type { CodexTokenUsageRow } from './codex-dashboard'
+
 export type TokenTabValue = 'day' | 'month' | 'session' | 'week'
 
 export interface TokenTab {
