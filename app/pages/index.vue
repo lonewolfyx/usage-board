@@ -13,12 +13,18 @@
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-            <StatisticalAnalysisModelUsagePanel class="md:col-span-8" :monthly-items="monthlyModelUsage" />
-            <StatisticalAnalysisProjectUsagePanel class="md:col-span-4" :items="projectUsage" />
-            <StatisticalAnalysisTimeTrendPanel class="md:col-span-12" :items="dailyTokenUsage" />
-            <StatisticalAnalysisSessionAnalysisPanel class="md:col-span-6" :items="sessionUsage" :total-sessions="totalSessions" />
-            <StatisticalAnalysisEfficiencyCachePanel class="md:col-span-6" :daily-items="dailyTokenUsage" :items="efficiencyMetrics" />
-            <StatisticalAnalysisTokensUsage />
+            <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
+            <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
+            <StatisticalAnalysisTimeTrendPanel :items="dailyTokenUsage" class="md:col-span-12" />
+            <StatisticalAnalysisSessionAnalysisPanel
+                :items="sessionUsage" :total-sessions="totalSessions"
+                class="md:col-span-6"
+            />
+            <StatisticalAnalysisEfficiencyCachePanel
+                :daily-items="dailyTokenUsage" :items="efficiencyMetrics"
+                class="md:col-span-6"
+            />
+            <StatisticalAnalysisTokensUsagePanel class="md:col-span-12" />
         </div>
     </div>
 </template>

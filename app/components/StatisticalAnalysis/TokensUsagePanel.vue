@@ -1,5 +1,9 @@
 <template>
-    <div class="md:col-span-12">
+    <StatisticalAnalysisPanel
+        description="Daily model activity by token type, cache reads, total usage, and cost"
+        icon="lucide:calendar-days"
+        title="Daily Token Usage"
+    >
         <Table>
             <TableHeader>
                 <TableRow>
@@ -52,7 +56,7 @@
                 </TableRow>
             </TableBody>
         </Table>
-    </div>
+    </StatisticalAnalysisPanel>
 </template>
 
 <script lang="ts" setup>
@@ -61,7 +65,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useUsageDashboard } from '~/composables/useUsageDashboard'
 
 defineOptions({
-    name: 'TokensUsage',
+    name: 'StatisticalAnalysisTokensUsagePanel',
 })
 
 const { dailyTokenUsage } = useUsageDashboard()
