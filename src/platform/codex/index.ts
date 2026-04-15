@@ -1,169 +1,26 @@
-import type { CodexSessionUsageItem, CodexTokenUsageRow } from '#shared/types/codex-dashboard'
-import type { DailyTokenUsage, MonthlyModelUsage, ProjectUsageItem } from '#shared/types/usage-dashboard'
-import type { IConfig } from '~~/src/types'
-import type { ModelPricingResolver } from '../pricing'
+import type { CodexSessionUsageItem } from '#shared/types/codex-dashboard'
+import type {
+    CodexSessionFileData,
+    CodexSessionMeta,
+    CodexTokenUsageEvent,
+    CodexTopModel,
+    CodexTopProject,
+    DailyUsageSummaryGroup,
+    IConfig,
+    LoadCodexUsageResult,
+    ModelPricingResolver,
+    PeriodRowGroup,
+    RawUsage,
+    SessionAggregateGroup,
+    SessionLogLine,
+    SessionUsageSummary,
+    TokenUsageDelta,
+    TokenUsageSnapshot,
+} from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { glob } from 'glob'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '../pricing'
-
-type TrendTone = 'down' | 'neutral' | 'up'
-
-interface CodexOverviewCard {
-    icon: string
-    name: string
-    trend: string
-    trendTone: TrendTone
-    value: string
-}
-
-interface CodexTopProject {
-    project: string
-    sessionCount: number
-}
-
-interface CodexTopModel {
-    model: string
-    totalTokens: number
-}
-
-export interface LoadCodexUsageResult {
-    dailyRows: CodexTokenUsageRow[]
-    dailyTokenUsage: DailyTokenUsage[]
-    monthlyModelUsage: MonthlyModelUsage[]
-    monthlyRows: CodexTokenUsageRow[]
-    overviewCards: CodexOverviewCard[]
-    projectUsage: ProjectUsageItem[]
-    sessionRows: CodexTokenUsageRow[]
-    sessionUsage: CodexSessionUsageItem[]
-    todayTopModel: CodexTopModel | null
-    todayTopProject: CodexTopProject | null
-    todayTotalCost: number
-    todayTotalTokens: number
-    weeklyRows: CodexTokenUsageRow[]
-}
-
-interface TokenUsageSnapshot {
-    cache_read_input_tokens?: number
-    cached_input_tokens?: number
-    input_tokens?: number
-    output_tokens?: number
-    reasoning_output_tokens?: number
-    total_tokens?: number
-}
-
-interface SessionLogLine {
-    timestamp?: string
-    type?: string
-    payload?: {
-        [key: string]: unknown
-        info?: {
-            [key: string]: unknown
-            last_token_usage?: TokenUsageSnapshot
-            total_token_usage?: TokenUsageSnapshot
-        } | null
-        message?: string
-        metadata?: {
-            model?: string
-        }
-        model?: string
-        model_name?: string
-        timestamp?: string
-        type?: string
-        cwd?: string
-        git?: {
-            repository_url?: string
-        }
-    }
-}
-
-interface TokenUsageDelta {
-    cachedInputTokens: number
-    inputTokens: number
-    outputTokens: number
-    reasoningOutputTokens: number
-    totalTokens: number
-}
-
-interface RawUsage {
-    cached_input_tokens: number
-    input_tokens: number
-    output_tokens: number
-    reasoning_output_tokens: number
-    total_tokens: number
-}
-
-interface CodexSessionMeta {
-    durationMinutes: number
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-}
-
-interface CodexTokenUsageEvent extends TokenUsageDelta {
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
-}
-
-interface CodexSessionFileData {
-    events: CodexTokenUsageEvent[]
-    meta: CodexSessionMeta
-}
-
-interface SessionAggregateGroup {
-    cachedInputTokens: number
-    costUSD: number
-    inputTokens: number
-    label: string
-    models: string[]
-    outputTokens: number
-    projects: string[]
-    reasoningOutputTokens: number
-    sessionCount: number
-    totalTokens: number
-}
-
-interface PeriodRowGroup extends SessionAggregateGroup {
-    sessionIds: Set<string>
-}
-
-interface DailyUsageSummaryGroup extends SessionAggregateGroup {
-    dateKey: string
-    displayLabel: string
-    modelUsage: Map<string, {
-        cachedInputTokens: number
-        inputTokens: number
-        isFallback: boolean
-        outputTokens: number
-        reasoningOutputTokens: number
-        totalTokens: number
-    }>
-    sessionIds: Set<string>
-}
-
-interface SessionUsageSummary {
-    cachedInputTokens: number
-    costUSD: number
-    durationMinutes: number
-    inputTokens: number
-    lastActivity: string
-    models: string[]
-    outputTokens: number
-    project: string
-    reasoningOutputTokens: number
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-    tokenTotal: number
-    topModel: string
-}
 
 const LEGACY_FALLBACK_MODEL = 'gpt-5'
 const CODEX_MODEL_ALIASES: Record<string, string> = {

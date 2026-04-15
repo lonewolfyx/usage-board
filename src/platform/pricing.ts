@@ -1,48 +1,17 @@
+import type {
+    CreateLiteLLMPricingResolverOptions,
+    FetchLiteLLMPricingDatasetOptions,
+    LiteLLMModelPricing,
+    LiteLLMPricingDataset,
+    ModelPricing,
+    ModelPricingResolver,
+    PricingCacheEntry,
+    TokenCostUsage,
+} from '~~/src/types'
+
 const MILLION = 1_000_000
 const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-
-export interface TokenCostUsage {
-    cachedInputTokens: number
-    inputTokens: number
-    outputTokens: number
-}
-
-export interface ModelPricing {
-    cachedInputCostPerMTokens: number
-    inputCostPerMTokens: number
-    outputCostPerMTokens: number
-}
-
-export interface LiteLLMModelPricing {
-    cache_read_input_token_cost?: number
-    input_cost_per_token?: number
-    output_cost_per_token?: number
-}
-
-export type LiteLLMPricingDataset = Record<string, LiteLLMModelPricing>
-export type ModelPricingResolver = (model: string) => ModelPricing
-
-interface PricingCacheEntry {
-    fetchedAt: number
-    promise?: Promise<LiteLLMPricingDataset>
-    value?: LiteLLMPricingDataset
-}
-
-export interface FetchLiteLLMPricingDatasetOptions {
-    cacheTtlMs?: number
-    fetcher?: typeof fetch
-    forceRefresh?: boolean
-    url?: string
-}
-
-export interface CreateLiteLLMPricingResolverOptions extends FetchLiteLLMPricingDatasetOptions {
-    aliases?: Record<string, string>
-    fallbackModel?: string
-    fallbackPricingTable?: Record<string, ModelPricing>
-    getLookupCandidates?: (model: string) => string[]
-    isZeroCostModel?: (model: string) => boolean
-}
 
 const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5': {
