@@ -6,7 +6,7 @@
         variant="ghost"
     >
         <NuxtLink
-            to="/"
+            to="https://github.com/lonewolfyx/usage-board"
             rel="noreferrer"
             target="_blank"
         >
