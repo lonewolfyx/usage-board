@@ -1,0 +1,46 @@
+{
+    "compilerOptions": {
+        "tsBuildInfoFile": "./.nuxt/tsconfig.cli.tsbuildinfo",
+        "target": "ESNext",
+        "jsx": "preserve",
+        "lib": ["ESNext"],
+        "moduleDetection": "force",
+        "useDefineForClassFields": true,
+        "module": "ESNext",
+        "moduleResolution": "Bundler",
+        "paths": {
+            "~~/*": [
+                "./*"
+            ],
+            "@@/*": [
+                "./*"
+            ],
+            "#shared": [
+                "./shared"
+            ],
+            "#shared/*": [
+                "./shared/*"
+            ]
+        },
+        "resolveJsonModule": true,
+        "types": ["node"],
+        "allowJs": true,
+        "strict": true,
+        "noImplicitOverride": true,
+        "noImplicitThis": true,
+        "noUncheckedIndexedAccess": true,
+        "noEmit": true,
+        "allowSyntheticDefaultImports": true,
+        "esModuleInterop": true,
+        "forceConsistentCasingInFileNames": true,
+        "isolatedModules": true,
+        "verbatimModuleSyntax": true,
+        "skipLibCheck": true
+    },
+    "include": [
+        "./shared/**/*.ts",
+        "./src/",
+        "vitest.config.*",
+        "tsdown.config.*"
+    ]
+}

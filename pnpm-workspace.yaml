@@ -2,5 +2,4 @@ allowBuilds:
   maplibre-gl: false
   vue-demi: true
 shellEmulator: true
-
 trustPolicy: no-downgrade
