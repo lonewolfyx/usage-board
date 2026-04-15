@@ -15,8 +15,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 
-type TrendTone = 'down' | 'neutral' | 'up'
-
 defineOptions({
     name: 'StatisticalAnalysisTotalCard',
 })

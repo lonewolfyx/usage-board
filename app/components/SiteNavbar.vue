@@ -33,25 +33,6 @@ import ModeSwitcher from '~/components/ModeSwitcher.vue'
 import SiteLogo from '~/components/SiteLogo.vue'
 import { cn } from '~/lib/utils'
 
-type AiIconName
-    = | 'amp'
-        | 'antigravity'
-        | 'claude_code'
-        | 'codex'
-        | 'copilot'
-        | 'cursor'
-        | 'gemini'
-        | 'kimi_code'
-        | 'open_code'
-
-interface NavItem {
-    icon: string | AiIconName
-    iconFillClass?: string
-    iconType: 'ai' | 'icon'
-    label: string
-    link: string
-}
-
 defineOptions({
     name: 'SiteNavbar',
 })

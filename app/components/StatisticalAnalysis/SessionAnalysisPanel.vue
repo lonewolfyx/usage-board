@@ -67,8 +67,6 @@
 </template>
 
 <script setup lang="ts">
-import type { ChartConfig } from '@/components/ui/chart'
-import type { SessionUsageItem } from '~/composables/useUsageDashboard'
 import { VisAxis, VisStackedBar, VisStackedBarSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { computed } from 'vue'
 import { ChartContainer } from '@/components/ui/chart'
@@ -82,26 +80,6 @@ const props = defineProps<{
     items: SessionUsageItem[]
     totalSessions: number
 }>()
-
-interface SessionProjectDatum {
-    costLabel: string
-    costScore: number
-    costUSD: number
-    durationLabel: string
-    durationMinutes: number
-    durationScore: number
-    index: number
-    project: string
-    sessionCount: number
-    tokenLabel: string
-    tokenScore: number
-    tokenTotal: number
-}
-
-interface StackedBarTooltipDatum {
-    datum: SessionProjectDatum
-    stackIndex: number
-}
 
 const chartSegments = [
     {

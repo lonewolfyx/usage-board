@@ -103,7 +103,6 @@
 </template>
 
 <script setup lang="ts">
-import type { CodexSessionUsageItem } from '~/composables/useCodexDashboard'
 import { formatNumber } from '@lonewolfyx/utils'
 import { computed, shallowRef } from 'vue'
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'

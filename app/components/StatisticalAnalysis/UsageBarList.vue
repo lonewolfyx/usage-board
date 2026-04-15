@@ -24,8 +24,6 @@
 </template>
 
 <script setup lang="ts">
-import type { RankedUsageItem } from '~/composables/useUsageDashboard'
-
 defineOptions({
     name: 'StatisticalAnalysisUsageBarList',
 })

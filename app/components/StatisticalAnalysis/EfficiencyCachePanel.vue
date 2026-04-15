@@ -45,8 +45,6 @@
 </template>
 
 <script setup lang="ts">
-import type { ChartConfig } from '@/components/ui/chart'
-import type { DailyTokenUsage, RankedUsageItem } from '~/composables/useUsageDashboard'
 import { VisDonut, VisDonutSelectors, VisSingleContainer, VisTooltip } from '@unovis/vue'
 import { computed } from 'vue'
 import { ChartContainer } from '@/components/ui/chart'
@@ -60,19 +58,6 @@ const props = defineProps<{
     dailyItems: DailyTokenUsage[]
     items: RankedUsageItem[]
 }>()
-
-interface CacheSegment {
-    color: string
-    key: string
-    label: string
-    shareLabel: string
-    value: number
-    valueLabel: string
-}
-
-interface DonutTooltipDatum {
-    data: CacheSegment
-}
 
 const totalInputTokens = computed(() => props.dailyItems.reduce((sum, item) => sum + item.inputTokens, 0))
 const totalCachedInputTokens = computed(() => props.dailyItems.reduce((sum, item) => sum + item.cachedInputTokens, 0))

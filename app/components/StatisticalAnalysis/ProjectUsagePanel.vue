@@ -35,7 +35,6 @@
 </template>
 
 <script setup lang="ts">
-import type { ProjectUsageItem } from '~/composables/useUsageDashboard'
 import { computed } from 'vue'
 
 defineOptions({
@@ -45,14 +44,6 @@ defineOptions({
 const props = defineProps<{
     items: ProjectUsageItem[]
 }>()
-
-type TrendTone = 'down' | 'up'
-
-interface FeaturedProjectItem extends ProjectUsageItem {
-    shortName: string
-    trend: string
-    trendTone: TrendTone
-}
 
 const trendMocks = [
     { trend: '+12.4%', trendTone: 'up' },

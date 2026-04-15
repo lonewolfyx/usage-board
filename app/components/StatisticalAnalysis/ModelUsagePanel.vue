@@ -55,8 +55,6 @@
 </template>
 
 <script setup lang="ts">
-import type { ChartConfig } from '@/components/ui/chart'
-import type { MonthlyModelUsage } from '~/composables/useUsageDashboard'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { computed } from 'vue'
 import { ChartContainer } from '@/components/ui/chart'
@@ -70,20 +68,6 @@ const props = defineProps<{
     monthlyItems: MonthlyModelUsage[]
     year?: number
 }>()
-
-interface ModelSeriesDatum {
-    month: string
-    monthIndex: number
-    tokensByModel: Record<string, number>
-    totalTokens: number
-}
-
-interface ModelSeries {
-    color: string
-    model: string
-    totalLabel: string
-    totalTokens: number
-}
 
 const modelColors = ['#2563eb', '#f97316', '#0891b2', '#8b5cf6', '#059669', '#f43f5e']
 

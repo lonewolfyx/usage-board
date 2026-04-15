@@ -108,7 +108,6 @@
 </template>
 
 <script setup lang="ts">
-import type { DailyTokenUsage } from '~/composables/useUsageDashboard'
 import { computed } from 'vue'
 import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 

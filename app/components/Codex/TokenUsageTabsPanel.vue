@@ -103,7 +103,6 @@
 </template>
 
 <script setup lang="ts">
-import type { CodexTokenUsageRow } from '~/composables/useCodexDashboard'
 import { formatNumber } from '@lonewolfyx/utils'
 import { computed, reactive, shallowRef } from 'vue'
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -124,14 +123,6 @@ const props = withDefaults(defineProps<{
 }>(), {
     pageSize: 8,
 })
-
-type TokenTabValue = 'day' | 'month' | 'session' | 'week'
-
-interface TokenTab {
-    heading: string
-    label: string
-    value: TokenTabValue
-}
 
 const activeTab = shallowRef<TokenTabValue>('day')
 const pageByTab = reactive<Record<TokenTabValue, number>>({
@@ -154,13 +145,6 @@ const itemsByTab = computed<Record<TokenTabValue, CodexTokenUsageRow[]>>(() => (
     session: props.sessionItems,
     week: props.weeklyItems,
 }))
-
-interface TokenTabState {
-    items: CodexTokenUsageRow[]
-    page: number
-    pageCount: number
-    paginatedItems: CodexTokenUsageRow[]
-}
 
 const tabState = computed<Record<TokenTabValue, TokenTabState>>(() => Object.fromEntries(tabs.map((tab) => {
     const items = itemsByTab.value[tab.value]
