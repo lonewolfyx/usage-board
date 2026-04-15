@@ -4,7 +4,7 @@
             <div class="flex flex-col h-14">
                 <div class="flex items-center gap-4 h-full">
                     <img alt="" class="size-8" src="/logo.svg">
-                    <SiteLogo class="w-48 dark:fill-white" />
+                    <SiteLogo class="w-48 fill-foreground" />
                 </div>
             </div>
             <div class="flex items-center">
