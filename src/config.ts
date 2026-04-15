@@ -2,7 +2,7 @@ import type { IOptions } from '~~/src/types'
 import { homedir } from 'node:os'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { getOpenCodePath } from '~~/src/paths'
+import { getCodexPath, getOpenCodePath } from '~~/src/paths'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
@@ -15,5 +15,6 @@ export const resolveConfig = (options: IOptions) => {
         cwd: resolve(__dirname, '../'),
         home: homedir(),
         openCodePath: getOpenCodePath(),
+        codexPath: getCodexPath(),
     }
 }

@@ -7,9 +7,13 @@ import { isDirectorySync } from 'path-type'
  */
 const DEFAULT_OPENCODE_PATH = '.local/share/opencode'
 
+const CODEX_HOME_ENV = 'CODEX_HOME'
+
 const OPENCODE_CONFIG_DIR_ENV = 'OPENCODE_DATA_DIR'
 
 const USER_HOME_DIR = homedir()
+
+const DEFAULT_CODEX_DIR = join(USER_HOME_DIR, '.codex')
 
 export const getOpenCodePath = (): string | null => {
     // Check environment variable first
@@ -28,4 +32,9 @@ export const getOpenCodePath = (): string | null => {
     }
 
     return null
+}
+
+export const getCodexPath = (): string => {
+    const codexHomeEnv = process.env[CODEX_HOME_ENV]?.trim()
+    return codexHomeEnv != null && codexHomeEnv !== '' ? resolve(codexHomeEnv) : DEFAULT_CODEX_DIR
 }
