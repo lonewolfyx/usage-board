@@ -2,74 +2,67 @@
 
 An all-in-one dashboard to quickly analyze token usage from local json files
 
-## Setup
-
-Make sure to install dependencies:
+## Quick Start
 
 ```bash
-# npm
-npm install
+npx usage-board@latest
+```
 
-# pnpm
+After starting, follow the terminal prompts to open the local page and view the usage dashboard.
+
+## Features
+
+- Overview of core metrics: AI Coding token usage, costs, session counts
+- Daily token consumption and cost trends by date
+- Monthly statistics for model usage distribution and consumption changes
+- Project-based analysis of token and cost distribution
+- Session-level usage details including model, duration, input tokens, output tokens, cache tokens, and costs
+- Codex usage data dashboard with multi-dimensional views (daily, weekly, monthly, by session)
+- Token heatmap for quickly identifying high-frequency or high-consumption dates
+- Cache hit and token efficiency metrics to help optimize usage costs
+- Built with Nuxt, suitable for extending into team or personal AI usage analysis tools
+
+## Development
+
+Install dependencies:
+
+```bash
 pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
 ```
 
-## Development Server
-
-Start the development server on `http://localhost:3000`:
+Start the local development server:
 
 ```bash
-# npm
-npm run dev
-
-# pnpm
 pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
-
-Build the application for production:
+Default access URL:
 
 ```bash
-# npm
-npm run build
+http://localhost:3000
+```
 
-# pnpm
+Common development commands:
+
+```bash
+# Type checking
+pnpm typecheck
+
+# Linting
+pnpm lint
+
+# Auto-fix code style
+pnpm lint:fix
+
+# Build for production
 pnpm build
 
-# yarn
-yarn build
-
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
+# Preview production build locally
 pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
 ```
 
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+## License
+
+This project is open-sourced under the MIT License.
+
+This project is extended from [`ryoppippi/ccusage`](https://github.com/ryoppippi/ccusage). Thanks to the original project author and community contributors.
