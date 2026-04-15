@@ -117,7 +117,7 @@ const props = withDefaults(defineProps<{
     items: CodexSessionUsageItem[]
     pageSize?: number
 }>(), {
-    pageSize: 8,
+    pageSize: 10,
 })
 
 const page = shallowRef(1)

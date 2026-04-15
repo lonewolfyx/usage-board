@@ -121,7 +121,7 @@ const props = withDefaults(defineProps<{
     sessionItems: CodexTokenUsageRow[]
     pageSize?: number
 }>(), {
-    pageSize: 8,
+    pageSize: 10,
 })
 
 const activeTab = shallowRef<TokenTabValue>('day')
