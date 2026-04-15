@@ -142,10 +142,10 @@ const pageByTab = reactive<Record<TokenTabValue, number>>({
 })
 
 const tabs: TokenTab[] = [
-    { heading: 'Date', label: '日', value: 'day' },
-    { heading: 'Week', label: '周', value: 'week' },
-    { heading: 'Month', label: '月', value: 'month' },
-    { heading: 'Session ID', label: '会话', value: 'session' },
+    { heading: 'Date', label: 'Day', value: 'day' },
+    { heading: 'Week', label: 'Week', value: 'week' },
+    { heading: 'Month', label: 'Month', value: 'month' },
+    { heading: 'Session ID', label: 'Session', value: 'session' },
 ]
 
 const itemsByTab = computed<Record<TokenTabValue, CodexTokenUsageRow[]>>(() => ({

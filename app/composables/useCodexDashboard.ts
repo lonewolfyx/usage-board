@@ -58,7 +58,7 @@ const todayDateKey = '2026-04-15'
 const codexSessionSourceItems: CodexSessionSourceItem[] = [
     {
         sessionId: 'rollout-2026-03-19T16-57-39-019d0550-9081-7793-9685-0eac2397579e',
-        threadName: '了解项目架构目录概览.features',
+        threadName: 'Project architecture overview.features',
         project: 'web-jetbrains-git',
         repository: 'lonewolfyx/web-jetbrains-git',
         model: 'gpt-5.4',
@@ -86,7 +86,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-03-27T13-58-16-019d2ddf-353e-7532-af34-2a95fd2ab6bc',
-        threadName: '先审查项目并详细列出所有错误内容板块',
+        threadName: 'Audit project error-copy sections',
         project: 'uni-deps-fix',
         repository: 'lonewolfyx/uni-deps-fix',
         model: 'gpt-5.3-codex',
@@ -100,7 +100,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-03-28T13-48-09-019d32fc-4db8-7d90-8f6e-6965b3e9cde1',
-        threadName: '审核 packages 错误文案描述',
+        threadName: 'Review package error messaging',
         project: 'uni-deps-fix',
         repository: 'lonewolfyx/uni-deps-fix',
         model: 'gpt-5.3-codex',
@@ -114,7 +114,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-03-30T21-55-59-019d3f07-a62c-77b2-afa7-d3ab363f8c36',
-        threadName: '修复 monorepo 构建和类型问题',
+        threadName: 'Fix monorepo build and type errors',
         project: 'dnmp',
         repository: 'lonewolfyx/dnmp',
         model: 'gpt-5.3-codex',
@@ -128,7 +128,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-01T13-38-09-019d478c-9916-7393-8f49-cd657256a5fe',
-        threadName: '调整 Codex Desktop 侧栏交互',
+        threadName: 'Tune Codex Desktop sidebar interactions',
         project: 'codex-desktop',
         repository: 'lonewolfyx/codex-desktop',
         model: 'gpt-5.3-codex',
@@ -142,7 +142,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-01T22-07-10-019d495e-9c02-7b40-bacc-dcb1f491a22d',
-        threadName: '实现消息列表滚动状态保持',
+        threadName: 'Preserve message-list scroll state',
         project: 'codex-desktop',
         repository: 'lonewolfyx/codex-desktop',
         model: 'gpt-5.3-codex',
@@ -156,7 +156,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-02T14-46-49-019d4cf1-d34c-7ce3-a6f3-0cfd3c275853',
-        threadName: '增加 usage board 首页数据模块',
+        threadName: 'Add usage-board home data modules',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.3-codex',
@@ -170,7 +170,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-02T21-35-46-019d4e68-39e1-7cc3-9844-763a8dd09b0a',
-        threadName: '重构统计卡片和图表布局',
+        threadName: 'Refactor metric cards and chart layout',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.3-codex',
@@ -184,7 +184,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-02T21-41-20-019d4e6d-504f-7331-9dae-f055f3c15bbb',
-        threadName: '补齐项目排行交互细节',
+        threadName: 'Complete project-ranking interactions',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.3-codex',
@@ -198,7 +198,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-02T22-50-41-019d4eac-cf47-7c43-82f8-5d59c1ee1525',
-        threadName: '修复 dashboard 类型和 lint',
+        threadName: 'Fix dashboard types and lint',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.3-codex',
@@ -212,7 +212,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-08T11-14-25-019d6b15-8616-7503-bab3-d3a229fb1681',
-        threadName: '拆分发布脚本任务',
+        threadName: 'Split release-script tasks',
         project: 'codex-register',
         repository: 'lonewolfyx/codex-register',
         model: 'gpt-5.4',
@@ -226,7 +226,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-09T09-43-14-019d6fe8-6547-7e31-875f-e4ca3fba12c0',
-        threadName: '检查插件安装边界',
+        threadName: 'Check plugin-install boundaries',
         project: 'codex-register',
         repository: 'lonewolfyx/codex-register',
         model: 'gpt-5.4',
@@ -240,7 +240,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-09T16-36-34-019d7162-ce8e-7873-b3b2-e97eeae97d99',
-        threadName: '迁移表格筛选状态',
+        threadName: 'Migrate table filter state',
         project: 'sixninenine',
         repository: 'lonewolfyx/sixninenine',
         model: 'gpt-5.4',
@@ -254,7 +254,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-10T14-12-57-019d7605-afae-7960-8e2d-0fd60a083e08',
-        threadName: '修复 Vue 页面数据分页',
+        threadName: 'Fix Vue page-data pagination',
         project: 'sixninenine',
         repository: 'lonewolfyx/sixninenine',
         model: 'gpt-5.4',
@@ -268,7 +268,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-13T11-04-57-019d84cc-a6c9-7783-8616-f5cba9051337',
-        threadName: '快速校准技能描述',
+        threadName: 'Calibrate skill descriptions',
         project: 'talks',
         repository: 'lonewolfyx/talks',
         model: 'gpt-5.4',
@@ -282,7 +282,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-14T16-36-04-019d8b22-28d7-7521-9244-608c6a09f0be',
-        threadName: '补充统计页空状态',
+        threadName: 'Add statistics empty states',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.4',
@@ -296,7 +296,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-14T23-06-57-019d8c88-05e4-7413-8f43-aecbc7433e2d',
-        threadName: '修复日期解析边界',
+        threadName: 'Fix date-parsing edge cases',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.4',
@@ -310,7 +310,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-15T09-14-18-019d8eb4-101e-7701-ab12-d5d2925f4d81',
-        threadName: 'Codex 页面数据结构设计',
+        threadName: 'Design Codex page data schema',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.4',
@@ -324,7 +324,7 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
     },
     {
         sessionId: 'rollout-2026-04-15T10-42-31-019d8f04-d3f8-7ee0-9017-b1949783decd',
-        threadName: 'Codex 看板分页与 session 表格',
+        threadName: 'Build Codex dashboard pagination and session table',
         project: 'usage-board',
         repository: 'lonewolfyx/usage-board',
         model: 'gpt-5.4',
@@ -442,28 +442,28 @@ export function useCodexDashboard() {
     const overviewCards = computed(() => [
         {
             icon: 'solar:cpu-line-duotone',
-            name: '今日消耗 Tokens',
+            name: 'Today Tokens',
             trend: `${todaySessions.value.length} sessions`,
             trendTone: 'neutral' as const,
             value: formatCompactNumber(todayTotalTokens.value),
         },
         {
             icon: 'lucide:wallet',
-            name: '今日消耗费用',
+            name: 'Today Spend',
             trend: `${formatCompactNumber(todaySessions.value.reduce((sum, session) => sum + session.cachedInputTokens, 0))} cached`,
             trendTone: 'neutral' as const,
             value: formatCurrency(todayTotalCost.value),
         },
         {
             icon: 'lucide:folder-git-2',
-            name: '今日最高会话项目',
+            name: 'Top Session Project',
             trend: todayTopProject.value ? `${todayTopProject.value.sessionCount} sessions` : 'No sessions',
             trendTone: 'up' as const,
             value: todayTopProject.value?.project ?? 'No data',
         },
         {
             icon: 'lucide:bot',
-            name: '今日调用最高模型',
+            name: 'Top Invoked Model',
             trend: todayTopModel.value ? `${formatCompactNumber(todayTopModel.value.totalTokens)} tokens` : 'No usage',
             trendTone: 'up' as const,
             value: todayTopModel.value?.model ?? 'No data',
