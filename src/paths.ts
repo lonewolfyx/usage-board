@@ -11,7 +11,7 @@ const OPENCODE_CONFIG_DIR_ENV = 'OPENCODE_DATA_DIR'
 
 const USER_HOME_DIR = homedir()
 
-export const getOpenCodePath = () => {
+export const getOpenCodePath = (): string | null => {
     // Check environment variable first
     const envPath = process.env[OPENCODE_CONFIG_DIR_ENV]
     if (envPath != null && envPath.trim() !== '') {
