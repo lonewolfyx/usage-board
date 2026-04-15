@@ -14,15 +14,16 @@
         </div>
         <Separator />
         <div class="container mx-auto flex items-center justify-between pt-3 pb-1">
-            <div
+            <NuxtLink
                 v-for="item in navItems"
                 :key="item.label"
                 :class="getNavItemClass(item)"
+                :to="item.link"
             >
                 <Icon v-if="item.iconType === 'icon'" :name="item.icon" class="size-5" mode="svg" />
                 <IconAi v-else :name="item.icon" />
                 <span class="capitalize text-xs font-medium font-mono">{{ item.label }}</span>
-            </div>
+            </nuxtlink>
         </div>
     </header>
 </template>
@@ -43,20 +44,14 @@ type AiIconName
         | 'kimi_code'
         | 'open_code'
 
-type NavItem
-    = | {
-        icon: string
-        iconType: 'icon'
-        isActive: true
-        label: string
-    }
-    | {
-        icon: AiIconName
-        iconFillClass: string
-        iconType: 'ai'
-        isActive?: false
-        label: string
-    }
+interface NavItem {
+    icon: string | AiIconName
+    iconFillClass?: string
+    iconType: 'ai' | 'icon'
+    isActive?: boolean
+    label: string
+    link: string
+}
 
 defineOptions({
     name: 'SiteNavbar',
@@ -68,60 +63,70 @@ const navItems = [
         iconType: 'icon',
         isActive: true,
         label: 'home',
+        link: '/',
     },
     {
         icon: 'claude_code',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'Claude Code',
+        link: '/claude_code',
     },
     {
         icon: 'codex',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'Codex',
+        link: '/codex',
     },
     {
         icon: 'cursor',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'Cursor',
+        link: '/cursor',
     },
     {
         icon: 'open_code',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'open code',
+        link: '/open_code',
     },
     {
         icon: 'copilot',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'copilot',
+        link: '/copilot',
     },
     {
         icon: 'gemini',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'gemini',
+        link: '/gemini',
     },
     {
         icon: 'kimi_code',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'Kimi',
+        link: '/kimi',
     },
     {
         icon: 'antigravity',
         iconFillClass: '[&_svg]:fill-foreground/50',
         iconType: 'ai',
         label: 'antigravity',
+        link: '/antigravity',
     },
     {
         icon: 'amp',
         iconFillClass: '[&_path]:fill-current!',
         iconType: 'ai',
         label: 'amp',
+        link: '/amp',
     },
 ] satisfies NavItem[]
 
