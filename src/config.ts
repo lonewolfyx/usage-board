@@ -1,7 +1,19 @@
-import process from 'node:process'
+import type { IOptions } from '~~/src/types'
+import { homedir } from 'node:os'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { getOpenCodePath } from '~~/src/paths'
 
-export const resolveConfig = () => {
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = dirname(__filename)
+
+export const resolveConfig = (options: IOptions) => {
     return {
-        cwd: process.cwd(),
+        host: options.host,
+        port: options.port,
+        open: options.open,
+        cwd: resolve(__dirname, '../'),
+        home: homedir(),
+        openCodePath: getOpenCodePath(),
     }
 }
