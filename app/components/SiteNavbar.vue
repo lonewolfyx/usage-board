@@ -48,7 +48,6 @@ interface NavItem {
     icon: string | AiIconName
     iconFillClass?: string
     iconType: 'ai' | 'icon'
-    isActive?: boolean
     label: string
     link: string
 }
@@ -61,7 +60,6 @@ const navItems = [
     {
         icon: 'solar:home-bold-duotone',
         iconType: 'icon',
-        isActive: true,
         label: 'home',
         link: '/',
     },
@@ -130,10 +128,16 @@ const navItems = [
     },
 ] satisfies NavItem[]
 
+const route = useRoute()
+
+const path = computed(() => route.path)
+
 function getNavItemClass(item: NavItem) {
+    const isActive = path.value === item.link
+
     return cn(
         'relative flex flex-col items-center gap-1.5',
-        item.isActive
+        isActive
             ? [
                     'after:content-[\'\'] after:absolute after:w-full after:h-px after:bg-amber-500',
                     'after:-bottom-1 after:rounded-2xl',
