@@ -19,7 +19,8 @@
         "lint": "eslint .",
         "lint:fix": "eslint --fix",
         "prepare": "simple-git-hooks",
-        "dev:cli": "tsdown -w"
+        "dev:cli": "tsdown -w",
+        "test": "vitest"
     },
     "dependencies": {
         "@tailwindcss/vite": "^4.2.2",
