@@ -13,10 +13,7 @@ export interface IOptions {
     'open': boolean
 }
 
-export interface IConfig {
-    host: string
-    port: number
-    open: boolean
+export interface IConfig extends IOptions {
     cwd: string
     home: string
     claudeCodePath: string
