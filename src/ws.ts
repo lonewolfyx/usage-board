@@ -5,15 +5,7 @@ import { watch } from 'chokidar'
 import { getPort } from 'get-port-please'
 import { WebSocketServer } from 'ws'
 import { resolveTokensConsumption } from '~~/src/data-loader'
-
-const resolveWatchedPaths = (config: IConfig) => {
-    return [
-        ...config.claudeCodePaths,
-        config.openCodePath,
-        config.codexPath,
-        config.geminiPath,
-    ].filter((path): path is string => Boolean(path))
-}
+import { resolveWatchedPaths } from '~~/src/paths'
 
 export const createWebSocketServer = async (config: IConfig): Promise<CreateWebSocketServerResult> => {
     const wsPort = await getPort({
@@ -26,8 +18,7 @@ export const createWebSocketServer = async (config: IConfig): Promise<CreateWebS
         port: wsPort,
     })
 
-    const watchedPaths = resolveWatchedPaths(config)
-    const watcher = watch(watchedPaths, {
+    const watcher = watch(resolveWatchedPaths(config), {
         ignoreInitial: true,
     })
 
@@ -66,12 +57,9 @@ export const createWebSocketServer = async (config: IConfig): Promise<CreateWebS
     }
 
     return {
-        close,
         getData,
         port: wsPort,
         watcher,
-        watchedPaths,
-        wsPort,
         wss,
     }
 }
