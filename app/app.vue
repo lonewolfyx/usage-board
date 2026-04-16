@@ -1,7 +1,9 @@
 <template>
-    <SiteBody>
-        <NuxtLayout>
-            <NuxtPage />
-        </NuxtLayout>
-    </SiteBody>
+    <PayloadProvider>
+        <SiteBody>
+            <NuxtLayout>
+                <NuxtPage />
+            </NuxtLayout>
+        </SiteBody>
+    </PayloadProvider>
 </template>
