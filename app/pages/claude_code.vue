@@ -14,7 +14,7 @@
 </template>
 
 <script setup lang="ts">
-import { useClaudeCodeDashboard } from '~/composables/useClaudeCodeDashboard'
+import { usePayloadDashboard } from '~/composables/usePayloadDashboard'
 
 const {
     dailyRows,
@@ -26,5 +26,5 @@ const {
     sessionRows,
     sessionUsage,
     weeklyRows,
-} = useClaudeCodeDashboard()
+} = usePayloadDashboard('claudeCode')
 </script>
