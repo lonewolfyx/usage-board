@@ -3,9 +3,10 @@ import { resolveConfig } from '../src/config'
 import { loadGeminiUsage } from '../src/platform'
 
 const config = resolveConfig({
-    host: '127.0.0.1',
-    port: 8888,
-    open: false,
+    'host': '127.0.0.1',
+    'port': 8888,
+    'open': false,
+    '--': '',
 })
 
 describe('test gemini', () => {
