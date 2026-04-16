@@ -5,6 +5,11 @@ import type {
     CodexTopModel,
     CodexTopProject,
     DailyUsageSummaryGroup,
+    GeminiSessionFile,
+    GeminiSessionFileData,
+    GeminiSessionMessage,
+    GeminiTokenSnapshot,
+    GeminiTokenUsageEvent,
     IConfig,
     LoadCodexUsageResult,
     ModelPricing,
@@ -57,47 +62,6 @@ const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
         inputCostPerMTokens: 0.5,
         outputCostPerMTokens: 3,
     },
-}
-
-interface GeminiSessionFileData {
-    events: GeminiTokenUsageEvent[]
-    meta: CodexSessionMeta
-}
-
-interface GeminiTokenUsageEvent extends TokenUsageDelta {
-    costUSD: number
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
-    toolTokens: number
-}
-
-interface GeminiSessionFile {
-    lastUpdated?: string
-    messages: GeminiSessionMessage[]
-    sessionId?: string
-    startTime?: string
-    summary?: string
-}
-
-interface GeminiSessionMessage {
-    content?: string | Array<{ text?: string }>
-    model?: string
-    timestamp?: string
-    tokens?: GeminiTokenSnapshot
-    type?: string
-}
-
-interface GeminiTokenSnapshot {
-    cached?: number
-    input?: number
-    output?: number
-    thoughts?: number
-    tool?: number
-    total?: number
 }
 
 export const loadGeminiUsage = async (config: IConfig): Promise<LoadCodexUsageResult> => {

@@ -130,6 +130,47 @@ export interface CodexSessionFileData {
     meta: CodexSessionMeta
 }
 
+export interface GeminiSessionFileData {
+    events: GeminiTokenUsageEvent[]
+    meta: CodexSessionMeta
+}
+
+export interface GeminiTokenUsageEvent extends TokenUsageDelta {
+    costUSD: number
+    isFallbackModel: boolean
+    model: string
+    project: string
+    repository: string
+    sessionId: string
+    timestamp: string
+    toolTokens: number
+}
+
+export interface GeminiSessionFile {
+    lastUpdated?: string
+    messages: GeminiSessionMessage[]
+    sessionId?: string
+    startTime?: string
+    summary?: string
+}
+
+export interface GeminiSessionMessage {
+    content?: string | Array<{ text?: string }>
+    model?: string
+    timestamp?: string
+    tokens?: GeminiTokenSnapshot
+    type?: string
+}
+
+export interface GeminiTokenSnapshot {
+    cached?: number
+    input?: number
+    output?: number
+    thoughts?: number
+    tool?: number
+    total?: number
+}
+
 export interface ClaudeUsageRecord {
     costUSD?: number
     cwd?: string
