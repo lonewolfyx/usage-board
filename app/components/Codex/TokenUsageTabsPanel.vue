@@ -1,8 +1,8 @@
 <template>
     <StatisticalAnalysisPanel
-        description="Browse Codex token consumption by day, week, month, or session."
+        :description="`Browse ${productName} token consumption by day, week, month, or session.`"
         icon="lucide:table-2"
-        title="Codex Token Usage"
+        :title="`${productName} Token Usage`"
     >
         <Tabs v-model="activeTab">
             <TabsList class="grid w-full grid-cols-4 sm:w-fit">
@@ -85,7 +85,7 @@
                             </TableCell>
                         </TableRow>
                         <TableEmpty v-if="tabState[tab.value].items.length === 0" :colspan="10">
-                            No Codex token usage found.
+                            No {{ productName }} token usage found.
                         </TableEmpty>
                     </TableBody>
                 </Table>
@@ -120,8 +120,10 @@ const props = withDefaults(defineProps<{
     monthlyItems: CodexTokenUsageRow[]
     sessionItems: CodexTokenUsageRow[]
     pageSize?: number
+    productName?: string
 }>(), {
     pageSize: 10,
+    productName: 'Codex',
 })
 
 const activeTab = shallowRef<TokenTabValue>('day')

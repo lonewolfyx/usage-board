@@ -1,7 +1,7 @@
 import { computed } from 'vue'
 import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
-const todayDateKey = '2026-04-15'
+const codexTodayDateKey = '2026-04-15'
 
 const codexSessionSourceItems: CodexSessionSourceItem[] = [
     {
@@ -287,7 +287,18 @@ const codexSessionSourceItems: CodexSessionSourceItem[] = [
 ]
 
 export function useCodexDashboard() {
-    const sessionUsage = computed<CodexSessionUsageItem[]>(() => codexSessionSourceItems
+    return createSessionTokenDashboard(codexSessionSourceItems, {
+        todayDateKey: codexTodayDateKey,
+    })
+}
+
+export function createSessionTokenDashboard(
+    sessionSourceItems: CodexSessionSourceItem[],
+    options: {
+        todayDateKey: string
+    },
+) {
+    const sessionUsage = computed<CodexSessionUsageItem[]>(() => sessionSourceItems
         .map(toCodexSessionUsageItem)
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
 
@@ -381,7 +392,7 @@ export function useCodexDashboard() {
             .sort((a, b) => b.costUSD - a.costUSD)
     })
 
-    const todaySessions = computed(() => sessionUsage.value.filter(session => getDateKey(new Date(session.startedAt)) === todayDateKey))
+    const todaySessions = computed(() => sessionUsage.value.filter(session => getDateKey(new Date(session.startedAt)) === options.todayDateKey))
     const todayTotalTokens = computed(() => todaySessions.value.reduce((sum, session) => sum + session.tokenTotal, 0))
     const todayTotalCost = computed(() => todaySessions.value.reduce((sum, session) => sum + session.costUSD, 0))
     const todayTopProject = computed(() => getTopSessionProject(todaySessions.value))

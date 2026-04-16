@@ -1,8 +1,8 @@
 <template>
     <StatisticalAnalysisPanel
-        description="Each row maps one Codex jsonl file to its session-level token consumption."
+        :description="`Each row maps one ${productName} session to its session-level token consumption.`"
         icon="lucide:file-json-2"
-        title="Codex Session Statistics"
+        :title="`${productName} Session Statistics`"
     >
         <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div class="rounded-md border px-3 py-2">
@@ -88,7 +88,7 @@
                     </TableCell>
                 </TableRow>
                 <TableEmpty v-if="items.length === 0" :colspan="10">
-                    No Codex sessions found.
+                    No {{ productName }} sessions found.
                 </TableEmpty>
             </TableBody>
         </Table>
@@ -116,8 +116,10 @@ defineOptions({
 const props = withDefaults(defineProps<{
     items: CodexSessionUsageItem[]
     pageSize?: number
+    productName?: string
 }>(), {
     pageSize: 10,
+    productName: 'Codex',
 })
 
 const page = shallowRef(1)

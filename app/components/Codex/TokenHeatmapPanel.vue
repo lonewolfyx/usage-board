@@ -2,7 +2,7 @@
     <StatisticalAnalysisPanel
         :description="`${rangeLabel} token heatmap. Darker cells mean higher daily token usage.`"
         icon="lucide:calendar-days"
-        title="Codex Token Heatmap"
+        :title="`${productName} Token Heatmap`"
     >
         <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div class="rounded-md border px-3 py-2">
@@ -115,9 +115,12 @@ defineOptions({
     name: 'CodexTokenHeatmapPanel',
 })
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
     items: DailyTokenUsage[]
-}>()
+    productName?: string
+}>(), {
+    productName: 'Codex',
+})
 
 const heatmapLevels = [
     'bg-zinc-100 dark:bg-zinc-800/80',
