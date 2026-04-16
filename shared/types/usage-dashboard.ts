@@ -136,6 +136,7 @@ export interface LoadUsageResult {
 }
 
 export interface TokensConsumptionResult {
+    version: string
     claudeCode: LoadUsageResult
     codex: LoadUsageResult
     gemini: LoadUsageResult

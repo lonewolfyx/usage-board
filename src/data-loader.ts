@@ -1,6 +1,7 @@
 import type { TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { IConfig } from '~~/src/types'
 import { loadClaudeCodeUsage, loadCodexUsage, loadGeminiUsage } from '~~/src/platform'
+import { version } from '../package.json' with { type: 'json' }
 
 export const resolveTokensConsumption = async (config: IConfig): Promise<TokensConsumptionResult> => {
     const claudeCode = await loadClaudeCodeUsage(config)
@@ -10,6 +11,7 @@ export const resolveTokensConsumption = async (config: IConfig): Promise<TokensC
     const gemini = await loadGeminiUsage(config)
 
     return {
+        version,
         claudeCode,
         codex,
         gemini,
