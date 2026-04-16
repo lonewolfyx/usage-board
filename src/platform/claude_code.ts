@@ -1,4 +1,4 @@
-import type { CodexSessionUsageItem } from '#shared/types/codex-dashboard'
+import type { UsageSessionUsageItem } from '#shared/types/usage-dashboard'
 import type {
     ClaudeAggregateEvent,
     ClaudeModelUsageSummary,
@@ -6,15 +6,15 @@ import type {
     ClaudeTokenTotals,
     ClaudeUsageEntry,
     ClaudeUsageRecord,
-    CodexTopModel,
-    CodexTopProject,
     DailyUsageSummaryGroup,
     IConfig,
-    LoadCodexUsageResult,
+    LoadUsageResult,
     ModelPricingResolver,
     PeriodRowGroup,
     SessionAggregateGroup,
     TokenUsageDelta,
+    UsageTopModel,
+    UsageTopProject,
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, sep } from 'node:path'
@@ -34,7 +34,7 @@ const CLAUDE_MODEL_ALIASES: Record<string, string> = {
     'claude-4-5-sonnet': 'claude-sonnet-4-5',
 }
 
-export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadCodexUsageResult> => {
+export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CLAUDE_MODEL_ALIASES,
         fallbackModel: CLAUDE_FALLBACK_MODEL,
@@ -435,7 +435,7 @@ function buildClaudeSessionSummaries(entries: ClaudeUsageEntry[]) {
     })
 }
 
-function toClaudeSessionUsageItem(session: ClaudeSessionSummary): CodexSessionUsageItem {
+function toClaudeSessionUsageItem(session: ClaudeSessionSummary): UsageSessionUsageItem {
     const startedAtDate = new Date(session.startedAt)
 
     return {
@@ -631,7 +631,7 @@ function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
     target.totalTokens += usage.totalTokens
 }
 
-function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
+function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]) {
     const projects = new Map<string, {
         costUSD: number
         repository: string
@@ -672,8 +672,8 @@ function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
 function buildOverviewCards(options: {
     cachedInputTokens: number
     sessionCount: number
-    todayTopModel: CodexTopModel | null
-    todayTopProject: CodexTopProject | null
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
     todayTotalCost: number
     todayTotalTokens: number
 }) {

@@ -1,13 +1,10 @@
-import type { CodexSessionUsageItem } from '#shared/types/codex-dashboard'
+import type { UsageSessionUsageItem } from '#shared/types/usage-dashboard'
 import type {
     CodexSessionFileData,
-    CodexSessionMeta,
     CodexTokenUsageEvent,
-    CodexTopModel,
-    CodexTopProject,
     DailyUsageSummaryGroup,
     IConfig,
-    LoadCodexUsageResult,
+    LoadUsageResult,
     ModelPricingResolver,
     PeriodRowGroup,
     RawUsage,
@@ -16,6 +13,9 @@ import type {
     SessionUsageSummary,
     TokenUsageDelta,
     TokenUsageSnapshot,
+    UsageSessionMeta,
+    UsageTopModel,
+    UsageTopProject,
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
@@ -28,7 +28,7 @@ const CODEX_MODEL_ALIASES: Record<string, string> = {
     'gpt-5.3-codex': 'gpt-5.2-codex',
 }
 
-export const loadCodexUsage = async (config: IConfig): Promise<LoadCodexUsageResult> => {
+export const loadCodexUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CODEX_MODEL_ALIASES,
         fallbackModel: LEGACY_FALLBACK_MODEL,
@@ -198,7 +198,7 @@ function loadSessionFile(filePath: string): CodexSessionFileData | null {
     const project = getProjectName(typeof sessionMeta?.cwd === 'string' ? sessionMeta.cwd : undefined)
     const repository = normalizeRepositoryUrl(sessionMeta?.git?.repository_url) || `local/${project}`
 
-    const meta: CodexSessionMeta = {
+    const meta: UsageSessionMeta = {
         sessionId,
         threadName: getThreadName(typeof userMessage === 'string' ? userMessage : '', project),
         project,
@@ -245,7 +245,7 @@ function parseJsonlFile(filePath: string) {
     return lines
 }
 
-function extractTokenUsageEvents(lines: SessionLogLine[], meta: CodexSessionMeta) {
+function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta) {
     const events: CodexTokenUsageEvent[] = []
     let previousTotals: RawUsage | null = null
     let currentModel: string | undefined
@@ -631,7 +631,7 @@ function isOpenRouterFreeModel(model: string) {
     return normalizedModel.startsWith('openrouter/') && normalizedModel.endsWith(':free')
 }
 
-function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
+function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]) {
     const projects = new Map<string, {
         costUSD: number
         repository: string
@@ -672,8 +672,8 @@ function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
 function buildOverviewCards(options: {
     cachedInputTokens: number
     sessionCount: number
-    todayTopModel: CodexTopModel | null
-    todayTopProject: CodexTopProject | null
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
     todayTotalCost: number
     todayTotalTokens: number
 }) {

@@ -1,9 +1,5 @@
-import type { CodexSessionUsageItem } from '#shared/types/codex-dashboard'
+import type { UsageSessionUsageItem } from '#shared/types/usage-dashboard'
 import type {
-    CodexModelUsageSummary,
-    CodexSessionMeta,
-    CodexTopModel,
-    CodexTopProject,
     DailyUsageSummaryGroup,
     GeminiSessionFile,
     GeminiSessionFileData,
@@ -11,12 +7,16 @@ import type {
     GeminiTokenSnapshot,
     GeminiTokenUsageEvent,
     IConfig,
-    LoadCodexUsageResult,
+    LoadUsageResult,
     ModelPricing,
+    ModelUsageSummary,
     PeriodRowGroup,
     SessionAggregateGroup,
     SessionUsageSummary,
     TokenUsageDelta,
+    UsageSessionMeta,
+    UsageTopModel,
+    UsageTopProject,
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, sep } from 'node:path'
@@ -64,7 +64,7 @@ const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     },
 }
 
-export const loadGeminiUsage = async (config: IConfig): Promise<LoadCodexUsageResult> => {
+export const loadGeminiUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: GEMINI_MODEL_ALIASES,
         fallbackModel: GEMINI_FALLBACK_MODEL,
@@ -209,7 +209,7 @@ function loadGeminiSessionFile(filePath: string, resolvePricing: (model: string)
     const repository = getRepositoryName(projectRoot) || `local/${project}`
     const sessionId = data.sessionId?.trim() || basename(filePath, '.json')
 
-    const meta: CodexSessionMeta = {
+    const meta: UsageSessionMeta = {
         durationMinutes: getDurationMinutes(startedAt, lastTimestamp),
         project,
         repository,
@@ -250,7 +250,7 @@ function isGeminiSessionFile(value: unknown): value is GeminiSessionFile {
 
 function extractTokenUsageEvents(
     messages: GeminiSessionMessage[],
-    meta: CodexSessionMeta,
+    meta: UsageSessionMeta,
     resolvePricing: (model: string) => ModelPricing,
 ) {
     const events: GeminiTokenUsageEvent[] = []
@@ -380,7 +380,7 @@ function buildSessionSummaries(sessionFiles: GeminiSessionFileData[]) {
     return summaries
 }
 
-function toGeminiSessionUsageItem(session: SessionUsageSummary): CodexSessionUsageItem {
+function toGeminiSessionUsageItem(session: SessionUsageSummary): UsageSessionUsageItem {
     const startedAtDate = new Date(session.startedAt)
 
     return {
@@ -415,7 +415,7 @@ function buildDailyUsageGroups(events: GeminiTokenUsageEvent[]) {
             ...createAggregateGroup(displayLabel),
             dateKey,
             displayLabel,
-            modelUsage: new Map<string, CodexModelUsageSummary>(),
+            modelUsage: new Map<string, ModelUsageSummary>(),
             sessionIds: new Set<string>(),
         }
 
@@ -549,7 +549,7 @@ function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
     target.totalTokens += usage.totalTokens
 }
 
-function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
+function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]) {
     const projects = new Map<string, {
         costUSD: number
         repository: string
@@ -590,8 +590,8 @@ function buildProjectUsage(sessionUsage: CodexSessionUsageItem[]) {
 function buildOverviewCards(options: {
     cachedInputTokens: number
     sessionCount: number
-    todayTopModel: CodexTopModel | null
-    todayTopProject: CodexTopProject | null
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
     todayTotalCost: number
     todayTotalTokens: number
 }) {

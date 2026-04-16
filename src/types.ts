@@ -1,5 +1,10 @@
-import type { CodexSessionUsageItem, CodexTokenUsageRow } from '#shared/types/codex-dashboard'
-import type { DailyTokenUsage, MonthlyModelUsage, ProjectUsageItem } from '#shared/types/usage-dashboard'
+import type {
+    DailyTokenUsage,
+    MonthlyModelUsage,
+    ProjectUsageItem,
+    TokenUsageRow,
+    UsageSessionUsageItem,
+} from '#shared/types/usage-dashboard'
 
 export interface IOptions {
     '--': any
@@ -23,7 +28,7 @@ export interface IConfig {
 
 export type TrendTone = 'down' | 'neutral' | 'up'
 
-export interface CodexOverviewCard {
+export interface UsageOverviewCard {
     icon: string
     name: string
     trend: string
@@ -31,31 +36,36 @@ export interface CodexOverviewCard {
     value: string
 }
 
-export interface CodexTopProject {
+export interface UsageTopProject {
     project: string
     sessionCount: number
 }
 
-export interface CodexTopModel {
+export interface UsageTopModel {
     model: string
     totalTokens: number
 }
 
-export interface LoadCodexUsageResult {
-    dailyRows: CodexTokenUsageRow[]
+export interface LoadUsageResult {
+    dailyRows: TokenUsageRow[]
     dailyTokenUsage: DailyTokenUsage[]
     monthlyModelUsage: MonthlyModelUsage[]
-    monthlyRows: CodexTokenUsageRow[]
-    overviewCards: CodexOverviewCard[]
+    monthlyRows: TokenUsageRow[]
+    overviewCards: UsageOverviewCard[]
     projectUsage: ProjectUsageItem[]
-    sessionRows: CodexTokenUsageRow[]
-    sessionUsage: CodexSessionUsageItem[]
-    todayTopModel: CodexTopModel | null
-    todayTopProject: CodexTopProject | null
+    sessionRows: TokenUsageRow[]
+    sessionUsage: UsageSessionUsageItem[]
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
     todayTotalCost: number
     todayTotalTokens: number
-    weeklyRows: CodexTokenUsageRow[]
+    weeklyRows: TokenUsageRow[]
 }
+
+export type CodexOverviewCard = UsageOverviewCard
+export type CodexTopProject = UsageTopProject
+export type CodexTopModel = UsageTopModel
+export type LoadCodexUsageResult = LoadUsageResult
 
 export interface TokenUsageSnapshot {
     cache_read_input_tokens?: number
@@ -107,7 +117,7 @@ export interface RawUsage {
     total_tokens: number
 }
 
-export interface CodexSessionMeta {
+export interface UsageSessionMeta {
     durationMinutes: number
     project: string
     repository: string
@@ -115,6 +125,8 @@ export interface CodexSessionMeta {
     startedAt: string
     threadName: string
 }
+
+export type CodexSessionMeta = UsageSessionMeta
 
 export interface CodexTokenUsageEvent extends TokenUsageDelta {
     isFallbackModel: boolean
@@ -127,12 +139,12 @@ export interface CodexTokenUsageEvent extends TokenUsageDelta {
 
 export interface CodexSessionFileData {
     events: CodexTokenUsageEvent[]
-    meta: CodexSessionMeta
+    meta: UsageSessionMeta
 }
 
 export interface GeminiSessionFileData {
     events: GeminiTokenUsageEvent[]
-    meta: CodexSessionMeta
+    meta: UsageSessionMeta
 }
 
 export interface GeminiTokenUsageEvent extends TokenUsageDelta {
@@ -254,7 +266,7 @@ export interface PeriodRowGroup extends SessionAggregateGroup {
     sessionIds: Set<string>
 }
 
-export interface CodexModelUsageSummary {
+export interface ModelUsageSummary {
     cachedInputTokens: number
     inputTokens: number
     isFallback: boolean
@@ -263,10 +275,12 @@ export interface CodexModelUsageSummary {
     totalTokens: number
 }
 
+export type CodexModelUsageSummary = ModelUsageSummary
+
 export interface DailyUsageSummaryGroup extends SessionAggregateGroup {
     dateKey: string
     displayLabel: string
-    modelUsage: Map<string, CodexModelUsageSummary>
+    modelUsage: Map<string, ModelUsageSummary>
     sessionIds: Set<string>
 }
 
