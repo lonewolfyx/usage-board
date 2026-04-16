@@ -14,6 +14,8 @@ export interface IConfig {
     open: boolean
     cwd: string
     home: string
+    claudeCodePath: string
+    claudeCodePaths: string[]
     openCodePath: string | null
     codexPath: string
 }
@@ -180,20 +182,35 @@ export interface SessionUsageSummary {
 
 export interface TokenCostUsage {
     cachedInputTokens: number
+    cacheCreationTokens?: number
     inputTokens: number
     outputTokens: number
 }
 
 export interface ModelPricing {
     cachedInputCostPerMTokens: number
+    cachedInputCostPerMTokensAbove200K?: number
+    cacheCreationInputCostPerMTokens: number
+    cacheCreationInputCostPerMTokensAbove200K?: number
+    fastMultiplier?: number
+    inputCostPerMTokensAbove200K?: number
     inputCostPerMTokens: number
+    outputCostPerMTokensAbove200K?: number
     outputCostPerMTokens: number
 }
 
 export interface LiteLLMModelPricing {
+    cache_creation_input_token_cost?: number
+    cache_creation_input_token_cost_above_200k_tokens?: number
     cache_read_input_token_cost?: number
+    cache_read_input_token_cost_above_200k_tokens?: number
     input_cost_per_token?: number
+    input_cost_per_token_above_200k_tokens?: number
+    output_cost_per_token_above_200k_tokens?: number
     output_cost_per_token?: number
+    provider_specific_entry?: {
+        fast?: number
+    }
 }
 
 export type LiteLLMPricingDataset = Record<string, LiteLLMModelPricing>

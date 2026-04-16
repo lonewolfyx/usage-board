@@ -44,8 +44,14 @@ describe('pricing', () => {
 
         expect(resolvePricing('gpt-5.3-codex')).toEqual({
             cachedInputCostPerMTokens: 0.175,
+            cachedInputCostPerMTokensAbove200K: undefined,
+            cacheCreationInputCostPerMTokens: 1.75,
+            cacheCreationInputCostPerMTokensAbove200K: undefined,
+            fastMultiplier: undefined,
             inputCostPerMTokens: 1.75,
+            inputCostPerMTokensAbove200K: undefined,
             outputCostPerMTokens: 14,
+            outputCostPerMTokensAbove200K: undefined,
         })
     })
 
@@ -56,6 +62,7 @@ describe('pricing', () => {
             outputTokens: 500,
         }, {
             cachedInputCostPerMTokens: 0.125,
+            cacheCreationInputCostPerMTokens: 1.25,
             inputCostPerMTokens: 1.25,
             outputCostPerMTokens: 10,
         })
@@ -64,6 +71,32 @@ describe('pricing', () => {
             (800 / 1_000_000) * 1.25
             + (200 / 1_000_000) * 0.125
             + (500 / 1_000_000) * 10,
+            10,
+        )
+    })
+
+    it('calculates Claude cache creation and tiered costs', () => {
+        const cost = calculateUsageCostUSD({
+            cacheCreationTokens: 300_000,
+            cachedInputTokens: 250_000,
+            inputTokens: 300_000,
+            outputTokens: 250_000,
+        }, {
+            cachedInputCostPerMTokens: 0.3,
+            cachedInputCostPerMTokensAbove200K: 0.6,
+            cacheCreationInputCostPerMTokens: 3.75,
+            cacheCreationInputCostPerMTokensAbove200K: 7.5,
+            inputCostPerMTokens: 3,
+            inputCostPerMTokensAbove200K: 6,
+            outputCostPerMTokens: 15,
+            outputCostPerMTokensAbove200K: 22.5,
+        })
+
+        expect(cost).toBeCloseTo(
+            0.2 * 3 + 0.1 * 6
+            + 0.2 * 15 + 0.05 * 22.5
+            + 0.2 * 3.75 + 0.1 * 7.5
+            + 0.2 * 0.3 + 0.05 * 0.6,
             10,
         )
     })

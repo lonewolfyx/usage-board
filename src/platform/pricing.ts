@@ -16,18 +16,47 @@ const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/l
 const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5': {
         cachedInputCostPerMTokens: 0.125,
+        cacheCreationInputCostPerMTokens: 1.25,
         inputCostPerMTokens: 1.25,
         outputCostPerMTokens: 10,
     },
     'gpt-5.2-codex': {
         cachedInputCostPerMTokens: 0.175,
+        cacheCreationInputCostPerMTokens: 1.75,
         inputCostPerMTokens: 1.75,
         outputCostPerMTokens: 14,
     },
     'gpt-5.4': {
         cachedInputCostPerMTokens: 0.25,
+        cacheCreationInputCostPerMTokens: 2.5,
         inputCostPerMTokens: 2.5,
         outputCostPerMTokens: 15,
+    },
+    'claude-haiku-4-5': {
+        cachedInputCostPerMTokens: 0.1,
+        cacheCreationInputCostPerMTokens: 1.25,
+        inputCostPerMTokens: 1,
+        outputCostPerMTokens: 5,
+    },
+    'claude-opus-4-1': {
+        cachedInputCostPerMTokens: 1.5,
+        cachedInputCostPerMTokensAbove200K: 3,
+        cacheCreationInputCostPerMTokens: 18.75,
+        cacheCreationInputCostPerMTokensAbove200K: 37.5,
+        inputCostPerMTokens: 15,
+        inputCostPerMTokensAbove200K: 30,
+        outputCostPerMTokens: 75,
+        outputCostPerMTokensAbove200K: 112.5,
+    },
+    'claude-sonnet-4-5': {
+        cachedInputCostPerMTokens: 0.3,
+        cachedInputCostPerMTokensAbove200K: 0.6,
+        cacheCreationInputCostPerMTokens: 3.75,
+        cacheCreationInputCostPerMTokensAbove200K: 7.5,
+        inputCostPerMTokens: 3,
+        inputCostPerMTokensAbove200K: 6,
+        outputCostPerMTokens: 15,
+        outputCostPerMTokensAbove200K: 22.5,
     },
 }
 
@@ -137,12 +166,14 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
     }
 }
 
-export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing): number {
-    const inputCost = (Math.max(usage.inputTokens, 0) / MILLION) * pricing.inputCostPerMTokens
-    const cachedCost = (Math.max(usage.cachedInputTokens, 0) / MILLION) * pricing.cachedInputCostPerMTokens
-    const outputCost = (Math.max(usage.outputTokens, 0) / MILLION) * pricing.outputCostPerMTokens
+export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing, options: { speed?: 'fast' | 'standard' } = {}): number {
+    const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? 1) : 1
+    const inputCost = calculateTieredCost(usage.inputTokens, pricing.inputCostPerMTokens, pricing.inputCostPerMTokensAbove200K)
+    const cachedCost = calculateTieredCost(usage.cachedInputTokens, pricing.cachedInputCostPerMTokens, pricing.cachedInputCostPerMTokensAbove200K)
+    const cacheCreationCost = calculateTieredCost(usage.cacheCreationTokens ?? 0, pricing.cacheCreationInputCostPerMTokens, pricing.cacheCreationInputCostPerMTokensAbove200K)
+    const outputCost = calculateTieredCost(usage.outputTokens, pricing.outputCostPerMTokens, pricing.outputCostPerMTokensAbove200K)
 
-    return inputCost + cachedCost + outputCost
+    return (inputCost + cachedCost + cacheCreationCost + outputCost) * multiplier
 }
 
 function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
@@ -150,17 +181,46 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
         'gpt-5': {
             input_cost_per_token: 1.25e-6,
             output_cost_per_token: 1e-5,
+            cache_creation_input_token_cost: 1.25e-6,
             cache_read_input_token_cost: 1.25e-7,
         },
         'gpt-5.2-codex': {
             input_cost_per_token: 1.75e-6,
             output_cost_per_token: 1.4e-5,
+            cache_creation_input_token_cost: 1.75e-6,
             cache_read_input_token_cost: 1.75e-7,
         },
         'gpt-5.4': {
             input_cost_per_token: 2.5e-6,
             output_cost_per_token: 1.5e-5,
+            cache_creation_input_token_cost: 2.5e-6,
             cache_read_input_token_cost: 2.5e-7,
+        },
+        'claude-haiku-4-5': {
+            input_cost_per_token: 1e-6,
+            output_cost_per_token: 5e-6,
+            cache_creation_input_token_cost: 1.25e-6,
+            cache_read_input_token_cost: 1e-7,
+        },
+        'claude-opus-4-1': {
+            input_cost_per_token: 15e-6,
+            output_cost_per_token: 75e-6,
+            cache_creation_input_token_cost: 18.75e-6,
+            cache_read_input_token_cost: 1.5e-6,
+            input_cost_per_token_above_200k_tokens: 30e-6,
+            output_cost_per_token_above_200k_tokens: 112.5e-6,
+            cache_creation_input_token_cost_above_200k_tokens: 37.5e-6,
+            cache_read_input_token_cost_above_200k_tokens: 3e-6,
+        },
+        'claude-sonnet-4-5': {
+            input_cost_per_token: 3e-6,
+            output_cost_per_token: 15e-6,
+            cache_creation_input_token_cost: 3.75e-6,
+            cache_read_input_token_cost: 0.3e-6,
+            input_cost_per_token_above_200k_tokens: 6e-6,
+            output_cost_per_token_above_200k_tokens: 22.5e-6,
+            cache_creation_input_token_cost_above_200k_tokens: 7.5e-6,
+            cache_read_input_token_cost_above_200k_tokens: 0.6e-6,
         },
     }
 }
@@ -232,27 +292,59 @@ function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricin
 function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
     return (pricing.input_cost_per_token ?? 0) > 0
         || (pricing.output_cost_per_token ?? 0) > 0
+        || (pricing.cache_creation_input_token_cost ?? 0) > 0
         || (pricing.cache_read_input_token_cost ?? 0) > 0
 }
 
 function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
     const inputCostPerToken = pricing.input_cost_per_token ?? 0
     const cachedInputCostPerToken = pricing.cache_read_input_token_cost ?? inputCostPerToken
+    const cacheCreationInputCostPerToken = pricing.cache_creation_input_token_cost ?? inputCostPerToken
     const outputCostPerToken = pricing.output_cost_per_token ?? 0
 
     return {
         cachedInputCostPerMTokens: cachedInputCostPerToken * MILLION,
+        cachedInputCostPerMTokensAbove200K: pricing.cache_read_input_token_cost_above_200k_tokens != null
+            ? pricing.cache_read_input_token_cost_above_200k_tokens * MILLION
+            : undefined,
+        cacheCreationInputCostPerMTokens: cacheCreationInputCostPerToken * MILLION,
+        cacheCreationInputCostPerMTokensAbove200K: pricing.cache_creation_input_token_cost_above_200k_tokens != null
+            ? pricing.cache_creation_input_token_cost_above_200k_tokens * MILLION
+            : undefined,
+        fastMultiplier: pricing.provider_specific_entry?.fast,
         inputCostPerMTokens: inputCostPerToken * MILLION,
+        inputCostPerMTokensAbove200K: pricing.input_cost_per_token_above_200k_tokens != null
+            ? pricing.input_cost_per_token_above_200k_tokens * MILLION
+            : undefined,
         outputCostPerMTokens: outputCostPerToken * MILLION,
+        outputCostPerMTokensAbove200K: pricing.output_cost_per_token_above_200k_tokens != null
+            ? pricing.output_cost_per_token_above_200k_tokens * MILLION
+            : undefined,
     }
 }
 
 function createZeroPricing(): ModelPricing {
     return {
         cachedInputCostPerMTokens: 0,
+        cacheCreationInputCostPerMTokens: 0,
         inputCostPerMTokens: 0,
         outputCostPerMTokens: 0,
     }
+}
+
+function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: number, above200KCostPerMTokens?: number) {
+    const safeTokens = Math.max(tokens ?? 0, 0)
+
+    if (safeTokens === 0) {
+        return 0
+    }
+
+    if (safeTokens > 200_000 && above200KCostPerMTokens != null) {
+        return (200_000 / MILLION) * baseCostPerMTokens
+            + ((safeTokens - 200_000) / MILLION) * above200KCostPerMTokens
+    }
+
+    return (safeTokens / MILLION) * baseCostPerMTokens
 }
 
 function uniqueItems(items: string[]) {
