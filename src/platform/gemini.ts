@@ -100,7 +100,7 @@ const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
  * console.log(usage.sessionUsage.length)
  * ```
  */
-export const loadGeminiUsage = async (config: IConfig): Promise<LoadUsageResult> => {
+export async function loadGeminiUsage(config: IConfig): Promise<LoadUsageResult> {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: GEMINI_MODEL_ALIASES,
         fallbackModel: GEMINI_FALLBACK_MODEL,

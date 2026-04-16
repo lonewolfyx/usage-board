@@ -7,7 +7,7 @@ import { WebSocketServer } from 'ws'
 import { resolveTokensConsumption } from '~~/src/data-loader'
 import { resolveWatchedPaths } from '~~/src/paths'
 
-export const createWebSocketServer = async (config: IConfig): Promise<CreateWebSocketServerResult> => {
+export async function createWebSocketServer(config: IConfig): Promise<CreateWebSocketServerResult> {
     const wsPort = await getPort({
         host: config.host,
         port: config.port,

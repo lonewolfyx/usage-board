@@ -8,7 +8,7 @@ import { distDir } from '~~/src/dirs'
 
 type HostServerOptions = IOptions | IConfig
 
-export const createHostServer = (_options: HostServerOptions) => {
+export function createHostServer(_options: HostServerOptions) {
     const app = new H3()
 
     const fileMap = new Map<string, Promise<string | undefined>>()

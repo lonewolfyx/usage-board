@@ -3,7 +3,7 @@ import type { IConfig } from '~~/src/types'
 import { loadClaudeCodeUsage, loadCodexUsage, loadGeminiUsage } from '~~/src/platform'
 import { version } from '../package.json' with { type: 'json' }
 
-export const resolveTokensConsumption = async (config: IConfig): Promise<TokensConsumptionResult> => {
+export async function resolveTokensConsumption(config: IConfig): Promise<TokensConsumptionResult> {
     const claudeCode = await loadClaudeCodeUsage(config)
 
     const codex = await loadCodexUsage(config)

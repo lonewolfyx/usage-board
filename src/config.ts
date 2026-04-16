@@ -7,7 +7,7 @@ import { getClaudeCodePaths, getCodexPath, getGeminiPath, getOpenCodePath } from
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-export const resolveConfig = (options: IOptions): IConfig => {
+export function resolveConfig(options: IOptions): IConfig {
     const claudeCodePaths = getClaudeCodePaths()
 
     return {

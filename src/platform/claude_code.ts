@@ -61,7 +61,7 @@ const CLAUDE_MODEL_ALIASES: Record<string, string> = {
  * console.log(usage.todayTotalCost)
  * ```
  */
-export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadUsageResult> => {
+export async function loadClaudeCodeUsage(config: IConfig): Promise<LoadUsageResult> {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CLAUDE_MODEL_ALIASES,
         fallbackModel: CLAUDE_FALLBACK_MODEL,

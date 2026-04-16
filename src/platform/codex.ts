@@ -62,7 +62,7 @@ const CODEX_MODEL_ALIASES: Record<string, string> = {
  * console.log(usage.todayTotalTokens)
  * ```
  */
-export const loadCodexUsage = async (config: IConfig): Promise<LoadUsageResult> => {
+export async function loadCodexUsage(config: IConfig): Promise<LoadUsageResult> {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CODEX_MODEL_ALIASES,
         fallbackModel: LEGACY_FALLBACK_MODEL,

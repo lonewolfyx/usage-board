@@ -24,7 +24,7 @@ const DEFAULT_CLAUDE_CONFIG_PATH = join(process.env.XDG_CONFIG_HOME?.trim() || j
 
 const CLAUDE_PROJECTS_DIR_NAME = 'projects'
 
-export const getOpenCodePath = (): string | null => {
+export function getOpenCodePath(): string | null {
     // Check environment variable first
     const envPath = process.env[OPENCODE_CONFIG_DIR_ENV]
     if (envPath != null && envPath.trim() !== '') {
@@ -43,12 +43,12 @@ export const getOpenCodePath = (): string | null => {
     return null
 }
 
-export const getCodexPath = (): string => {
+export function getCodexPath(): string {
     const codexHomeEnv = process.env[CODEX_HOME_ENV]?.trim()
     return codexHomeEnv != null && codexHomeEnv !== '' ? resolve(codexHomeEnv) : DEFAULT_CODEX_DIR
 }
 
-export const getClaudeCodePaths = (): string[] => {
+export function getClaudeCodePaths(): string[] {
     const paths: string[] = []
     const normalizedPaths = new Set<string>()
     const envPaths = (process.env[CLAUDE_CONFIG_DIR_ENV] ?? '').trim()
@@ -97,15 +97,15 @@ export const getClaudeCodePaths = (): string[] => {
     )
 }
 
-export const getClaudeCodePath = (): string => {
+export function getClaudeCodePath(): string {
     return getClaudeCodePaths()[0]!
 }
 
-export const getGeminiPath = (): string => {
+export function getGeminiPath(): string {
     return resolve(USER_HOME_DIR, '.gemini')
 }
 
-export const resolveWatchedPaths = (config: IConfig): string[] => {
+export function resolveWatchedPaths(config: IConfig): string[] {
     return [...new Set([
         resolve(config.codexPath, 'sessions'),
         resolve(config.claudeCodePath, 'projects'),
