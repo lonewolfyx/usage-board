@@ -1,5 +1,11 @@
 import type { CodexSessionUsageItem } from '#shared/types/codex-dashboard'
 import type {
+    ClaudeAggregateEvent,
+    ClaudeModelUsageSummary,
+    ClaudeSessionSummary,
+    ClaudeTokenTotals,
+    ClaudeUsageEntry,
+    ClaudeUsageRecord,
     CodexTopModel,
     CodexTopProject,
     DailyUsageSummaryGroup,
@@ -26,71 +32,6 @@ const CLAUDE_MODEL_ALIASES: Record<string, string> = {
     'claude-4-1-opus': 'claude-opus-4-1',
     'claude-4-5-haiku': 'claude-haiku-4-5',
     'claude-4-5-sonnet': 'claude-sonnet-4-5',
-}
-
-interface ClaudeUsageRecord {
-    costUSD?: number
-    cwd?: string
-    message: {
-        content?: Array<{ text?: string }>
-        id?: string
-        model?: string
-        usage: {
-            cache_creation_input_tokens?: number
-            cache_read_input_tokens?: number
-            input_tokens: number
-            output_tokens: number
-            speed?: 'fast' | 'standard'
-        }
-    }
-    requestId?: string
-    sessionId?: string
-    timestamp: string
-    version?: string
-}
-
-interface ClaudeUsageEntry {
-    cacheCreationTokens: number
-    cacheReadTokens: number
-    costUSD: number
-    cwd?: string
-    inputTokens: number
-    model: string
-    outputTokens: number
-    projectPath: string
-    rawModel?: string
-    sessionId: string
-    timestamp: string
-}
-
-interface ClaudeSessionSummary {
-    cacheCreationTokens: number
-    cacheReadTokens: number
-    costUSD: number
-    durationMinutes: number
-    inputTokens: number
-    lastActivity: string
-    models: string[]
-    outputTokens: number
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-    tokenTotal: number
-    topModel: string
-}
-
-interface ClaudeAggregateEvent extends TokenUsageDelta {
-    cacheCreationTokens: number
-    cacheReadTokens: number
-    costUSD: number
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
 }
 
 export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadCodexUsageResult> => {
@@ -427,7 +368,7 @@ function buildClaudeSessionSummaries(entries: ClaudeUsageEntry[]) {
         const sortedEntries = [...sessionEntries].sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
         const firstEntry = sortedEntries[0]!
         const lastEntry = sortedEntries.at(-1)!
-        const usageByModel = new Map<string, TokenUsageDelta & { cacheCreationTokens: number, cacheReadTokens: number, costUSD: number }>()
+        const usageByModel = new Map<string, ClaudeModelUsageSummary>()
         let inputTokens = 0
         let cacheCreationTokens = 0
         let cacheReadTokens = 0
@@ -828,12 +769,7 @@ function getClaudeLookupCandidates(model: string) {
     ]
 }
 
-function getTotalTokens(tokens: {
-    cacheCreationTokens: number
-    cacheReadTokens: number
-    inputTokens: number
-    outputTokens: number
-}) {
+function getTotalTokens(tokens: ClaudeTokenTotals) {
     return tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens
 }
 

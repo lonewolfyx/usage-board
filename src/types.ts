@@ -129,6 +129,72 @@ export interface CodexSessionFileData {
     meta: CodexSessionMeta
 }
 
+export interface ClaudeUsageRecord {
+    costUSD?: number
+    cwd?: string
+    message: {
+        content?: Array<{ text?: string }>
+        id?: string
+        model?: string
+        usage: {
+            cache_creation_input_tokens?: number
+            cache_read_input_tokens?: number
+            input_tokens: number
+            output_tokens: number
+            speed?: 'fast' | 'standard'
+        }
+    }
+    requestId?: string
+    sessionId?: string
+    timestamp: string
+    version?: string
+}
+
+export interface ClaudeTokenTotals {
+    cacheCreationTokens: number
+    cacheReadTokens: number
+    inputTokens: number
+    outputTokens: number
+}
+
+export interface ClaudeUsageEntry extends ClaudeTokenTotals {
+    costUSD: number
+    cwd?: string
+    model: string
+    projectPath: string
+    rawModel?: string
+    sessionId: string
+    timestamp: string
+}
+
+export interface ClaudeSessionSummary extends ClaudeTokenTotals {
+    costUSD: number
+    durationMinutes: number
+    lastActivity: string
+    models: string[]
+    project: string
+    repository: string
+    sessionId: string
+    startedAt: string
+    threadName: string
+    tokenTotal: number
+    topModel: string
+}
+
+export interface ClaudeAggregateEvent extends TokenUsageDelta, ClaudeTokenTotals {
+    costUSD: number
+    isFallbackModel: boolean
+    model: string
+    project: string
+    repository: string
+    sessionId: string
+    timestamp: string
+}
+
+export interface ClaudeModelUsageSummary extends TokenUsageDelta, ClaudeTokenTotals {
+    costUSD: number
+}
+
 export interface SessionAggregateGroup {
     cachedInputTokens: number
     costUSD: number
