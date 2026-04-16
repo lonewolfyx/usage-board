@@ -44,6 +44,7 @@ export interface SessionLogLine {
     type?: string
     payload?: {
         [key: string]: unknown
+        id?: string
         info?: {
             [key: string]: unknown
             last_token_usage?: TokenUsageSnapshot
@@ -62,6 +63,12 @@ export interface SessionLogLine {
             repository_url?: string
         }
     }
+}
+
+export interface CodexSessionIndexLine {
+    id?: string
+    thread_name?: string
+    updated_at?: string
 }
 
 export interface TokenUsageDelta {

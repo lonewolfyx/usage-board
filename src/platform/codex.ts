@@ -6,6 +6,7 @@ import type {
 } from '#shared/types/usage-dashboard'
 import type {
     CodexSessionFileData,
+    CodexSessionIndexLine,
     CodexTokenUsageEvent,
     DailyUsageSummaryGroup,
     IConfig,
@@ -20,7 +21,7 @@ import type {
     UsageSessionMeta,
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
-import { basename } from 'node:path'
+import { basename, join } from 'node:path'
 import { glob } from 'glob'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 
@@ -161,21 +162,46 @@ export const loadCodexUsage = async (config: IConfig): Promise<LoadUsageResult> 
 }
 
 async function loadSessionFiles(config: IConfig) {
-    const sessionsDir = `${config.codexPath}/sessions`
+    const sessionsDir = join(config.codexPath, 'sessions')
 
     if (!existsSync(sessionsDir)) {
         return []
     }
 
+    const sessionIndex = loadSessionIndex(config.codexPath)
     const files = await glob(`**/*.jsonl`, {
         cwd: sessionsDir,
         absolute: true,
     })
 
-    return files.map(loadSessionFile).filter((item): item is CodexSessionFileData => item !== null)
+    return files
+        .map(filePath => loadSessionFile(filePath, sessionIndex))
+        .filter((item): item is CodexSessionFileData => item !== null)
 }
 
-function loadSessionFile(filePath: string): CodexSessionFileData | null {
+function loadSessionIndex(codexPath: string) {
+    const indexPath = join(codexPath, 'session_index.jsonl')
+    const threadNames = new Map<string, string>()
+
+    if (!existsSync(indexPath)) {
+        return threadNames
+    }
+
+    const lines = parseJsonlFile<CodexSessionIndexLine>(indexPath)
+
+    for (const line of lines) {
+        const id = typeof line.id === 'string' ? line.id.trim() : ''
+        const threadName = typeof line.thread_name === 'string' ? line.thread_name.trim() : ''
+
+        if (id && threadName) {
+            threadNames.set(id, threadName)
+        }
+    }
+
+    return threadNames
+}
+
+function loadSessionFile(filePath: string, sessionIndex: Map<string, string>): CodexSessionFileData | null {
     const lines = parseJsonlFile(filePath)
 
     if (lines.length === 0) {
@@ -196,13 +222,14 @@ function loadSessionFile(filePath: string): CodexSessionFileData | null {
     const userMessage = lines.find(line => line.type === 'event_msg' && line.payload?.type === 'user_message')
         ?.payload
         ?.message
-    const sessionId = basename(filePath, '.jsonl')
+    const sessionId = getSessionId(filePath, typeof sessionMeta?.id === 'string' ? sessionMeta.id : undefined)
     const project = getProjectName(typeof sessionMeta?.cwd === 'string' ? sessionMeta.cwd : undefined)
     const repository = normalizeRepositoryUrl(sessionMeta?.git?.repository_url) || `local/${project}`
 
     const meta: UsageSessionMeta = {
         sessionId,
-        threadName: getThreadName(typeof userMessage === 'string' ? userMessage : '', project),
+        threadName: sessionIndex.get(sessionId)
+            ?? getThreadName(typeof userMessage === 'string' ? userMessage : '', project),
         project,
         repository,
         startedAt,
@@ -220,14 +247,14 @@ function loadSessionFile(filePath: string): CodexSessionFileData | null {
     }
 }
 
-function parseJsonlFile(filePath: string) {
+function parseJsonlFile<T = SessionLogLine>(filePath: string) {
     const content = readFileSync(filePath, 'utf8')
 
     if (!content.trim()) {
-        return [] as SessionLogLine[]
+        return [] as T[]
     }
 
-    const lines: SessionLogLine[] = []
+    const lines: T[] = []
 
     for (const rawLine of content.split('\n')) {
         const line = rawLine.trim()
@@ -237,7 +264,7 @@ function parseJsonlFile(filePath: string) {
         }
 
         try {
-            lines.push(JSON.parse(line) as SessionLogLine)
+            lines.push(JSON.parse(line) as T)
         }
         catch {
             continue
@@ -245,6 +272,12 @@ function parseJsonlFile(filePath: string) {
     }
 
     return lines
+}
+
+function getSessionId(filePath: string, sessionMetaId: string | undefined) {
+    const normalizedSessionMetaId = sessionMetaId?.trim()
+
+    return normalizedSessionMetaId || basename(filePath, '.jsonl')
 }
 
 function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta) {
