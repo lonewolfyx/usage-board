@@ -1,4 +1,9 @@
-import type { UsageSessionUsageItem } from '#shared/types/usage-dashboard'
+import type {
+    LoadUsageResult,
+    UsageSessionUsageItem,
+    UsageTopModel,
+    UsageTopProject,
+} from '#shared/types/usage-dashboard'
 import type {
     DailyUsageSummaryGroup,
     GeminiSessionFile,
@@ -7,7 +12,6 @@ import type {
     GeminiTokenSnapshot,
     GeminiTokenUsageEvent,
     IConfig,
-    LoadUsageResult,
     ModelPricing,
     ModelUsageSummary,
     PeriodRowGroup,
@@ -15,8 +19,6 @@ import type {
     SessionUsageSummary,
     TokenUsageDelta,
     UsageSessionMeta,
-    UsageTopModel,
-    UsageTopProject,
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, dirname, sep } from 'node:path'

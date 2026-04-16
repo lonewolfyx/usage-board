@@ -7,6 +7,16 @@ export interface ModelTokenUsage {
     isFallback: boolean
 }
 
+export type TrendTone = 'down' | 'neutral' | 'up'
+
+export interface UsageOverviewCard {
+    icon: string
+    name: string
+    trend: string
+    trendTone: TrendTone
+    value: string
+}
+
 export interface MonthlyModelUsage {
     model: string
     month: string
@@ -75,6 +85,16 @@ export interface UsageSessionUsageItem {
     costUSD: number
 }
 
+export interface UsageTopProject {
+    project: string
+    sessionCount: number
+}
+
+export interface UsageTopModel {
+    model: string
+    totalTokens: number
+}
+
 export interface SessionUsageItem {
     id: string
     project: string
@@ -97,4 +117,26 @@ export interface TokenUsageRow {
     reasoningOutputTokens: number
     totalTokens: number
     costUSD: number
+}
+
+export interface LoadUsageResult {
+    dailyRows: TokenUsageRow[]
+    dailyTokenUsage: DailyTokenUsage[]
+    monthlyModelUsage: MonthlyModelUsage[]
+    monthlyRows: TokenUsageRow[]
+    overviewCards: UsageOverviewCard[]
+    projectUsage: ProjectUsageItem[]
+    sessionRows: TokenUsageRow[]
+    sessionUsage: UsageSessionUsageItem[]
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
+    todayTotalCost: number
+    todayTotalTokens: number
+    weeklyRows: TokenUsageRow[]
+}
+
+export interface TokensConsumptionResult {
+    claudeCode: LoadUsageResult
+    codex: LoadUsageResult
+    gemini: LoadUsageResult
 }

@@ -1,9 +1,16 @@
-import type {
-    DailyTokenUsage,
-    MonthlyModelUsage,
-    ProjectUsageItem,
-    TokenUsageRow,
-    UsageSessionUsageItem,
+export type {
+    LoadUsageResult,
+    TrendTone,
+    UsageOverviewCard,
+    UsageTopModel,
+    UsageTopProject,
+} from '#shared/types/usage-dashboard'
+
+export type {
+    UsageOverviewCard as CodexOverviewCard,
+    UsageTopModel as CodexTopModel,
+    UsageTopProject as CodexTopProject,
+    LoadUsageResult as LoadCodexUsageResult,
 } from '#shared/types/usage-dashboard'
 
 export interface IOptions {
@@ -22,47 +29,6 @@ export interface IConfig extends IOptions {
     codexPath: string
     geminiPath: string
 }
-
-export type TrendTone = 'down' | 'neutral' | 'up'
-
-export interface UsageOverviewCard {
-    icon: string
-    name: string
-    trend: string
-    trendTone: TrendTone
-    value: string
-}
-
-export interface UsageTopProject {
-    project: string
-    sessionCount: number
-}
-
-export interface UsageTopModel {
-    model: string
-    totalTokens: number
-}
-
-export interface LoadUsageResult {
-    dailyRows: TokenUsageRow[]
-    dailyTokenUsage: DailyTokenUsage[]
-    monthlyModelUsage: MonthlyModelUsage[]
-    monthlyRows: TokenUsageRow[]
-    overviewCards: UsageOverviewCard[]
-    projectUsage: ProjectUsageItem[]
-    sessionRows: TokenUsageRow[]
-    sessionUsage: UsageSessionUsageItem[]
-    todayTopModel: UsageTopModel | null
-    todayTopProject: UsageTopProject | null
-    todayTotalCost: number
-    todayTotalTokens: number
-    weeklyRows: TokenUsageRow[]
-}
-
-export type CodexOverviewCard = UsageOverviewCard
-export type CodexTopProject = UsageTopProject
-export type CodexTopModel = UsageTopModel
-export type LoadCodexUsageResult = LoadUsageResult
 
 export interface TokenUsageSnapshot {
     cache_read_input_tokens?: number

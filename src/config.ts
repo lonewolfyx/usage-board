@@ -11,9 +11,7 @@ export const resolveConfig = (options: IOptions): IConfig => {
     const claudeCodePaths = getClaudeCodePaths()
 
     return {
-        host: options.host,
-        port: options.port,
-        open: options.open,
+        ...options,
         cwd: resolve(__dirname, '../'),
         home: homedir(),
         claudeCodePath: claudeCodePaths[0]!,

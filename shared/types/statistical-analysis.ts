@@ -1,6 +1,4 @@
-import type { ProjectUsageItem } from './usage-dashboard'
-
-export type TrendTone = 'down' | 'neutral' | 'up'
+import type { ProjectUsageItem, TrendTone } from './usage-dashboard'
 
 export interface DashboardOverviewCard {
     icon: string
