@@ -41,6 +41,7 @@
         "./shared/**/*.ts",
         "./src/",
         "vitest.config.*",
-        "tsdown.config.*"
+        "tsdown.config.*",
+        "test"
     ]
 }
