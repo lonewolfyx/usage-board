@@ -79,6 +79,23 @@ export interface TokenUsageDelta {
     totalTokens: number
 }
 
+/** Normalized usage event emitted by platform loaders for date, project, model, and session aggregation. */
+export interface UsageAggregateEvent extends TokenUsageDelta {
+    costUSD?: number
+    isFallbackModel: boolean
+    model: string
+    project: string
+    repository: string
+    sessionId: string
+    timestamp: string
+}
+
+/** Optional aggregation behavior, allowing platforms to override cost calculation or filter hidden models. */
+export interface AggregateOptions<TEvent extends UsageAggregateEvent> {
+    getCostUSD?: (event: TEvent) => number
+    includeModel?: (event: TEvent) => boolean
+}
+
 export interface RawUsage {
     cached_input_tokens: number
     input_tokens: number
@@ -98,14 +115,7 @@ export interface UsageSessionMeta {
 
 export type CodexSessionMeta = UsageSessionMeta
 
-export interface CodexTokenUsageEvent extends TokenUsageDelta {
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
-}
+export type CodexTokenUsageEvent = UsageAggregateEvent
 
 export interface CodexSessionFileData {
     events: CodexTokenUsageEvent[]
@@ -117,14 +127,8 @@ export interface GeminiSessionFileData {
     meta: UsageSessionMeta
 }
 
-export interface GeminiTokenUsageEvent extends TokenUsageDelta {
+export interface GeminiTokenUsageEvent extends UsageAggregateEvent {
     costUSD: number
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
     toolTokens: number
 }
 
@@ -191,28 +195,10 @@ export interface ClaudeUsageEntry extends ClaudeTokenTotals {
     timestamp: string
 }
 
-export interface ClaudeSessionSummary extends ClaudeTokenTotals {
-    costUSD: number
-    durationMinutes: number
-    lastActivity: string
-    models: string[]
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-    tokenTotal: number
-    topModel: string
-}
+export type ClaudeSessionSummary = SessionUsageSummaryLike & ClaudeTokenTotals
 
-export interface ClaudeAggregateEvent extends TokenUsageDelta, ClaudeTokenTotals {
+export interface ClaudeAggregateEvent extends UsageAggregateEvent, ClaudeTokenTotals {
     costUSD: number
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
 }
 
 export interface ClaudeModelUsageSummary extends TokenUsageDelta, ClaudeTokenTotals {
@@ -254,8 +240,13 @@ export interface DailyUsageSummaryGroup extends SessionAggregateGroup {
     sessionIds: Set<string>
 }
 
-export interface SessionUsageSummary {
+export interface SessionUsageSummary extends SessionUsageSummaryLike {
     cachedInputTokens: number
+    reasoningOutputTokens: number
+}
+
+/** Minimal shared session summary shape that covers Codex, Gemini, and Claude Code differences. */
+export interface SessionUsageSummaryLike {
     costUSD: number
     durationMinutes: number
     inputTokens: number
@@ -263,13 +254,18 @@ export interface SessionUsageSummary {
     models: string[]
     outputTokens: number
     project: string
-    reasoningOutputTokens: number
     repository: string
     sessionId: string
     startedAt: string
     threadName: string
     tokenTotal: number
     topModel: string
+}
+
+/** Field access options used when converting session summaries into display rows. */
+export interface SessionUsageOptions<TSession extends SessionUsageSummaryLike> {
+    getCachedInputTokens?: (session: TSession) => number
+    getReasoningOutputTokens?: (session: TSession) => number
 }
 
 export interface TokenCostUsage {

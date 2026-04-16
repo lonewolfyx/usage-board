@@ -9,53 +9,17 @@ import type {
     UsageTopProject,
 } from '#shared/types/usage-dashboard'
 import type {
+    AggregateOptions,
     DailyUsageSummaryGroup,
     ModelUsageSummary,
     PeriodRowGroup,
     SessionAggregateGroup,
+    SessionUsageOptions,
+    SessionUsageSummaryLike,
     TokenUsageDelta,
+    UsageAggregateEvent,
 } from '~~/src/types'
 import { readFileSync } from 'node:fs'
-
-/** Normalized usage event emitted by platform loaders for date, project, model, and session aggregation. */
-interface UsageAggregateEvent extends TokenUsageDelta {
-    costUSD?: number
-    isFallbackModel: boolean
-    model: string
-    project: string
-    repository: string
-    sessionId: string
-    timestamp: string
-}
-
-/** Optional aggregation behavior, allowing platforms to override cost calculation or filter hidden models. */
-interface AggregateOptions<TEvent extends UsageAggregateEvent> {
-    getCostUSD?: (event: TEvent) => number
-    includeModel?: (event: TEvent) => boolean
-}
-
-/** Minimal shared session summary shape that covers Codex, Gemini, and Claude Code differences. */
-interface SessionUsageSummaryLike {
-    costUSD: number
-    durationMinutes: number
-    inputTokens: number
-    lastActivity: string
-    models: string[]
-    outputTokens: number
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-    tokenTotal: number
-    topModel: string
-}
-
-/** Field access options used when converting session summaries into display rows. */
-interface SessionUsageOptions<TSession extends SessionUsageSummaryLike> {
-    getCachedInputTokens?: (session: TSession) => number
-    getReasoningOutputTokens?: (session: TSession) => number
-}
 
 /**
  * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
