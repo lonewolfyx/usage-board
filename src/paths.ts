@@ -1,3 +1,4 @@
+import type { IConfig } from '~~/src/types'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isDirectorySync } from 'path-type'
@@ -102,4 +103,13 @@ export const getClaudeCodePath = (): string => {
 
 export const getGeminiPath = (): string => {
     return resolve(USER_HOME_DIR, '.gemini')
+}
+
+export const resolveWatchedPaths = (config: IConfig): string[] => {
+    return [...new Set([
+        resolve(config.codexPath, 'sessions'),
+        resolve(config.claudeCodePath, 'projects'),
+        resolve(config.geminiPath, 'tmp'),
+        ...config.claudeCodePaths.map(p => resolve(p, 'projects')),
+    ])]
 }
