@@ -20,7 +20,7 @@ import type {
 import { existsSync, readFileSync } from 'node:fs'
 import { basename } from 'node:path'
 import { glob } from 'glob'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '../pricing'
+import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 
 const LEGACY_FALLBACK_MODEL = 'gpt-5'
 const CODEX_MODEL_ALIASES: Record<string, string> = {
