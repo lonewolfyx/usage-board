@@ -395,7 +395,7 @@ function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsag
  */
 function convertToDisplayDelta(rawUsage: RawUsage): TokenUsageDelta {
     const cachedInputTokens = Math.min(rawUsage.cached_input_tokens, rawUsage.input_tokens)
-    const inputTokens = Math.max(rawUsage.input_tokens, 0)
+    const inputTokens = Math.max(rawUsage.input_tokens - cachedInputTokens, 0)
     const outputTokens = Math.max(rawUsage.output_tokens, 0)
 
     return {
@@ -517,14 +517,7 @@ function buildSessionSummaries(sessionFiles: CodexSessionFileData[], resolvePric
  * ```
  */
 function calculateUsageCost(model: string, usage: TokenUsageDelta, resolvePricing: ModelPricingResolver) {
-    const cachedInputTokens = Math.min(usage.cachedInputTokens, usage.inputTokens)
-    const billableUsage = {
-        ...usage,
-        cachedInputTokens,
-        inputTokens: Math.max(usage.inputTokens - cachedInputTokens, 0),
-    }
-
-    return calculateUsageCostUSD(billableUsage, resolvePricing(model))
+    return calculateUsageCostUSD(usage, resolvePricing(model))
 }
 
 /**
