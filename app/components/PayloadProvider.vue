@@ -18,7 +18,7 @@ const {
     execute,
     refresh,
     status,
-} = await useFetch<TokensConsumptionResult | null>('/api/payload.json', {
+} = useLazyFetch<TokensConsumptionResult | null>('/api/payload.json', {
     default: () => null,
     key: 'payload',
 })

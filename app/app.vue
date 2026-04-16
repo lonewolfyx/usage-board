@@ -1,9 +1,11 @@
 <template>
     <PayloadProvider>
         <SiteBody>
-            <NuxtLayout>
-                <NuxtPage />
-            </NuxtLayout>
+            <PayloadStatusBoundary>
+                <NuxtLayout>
+                    <NuxtPage />
+                </NuxtLayout>
+            </PayloadStatusBoundary>
         </SiteBody>
     </PayloadProvider>
 </template>
