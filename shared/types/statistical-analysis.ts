@@ -2,6 +2,14 @@ import type { ProjectUsageItem } from './usage-dashboard'
 
 export type TrendTone = 'down' | 'neutral' | 'up'
 
+export interface DashboardOverviewCard {
+    icon: string
+    name: string
+    trend: string
+    trendTone: TrendTone
+    value: string
+}
+
 export interface FeaturedProjectItem extends ProjectUsageItem {
     shortName: string
     trend: string
