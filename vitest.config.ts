@@ -8,6 +8,7 @@ export default defineConfig({
         },
     },
     test: {
+        update: true,
         coverage: {
             provider: 'v8',
             reporter: ['text', 'json', 'html'],
