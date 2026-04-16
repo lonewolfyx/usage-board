@@ -18,6 +18,7 @@ export interface IConfig {
     claudeCodePaths: string[]
     openCodePath: string | null
     codexPath: string
+    geminiPath: string
 }
 
 export type TrendTone = 'down' | 'neutral' | 'up'

@@ -99,3 +99,7 @@ export const getClaudeCodePaths = (): string[] => {
 export const getClaudeCodePath = (): string => {
     return getClaudeCodePaths()[0]!
 }
+
+export const getGeminiPath = (): string => {
+    return resolve(USER_HOME_DIR, '.gemini')
+}
