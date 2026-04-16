@@ -1,18 +1,8 @@
 <template>
-    <div class="grow container mx-auto space-y-8">
-        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            <StatisticalAnalysisTotalCard
-                v-for="card in overviewCards"
-                :key="card.name"
-                :icon="card.icon"
-                :name="card.name"
-                :trend="card.trend"
-                :trend-tone="card.trendTone"
-                :value="card.value"
-            />
-        </div>
+    <DashboardPage>
+        <DashboardOverviewCards :cards="overviewCards" />
 
-        <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+        <DashboardPanelGrid>
             <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
             <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
             <StatisticalAnalysisTimeTrendPanel :items="dailyTokenUsage" class="md:col-span-12" />
@@ -25,8 +15,8 @@
                 class="md:col-span-6"
             />
             <StatisticalAnalysisTokensUsagePanel class="md:col-span-12" />
-        </div>
-    </div>
+        </DashboardPanelGrid>
+    </DashboardPage>
 </template>
 
 <script lang="ts" setup>
@@ -77,7 +67,3 @@ const overviewCards = computed(() => [
     },
 ])
 </script>
-
-<style scoped>
-
-</style>
