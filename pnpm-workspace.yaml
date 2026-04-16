@@ -1,5 +1,9 @@
 allowBuilds:
+  '@parcel/watcher': true
+  esbuild: true
   maplibre-gl: false
+  simple-git-hooks: true
+  unrs-resolver: true
   vue-demi: true
 shellEmulator: true
 trustPolicy: no-downgrade
