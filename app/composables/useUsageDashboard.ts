@@ -1,5 +1,17 @@
+import type {
+    DailyTokenUsage,
+    LoadUsageResult,
+    ModelTokenUsage,
+    MonthlyModelUsage,
+    ProjectUsageItem,
+    RankedUsageItem,
+    UsageSessionUsageItem,
+} from '#shared/types/usage-dashboard'
 import type { ComputedRef } from 'vue'
 import { computed } from 'vue'
+import { usePayloadContext } from '~/composables/usePayloadContext'
+
+const payloadDashboardKeys = ['claudeCode', 'codex', 'gemini'] as const
 
 export function formatCurrency(value: number) {
     return new Intl.NumberFormat('en-US', {
@@ -7,14 +19,14 @@ export function formatCurrency(value: number) {
         currency: 'USD',
         minimumFractionDigits: 2,
         maximumFractionDigits: 2,
-    }).format(value)
+    }).format(normalizeNumber(value))
 }
 
 export function formatCompactNumber(value: number) {
     return new Intl.NumberFormat('en-US', {
         notation: 'compact',
         maximumFractionDigits: 1,
-    }).format(value)
+    }).format(normalizeNumber(value))
 }
 
 export function formatPercent(value: number) {
@@ -22,259 +34,37 @@ export function formatPercent(value: number) {
         style: 'percent',
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
-    }).format(value)
+    }).format(normalizeNumber(value))
 }
 
 export function useUsageDashboard() {
-    const dailyTokenUsage = computed<DailyTokenUsage[]>(() => ([
-        {
-            date: 'Mar 19, 2026',
-            inputTokens: 5274379,
-            cachedInputTokens: 4317312,
-            outputTokens: 33443,
-            reasoningOutputTokens: 9011,
-            totalTokens: 5307822,
-            costUSD: 3.9736405,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 5274379,
-                    cachedInputTokens: 4317312,
-                    outputTokens: 33443,
-                    reasoningOutputTokens: 9011,
-                    totalTokens: 5307822,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Mar 20, 2026',
-            inputTokens: 2972768,
-            cachedInputTokens: 2191872,
-            outputTokens: 30106,
-            reasoningOutputTokens: 3500,
-            totalTokens: 3002874,
-            costUSD: 2.951798,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 2972768,
-                    cachedInputTokens: 2191872,
-                    outputTokens: 30106,
-                    reasoningOutputTokens: 3500,
-                    totalTokens: 3002874,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Mar 27, 2026',
-            inputTokens: 277230,
-            cachedInputTokens: 258816,
-            outputTokens: 7404,
-            reasoningOutputTokens: 5062,
-            totalTokens: 284634,
-            costUSD: 0.18117329999999998,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 277230,
-                    cachedInputTokens: 258816,
-                    outputTokens: 7404,
-                    reasoningOutputTokens: 5062,
-                    totalTokens: 284634,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Mar 28, 2026',
-            inputTokens: 2369917,
-            cachedInputTokens: 1904896,
-            outputTokens: 18591,
-            reasoningOutputTokens: 10599,
-            totalTokens: 2388508,
-            costUSD: 1.40741755,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 2369917,
-                    cachedInputTokens: 1904896,
-                    outputTokens: 18591,
-                    reasoningOutputTokens: 10599,
-                    totalTokens: 2388508,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Mar 30, 2026',
-            inputTokens: 3308750,
-            cachedInputTokens: 3204096,
-            outputTokens: 40618,
-            reasoningOutputTokens: 20878,
-            totalTokens: 3349368,
-            costUSD: 1.3125133,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 3308750,
-                    cachedInputTokens: 3204096,
-                    outputTokens: 40618,
-                    reasoningOutputTokens: 20878,
-                    totalTokens: 3349368,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 01, 2026',
-            inputTokens: 22783796,
-            cachedInputTokens: 21042432,
-            outputTokens: 110037,
-            reasoningOutputTokens: 51391,
-            totalTokens: 22893833,
-            costUSD: 8.2703306,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 22783796,
-                    cachedInputTokens: 21042432,
-                    outputTokens: 110037,
-                    reasoningOutputTokens: 51391,
-                    totalTokens: 22893833,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 02, 2026',
-            inputTokens: 22874109,
-            cachedInputTokens: 21237120,
-            outputTokens: 156231,
-            reasoningOutputTokens: 62813,
-            totalTokens: 23030340,
-            costUSD: 8.76846075,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 22874109,
-                    cachedInputTokens: 21237120,
-                    outputTokens: 156231,
-                    reasoningOutputTokens: 62813,
-                    totalTokens: 23030340,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 03, 2026',
-            inputTokens: 20819675,
-            cachedInputTokens: 19853184,
-            outputTokens: 172877,
-            reasoningOutputTokens: 106205,
-            totalTokens: 20992552,
-            costUSD: 7.5859444499999995,
-            models: {
-                'gpt-5.3-codex': {
-                    inputTokens: 20819675,
-                    cachedInputTokens: 19853184,
-                    outputTokens: 172877,
-                    reasoningOutputTokens: 106205,
-                    totalTokens: 20992552,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 08, 2026',
-            inputTokens: 2730499,
-            cachedInputTokens: 2246400,
-            outputTokens: 29855,
-            reasoningOutputTokens: 16411,
-            totalTokens: 2760354,
-            costUSD: 2.2196724999999997,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 2730499,
-                    cachedInputTokens: 2246400,
-                    outputTokens: 29855,
-                    reasoningOutputTokens: 16411,
-                    totalTokens: 2760354,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 09, 2026',
-            inputTokens: 1919460,
-            cachedInputTokens: 1513472,
-            outputTokens: 37657,
-            reasoningOutputTokens: 15077,
-            totalTokens: 1957117,
-            costUSD: 1.958193,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 1919460,
-                    cachedInputTokens: 1513472,
-                    outputTokens: 37657,
-                    reasoningOutputTokens: 15077,
-                    totalTokens: 1957117,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 10, 2026',
-            inputTokens: 4788095,
-            cachedInputTokens: 4163840,
-            outputTokens: 40936,
-            reasoningOutputTokens: 18162,
-            totalTokens: 4829031,
-            costUSD: 3.2156375,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 4788095,
-                    cachedInputTokens: 4163840,
-                    outputTokens: 40936,
-                    reasoningOutputTokens: 18162,
-                    totalTokens: 4829031,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 13, 2026',
-            inputTokens: 16031,
-            cachedInputTokens: 4480,
-            outputTokens: 196,
-            reasoningOutputTokens: 153,
-            totalTokens: 16227,
-            costUSD: 0.0329375,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 16031,
-                    cachedInputTokens: 4480,
-                    outputTokens: 196,
-                    reasoningOutputTokens: 153,
-                    totalTokens: 16227,
-                    isFallback: false,
-                },
-            },
-        },
-        {
-            date: 'Apr 14, 2026',
-            inputTokens: 441319,
-            cachedInputTokens: 343296,
-            outputTokens: 11906,
-            reasoningOutputTokens: 4338,
-            totalTokens: 453225,
-            costUSD: 0.5094715,
-            models: {
-                'gpt-5.4': {
-                    inputTokens: 441319,
-                    cachedInputTokens: 343296,
-                    outputTokens: 11906,
-                    reasoningOutputTokens: 4338,
-                    totalTokens: 453225,
-                    isFallback: false,
-                },
-            },
-        },
-    ] as DailyTokenUsage[]))
+    const { payload } = usePayloadContext()
+
+    const dashboards = computed<LoadUsageResult[]>(() => {
+        if (!payload.value) {
+            return []
+        }
+
+        return payloadDashboardKeys.map(key => payload.value![key] as LoadUsageResult)
+    })
+
+    const sessionUsage = computed<UsageSessionUsageItem[]>(() => dashboards.value
+        .flatMap((dashboard, dashboardIndex) => dashboard.sessionUsage.map(session => ({
+            ...session,
+            id: `${payloadDashboardKeys[dashboardIndex]}:${session.id}`,
+            sessionId: `${payloadDashboardKeys[dashboardIndex]}:${session.sessionId}`,
+        })))
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
+
+    const dailyTokenUsage = computed<DailyTokenUsage[]>(() => mergeDailyTokenUsage(
+        dashboards.value.flatMap(dashboard => dashboard.dailyTokenUsage),
+    ))
+
+    const monthlyModelUsage = computed<MonthlyModelUsage[]>(() => mergeMonthlyModelUsage(
+        dashboards.value.flatMap(dashboard => dashboard.monthlyModelUsage),
+    ))
+
+    const projectUsage = computed<ProjectUsageItem[]>(() => buildProjectUsage(sessionUsage.value))
 
     const totalCost = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.costUSD, 0))
     const totalTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.totalTokens, 0))
@@ -282,10 +72,11 @@ export function useUsageDashboard() {
     const cachedInputTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.cachedInputTokens, 0))
     const outputTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.outputTokens, 0))
     const reasoningOutputTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.reasoningOutputTokens, 0))
+    const totalSessions = computed(() => sessionUsage.value.length)
 
     const modelUsage: ComputedRef<RankedUsageItem[]> = computed(() => {
         const models = new Map<string, {
-            activeDays: number
+            activeDays: Set<string>
             costUSD: number
             inputTokens: number
             outputTokens: number
@@ -295,14 +86,14 @@ export function useUsageDashboard() {
         for (const day of dailyTokenUsage.value) {
             for (const [name, usage] of Object.entries(day.models)) {
                 const model = models.get(name) ?? {
-                    activeDays: 0,
+                    activeDays: new Set<string>(),
                     costUSD: 0,
                     inputTokens: 0,
                     outputTokens: 0,
                     totalTokens: 0,
                 }
                 const tokenShare = day.totalTokens > 0 ? usage.totalTokens / day.totalTokens : 0
-                model.activeDays += 1
+                model.activeDays.add(day.date)
                 model.costUSD += day.costUSD * tokenShare
                 model.inputTokens += usage.inputTokens
                 model.outputTokens += usage.outputTokens
@@ -315,113 +106,42 @@ export function useUsageDashboard() {
             .map(([name, usage], index) => ({
                 label: name,
                 value: formatCurrency(usage.costUSD),
-                detail: `${formatCompactNumber(usage.totalTokens)} tokens / ${usage.activeDays} active days`,
-                percent: totalCost.value > 0 ? (usage.costUSD / totalCost.value) * 100 : 0,
+                detail: `${formatCompactNumber(usage.totalTokens)} tokens / ${usage.activeDays.size} active days`,
+                percent: safeRatio(usage.costUSD, totalCost.value) * 100,
                 tone: (index === 0 ? 'sky' : 'green') as RankedUsageItem['tone'],
             }))
             .sort((a, b) => b.percent - a.percent)
     })
 
-    const monthlyModelUsage = computed<MonthlyModelUsage[]>(() => [
-        { month: '2025-05', model: 'gpt-5.2', tokenTotal: 8400000 },
-        { month: '2025-05', model: 'gpt-5.4-mini', tokenTotal: 2100000 },
-        { month: '2025-06', model: 'gpt-5.2', tokenTotal: 12800000 },
-        { month: '2025-06', model: 'gpt-5.3-codex', tokenTotal: 3200000 },
-        { month: '2025-07', model: 'gpt-5.2', tokenTotal: 9800000 },
-        { month: '2025-07', model: 'gpt-5.3-codex', tokenTotal: 7600000 },
-        { month: '2025-08', model: 'gpt-5.3-codex', tokenTotal: 16400000 },
-        { month: '2025-08', model: 'gpt-5.4-mini', tokenTotal: 4300000 },
-        { month: '2025-09', model: 'gpt-5.3-codex', tokenTotal: 22100000 },
-        { month: '2025-09', model: 'gpt-5.4-mini', tokenTotal: 6900000 },
-        { month: '2025-10', model: 'gpt-5.3-codex', tokenTotal: 18800000 },
-        { month: '2025-10', model: 'gpt-5.4', tokenTotal: 5300000 },
-        { month: '2025-11', model: 'gpt-5.3-codex', tokenTotal: 29600000 },
-        { month: '2025-11', model: 'gpt-5.4', tokenTotal: 9100000 },
-        { month: '2025-12', model: 'gpt-5.3-codex', tokenTotal: 34700000 },
-        { month: '2025-12', model: 'gpt-5.4', tokenTotal: 14800000 },
-        { month: '2026-01', model: 'gpt-5.4', tokenTotal: 26200000 },
-        { month: '2026-01', model: 'gpt-5.3-codex', tokenTotal: 11800000 },
-        { month: '2026-02', model: 'gpt-5.4', tokenTotal: 31800000 },
-        { month: '2026-02', model: 'gpt-5.3-codex', tokenTotal: 9200000 },
-        { month: '2026-02', model: 'gpt-5.4-mini', tokenTotal: 4100000 },
-        { month: '2026-03', model: 'gpt-5.3-codex', tokenTotal: 59372000 },
-        { month: '2026-03', model: 'gpt-5.4', tokenTotal: 8310000 },
-        { month: '2026-04', model: 'gpt-5.3-codex', tokenTotal: 66916562 },
-        { month: '2026-04', model: 'gpt-5.4', tokenTotal: 10016185 },
-    ])
+    const efficiencyMetrics = computed<RankedUsageItem[]>(() => {
+        const cacheHitRate = safeRatio(cachedInputTokens.value, inputTokens.value)
+        const reasoningShare = safeRatio(reasoningOutputTokens.value, totalTokens.value)
+        const outputShare = safeRatio(outputTokens.value, totalTokens.value)
 
-    const projectUsage = computed<ProjectUsageItem[]>(() => {
-        const projects = [
-            { label: 'web-jetbrains-git', repository: 'lonewolfyx/web-jetbrains-git', sessions: 53, tokenTotal: 52600000, costUSD: 24.6 },
-            { label: 'codex-desktop', repository: 'lonewolfyx/codex-desktop', sessions: 29, tokenTotal: 18400000, costUSD: 8.92 },
-            { label: 'uni-deps-fix', repository: 'lonewolfyx/uni-deps-fix', sessions: 11, tokenTotal: 13300000, costUSD: 6.1 },
-            { label: 'nuxt-dashboard', repository: 'lonewolfyx/nuxt-dashboard', sessions: 16, tokenTotal: 9800000, costUSD: 4.88 },
-            { label: 'sixninenine', repository: 'lonewolfyx/sixninenine', sessions: 12, tokenTotal: 7600000, costUSD: 3.76 },
-            { label: 'x', repository: 'lonewolfyx/x', sessions: 5, tokenTotal: 7400000, costUSD: 3.37 },
-            { label: 'billing-insights', repository: 'lonewolfyx/billing-insights', sessions: 9, tokenTotal: 6100000, costUSD: 2.84 },
-            { label: 'dnmp', repository: 'lonewolfyx/dnmp', sessions: 3, tokenTotal: 4700000, costUSD: 2.09 },
-            { label: 'design-system', repository: 'lonewolfyx/design-system', sessions: 7, tokenTotal: 3900000, costUSD: 1.76 },
-            { label: 'codex-register', repository: 'lonewolfyx/codex-register', sessions: 4, tokenTotal: 3300000, costUSD: 1.31 },
-            { label: 'talks', repository: 'lonewolfyx/talks', sessions: 2, tokenTotal: 1400000, costUSD: 0.64 },
-            { label: 'usage-board', repository: 'lonewolfyx/usage-board', sessions: 1, tokenTotal: 453225, costUSD: 0.51 },
+        return [
+            {
+                label: 'Cache Hit Rate',
+                value: formatPercent(cacheHitRate),
+                detail: `${formatCompactNumber(cachedInputTokens.value)} cached input tokens`,
+                percent: cacheHitRate * 100,
+                tone: 'green',
+            },
+            {
+                label: 'Reasoning Token Share',
+                value: formatPercent(reasoningShare),
+                detail: `${formatCompactNumber(reasoningOutputTokens.value)} reasoning output tokens`,
+                percent: reasoningShare * 100,
+                tone: 'amber',
+            },
+            {
+                label: 'Output Token Share',
+                value: formatPercent(outputShare),
+                detail: `${formatCompactNumber(outputTokens.value)} output tokens`,
+                percent: outputShare * 100,
+                tone: 'sky',
+            },
         ]
-        const maxCost = Math.max(...projects.map(project => project.costUSD))
-
-        return projects
-            .sort((a, b) => b.costUSD - a.costUSD)
-            .map(project => ({
-                ...project,
-                value: formatCurrency(project.costUSD),
-                detail: `${project.sessions} sessions / ${formatCompactNumber(project.tokenTotal)} tokens`,
-                percent: maxCost > 0 ? (project.costUSD / maxCost) * 100 : 0,
-                tone: 'amber' as const,
-            }))
     })
-
-    const sessionUsage = computed<SessionUsageItem[]>(() => [
-        { id: '019d4eac', project: 'web-jetbrains-git', model: 'gpt-5.3-codex', duration: '1h 42m', tokenTotal: 23030340, costUSD: 8.77 },
-        { id: '019d4cf1', project: 'web-jetbrains-git', model: 'gpt-5.3-codex', duration: '1h 08m', tokenTotal: 22893833, costUSD: 8.27 },
-        { id: '019d495e', project: 'web-jetbrains-git', model: 'gpt-5.3-codex', duration: '58m', tokenTotal: 20992552, costUSD: 7.59 },
-        { id: '019d69ab', project: 'uni-deps-fix', model: 'gpt-5.4', duration: '44m', tokenTotal: 9100000, costUSD: 4.1 },
-        { id: '019d6883', project: 'uni-deps-fix', model: 'gpt-5.4', duration: '27m', tokenTotal: 4200000, costUSD: 2 },
-        { id: '019d7605', project: 'sixninenine', model: 'gpt-5.4', duration: '39m', tokenTotal: 4829031, costUSD: 3.22 },
-        { id: '019d720d', project: 'sixninenine', model: 'gpt-5.4', duration: '21m', tokenTotal: 2770000, costUSD: 0.54 },
-        { id: '019d701c', project: 'x', model: 'gpt-5.3-codex', duration: '36m', tokenTotal: 5600000, costUSD: 2.42 },
-        { id: '019d6f91', project: 'x', model: 'gpt-5.4', duration: '18m', tokenTotal: 1800000, costUSD: 0.95 },
-        { id: '019d6b42', project: 'dnmp', model: 'gpt-5.3-codex', duration: '24m', tokenTotal: 3400000, costUSD: 1.48 },
-        { id: '019d6a11', project: 'dnmp', model: 'gpt-5.4', duration: '13m', tokenTotal: 1300000, costUSD: 0.61 },
-        { id: '019d668f', project: 'codex-register', model: 'gpt-5.4', duration: '19m', tokenTotal: 2100000, costUSD: 0.84 },
-        { id: '019d64a3', project: 'codex-register', model: 'gpt-5.3-codex', duration: '15m', tokenTotal: 1200000, costUSD: 0.47 },
-        { id: '019d5ffd', project: 'usage-board', model: 'gpt-5.4', duration: '11m', tokenTotal: 453225, costUSD: 0.51 },
-        { id: '019d5d8e', project: 'talks', model: 'gpt-5.4', duration: '12m', tokenTotal: 900000, costUSD: 0.39 },
-        { id: '019d5b72', project: 'talks', model: 'gpt-5.3-codex', duration: '9m', tokenTotal: 500000, costUSD: 0.25 },
-    ])
-
-    const totalSessions = computed(() => sessionUsage.value.length)
-
-    const efficiencyMetrics = computed<RankedUsageItem[]>(() => [
-        {
-            label: 'Cache Hit Rate',
-            value: formatPercent(cachedInputTokens.value / inputTokens.value),
-            detail: `${formatCompactNumber(cachedInputTokens.value)} cached input tokens`,
-            percent: (cachedInputTokens.value / inputTokens.value) * 100,
-            tone: 'green',
-        },
-        {
-            label: 'Reasoning Token Share',
-            value: formatPercent(reasoningOutputTokens.value / totalTokens.value),
-            detail: `${formatCompactNumber(reasoningOutputTokens.value)} reasoning output tokens`,
-            percent: (reasoningOutputTokens.value / totalTokens.value) * 100,
-            tone: 'amber',
-        },
-        {
-            label: 'Output Token Share',
-            value: formatPercent(outputTokens.value / totalTokens.value),
-            detail: `${formatCompactNumber(outputTokens.value)} output tokens`,
-            percent: (outputTokens.value / totalTokens.value) * 100,
-            tone: 'sky',
-        },
-    ])
 
     return {
         cachedInputTokens,
@@ -438,4 +158,180 @@ export function useUsageDashboard() {
         totalSessions,
         totalTokens,
     }
+}
+
+function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
+    const groups = new Map<string, {
+        cachedInputTokens: number
+        costUSD: number
+        date: string
+        inputTokens: number
+        models: Map<string, ModelTokenUsage>
+        outputTokens: number
+        reasoningOutputTokens: number
+        totalTokens: number
+    }>()
+
+    for (const item of items) {
+        const dateKey = getDateKeyFromLabel(item.date)
+        const group = groups.get(dateKey) ?? {
+            cachedInputTokens: 0,
+            costUSD: 0,
+            date: formatDateLabelFromDateKey(dateKey, item.date),
+            inputTokens: 0,
+            models: new Map<string, ModelTokenUsage>(),
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+            totalTokens: 0,
+        }
+
+        group.cachedInputTokens += item.cachedInputTokens
+        group.costUSD += item.costUSD
+        group.inputTokens += item.inputTokens
+        group.outputTokens += item.outputTokens
+        group.reasoningOutputTokens += item.reasoningOutputTokens
+        group.totalTokens += item.totalTokens
+
+        for (const [modelName, usage] of Object.entries(item.models)) {
+            const model = group.models.get(modelName) ?? createEmptyModelUsage()
+            model.cachedInputTokens += usage.cachedInputTokens
+            model.inputTokens += usage.inputTokens
+            model.isFallback = model.isFallback || usage.isFallback
+            model.outputTokens += usage.outputTokens
+            model.reasoningOutputTokens += usage.reasoningOutputTokens
+            model.totalTokens += usage.totalTokens
+            group.models.set(modelName, model)
+        }
+
+        groups.set(dateKey, group)
+    }
+
+    return Array.from(groups.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([, group]) => ({
+            cachedInputTokens: group.cachedInputTokens,
+            costUSD: roundCurrency(group.costUSD),
+            date: group.date,
+            inputTokens: group.inputTokens,
+            models: Object.fromEntries(group.models.entries()),
+            outputTokens: group.outputTokens,
+            reasoningOutputTokens: group.reasoningOutputTokens,
+            totalTokens: group.totalTokens,
+        }))
+}
+
+function mergeMonthlyModelUsage(items: MonthlyModelUsage[]) {
+    const groups = new Map<string, MonthlyModelUsage>()
+
+    for (const item of items) {
+        const key = `${item.month}__${item.model}`
+        const group = groups.get(key) ?? {
+            model: item.model,
+            month: item.month,
+            tokenTotal: 0,
+        }
+
+        group.tokenTotal += item.tokenTotal
+        groups.set(key, group)
+    }
+
+    return Array.from(groups.values())
+        .sort((a, b) => a.month.localeCompare(b.month) || a.model.localeCompare(b.model))
+}
+
+function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]) {
+    const projects = new Map<string, {
+        costUSD: number
+        repository: string
+        sessions: number
+        tokenTotal: number
+    }>()
+
+    for (const session of sessionUsage) {
+        const project = projects.get(session.project) ?? {
+            costUSD: 0,
+            repository: session.repository,
+            sessions: 0,
+            tokenTotal: 0,
+        }
+
+        project.costUSD += session.costUSD
+        project.sessions += 1
+        project.tokenTotal += session.tokenTotal
+        projects.set(session.project, project)
+    }
+
+    const maxCost = Math.max(...Array.from(projects.values()).map(project => project.costUSD), 0)
+
+    return Array.from(projects.entries())
+        .map(([label, project]) => ({
+            costUSD: project.costUSD,
+            detail: `${project.sessions} sessions / ${formatCompactNumber(project.tokenTotal)} tokens`,
+            label,
+            percent: maxCost > 0 ? (project.costUSD / maxCost) * 100 : 0,
+            repository: project.repository,
+            sessions: project.sessions,
+            tokenTotal: project.tokenTotal,
+            tone: 'amber' as const,
+            value: formatCurrency(project.costUSD),
+        }))
+        .sort((a, b) => b.costUSD - a.costUSD)
+}
+
+function createEmptyModelUsage(): ModelTokenUsage {
+    return {
+        cachedInputTokens: 0,
+        inputTokens: 0,
+        isFallback: false,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        totalTokens: 0,
+    }
+}
+
+function getDateKeyFromLabel(label: string) {
+    const date = new Date(label)
+
+    if (Number.isNaN(date.getTime())) {
+        return label
+    }
+
+    return getDateKey(date)
+}
+
+function getDateKey(date: Date) {
+    const year = date.getFullYear()
+    const month = `${date.getMonth() + 1}`.padStart(2, '0')
+    const day = `${date.getDate()}`.padStart(2, '0')
+
+    return `${year}-${month}-${day}`
+}
+
+function formatDateLabelFromDateKey(dateKey: string, fallback: string) {
+    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
+
+    if (!year || !month || !day) {
+        return fallback
+    }
+
+    const date = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1))
+
+    return new Intl.DateTimeFormat('en-US', {
+        day: '2-digit',
+        month: 'short',
+        timeZone: 'UTC',
+        year: 'numeric',
+    }).format(date)
+}
+
+function safeRatio(numerator: number, denominator: number) {
+    return denominator > 0 ? numerator / denominator : 0
+}
+
+function normalizeNumber(value: number) {
+    return Number.isFinite(value) ? value : 0
+}
+
+function roundCurrency(value: number) {
+    return Math.round(value * 1_000_000) / 1_000_000
 }
