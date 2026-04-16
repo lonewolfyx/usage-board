@@ -32,7 +32,7 @@ export const createWebSocketServer = async (config: IConfig): Promise<CreateWebS
     })
 
     watcher.on('change', (event, path) => {
-        console.log('Config change detected', path)
+        console.log('Config change detected')
         wsClients.forEach((ws) => {
             ws.send(JSON.stringify({
                 type: 'config-change',
