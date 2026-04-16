@@ -47,6 +47,15 @@ export default defineNuxtConfig({
         plugins: [
             tailwindcss(),
         ],
+        optimizeDeps: {
+            include: [
+                '@unovis/vue',
+                '@lonewolfyx/utils',
+                'reka-ui',
+                'clsx',
+                'tailwind-merge',
+            ],
+        },
     },
 
     eslint: {
