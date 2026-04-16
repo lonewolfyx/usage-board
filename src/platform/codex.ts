@@ -44,12 +44,24 @@ import {
     toUsageSessionUsageItem,
 } from '~~/src/platform/utils'
 
+/** Display and pricing fallback model used when Codex logs do not include a model field. */
 const LEGACY_FALLBACK_MODEL = 'gpt-5'
+
+/** Maps Codex-specific model names to LiteLLM or local pricing table names. */
 const CODEX_MODEL_ALIASES: Record<string, string> = {
     'gpt-5-codex': 'gpt-5',
     'gpt-5.3-codex': 'gpt-5.2-codex',
 }
 
+/**
+ * Loads local Codex session logs and converts them into dashboard usage data.
+ *
+ * @example
+ * ```ts
+ * const usage = await loadCodexUsage(config)
+ * console.log(usage.todayTotalTokens)
+ * ```
+ */
 export const loadCodexUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CODEX_MODEL_ALIASES,
@@ -108,6 +120,14 @@ export const loadCodexUsage = async (config: IConfig): Promise<LoadUsageResult> 
     }
 }
 
+/**
+ * Finds and parses all JSONL session files under the Codex sessions directory.
+ *
+ * @example
+ * ```ts
+ * const files = await loadSessionFiles(config)
+ * ```
+ */
 async function loadSessionFiles(config: IConfig) {
     const sessionsDir = join(config.codexPath, 'sessions')
 
@@ -126,6 +146,14 @@ async function loadSessionFiles(config: IConfig) {
         .filter((item): item is CodexSessionFileData => item !== null)
 }
 
+/**
+ * Reads Codex session_index.jsonl and maps session IDs to thread names.
+ *
+ * @example
+ * ```ts
+ * const names = loadSessionIndex('/Users/me/.codex')
+ * ```
+ */
 function loadSessionIndex(codexPath: string) {
     const indexPath = join(codexPath, 'session_index.jsonl')
     const threadNames = new Map<string, string>()
@@ -148,6 +176,14 @@ function loadSessionIndex(codexPath: string) {
     return threadNames
 }
 
+/**
+ * Parses a single Codex session file and extracts session metadata plus token usage events.
+ *
+ * @example
+ * ```ts
+ * const session = loadSessionFile('/tmp/session.jsonl', new Map())
+ * ```
+ */
 function loadSessionFile(filePath: string, sessionIndex: Map<string, string>): CodexSessionFileData | null {
     const lines = parseJsonlFile<SessionLogLine>(filePath)
 
@@ -194,15 +230,34 @@ function loadSessionFile(filePath: string, sessionIndex: Map<string, string>): C
     }
 }
 
+/**
+ * Prefers the session ID stored in the log and falls back to the file name when missing.
+ *
+ * @example
+ * ```ts
+ * getSessionId('/tmp/abc.jsonl', undefined)
+ * // 'abc'
+ * ```
+ */
 function getSessionId(filePath: string, sessionMetaId: string | undefined) {
     const normalizedSessionMetaId = sessionMetaId?.trim()
 
     return normalizedSessionMetaId || basename(filePath, '.jsonl')
 }
 
+/**
+ * Extracts valid token_count events from Codex log lines and fills in model, project, and repository fields.
+ *
+ * @example
+ * ```ts
+ * const events = extractTokenUsageEvents(lines, meta)
+ * ```
+ */
 function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta) {
     const events: CodexTokenUsageEvent[] = []
+    // Codex sometimes only reports total_token_usage, so keep the previous total to calculate deltas.
     let previousTotals: RawUsage | null = null
+    // token_count events can omit model fields; the latest turn_context model is used as context.
     let currentModel: string | undefined
     let currentModelIsFallback = false
 
@@ -284,6 +339,14 @@ function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta
     return events
 }
 
+/**
+ * Normalizes a raw Codex token snapshot into a complete RawUsage shape.
+ *
+ * @example
+ * ```ts
+ * const rawUsage = normalizeRawUsage({ input_tokens: 100, output_tokens: 20 })
+ * ```
+ */
 function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined): RawUsage | null {
     if (!usage) {
         return null
@@ -304,6 +367,14 @@ function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined): RawUsa
     }
 }
 
+/**
+ * Subtracts the previous cumulative usage from the current cumulative usage to produce a delta.
+ *
+ * @example
+ * ```ts
+ * subtractRawUsage(currentUsage, previousUsage)
+ * ```
+ */
 function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsage {
     return {
         input_tokens: Math.max(current.input_tokens - (previous?.input_tokens ?? 0), 0),
@@ -314,6 +385,14 @@ function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsag
     }
 }
 
+/**
+ * Converts a raw Codex delta into the dashboard's normalized token fields.
+ *
+ * @example
+ * ```ts
+ * const delta = convertToDisplayDelta(rawUsage)
+ * ```
+ */
 function convertToDisplayDelta(rawUsage: RawUsage): TokenUsageDelta {
     const cachedInputTokens = Math.min(rawUsage.cached_input_tokens, rawUsage.input_tokens)
     const inputTokens = Math.max(rawUsage.input_tokens - cachedInputTokens, 0)
@@ -328,6 +407,15 @@ function convertToDisplayDelta(rawUsage: RawUsage): TokenUsageDelta {
     }
 }
 
+/**
+ * Extracts a model name from several possible payload locations.
+ *
+ * @example
+ * ```ts
+ * extractModel({ info: { model: 'gpt-5-codex' } })
+ * // 'gpt-5-codex'
+ * ```
+ */
 function extractModel(value: unknown): string | undefined {
     if (!value || typeof value !== 'object') {
         return undefined
@@ -352,6 +440,14 @@ function extractModel(value: unknown): string | undefined {
     return undefined
 }
 
+/**
+ * Aggregates Codex session files into session-level summaries and totals cost by model.
+ *
+ * @example
+ * ```ts
+ * const summaries = buildSessionSummaries(sessionFiles, resolvePricing)
+ * ```
+ */
 function buildSessionSummaries(sessionFiles: CodexSessionFileData[], resolvePricing: ModelPricingResolver) {
     const summaries: SessionUsageSummary[] = []
 
@@ -412,10 +508,27 @@ function buildSessionSummaries(sessionFiles: CodexSessionFileData[], resolvePric
     return summaries
 }
 
+/**
+ * Resolves model pricing and calculates the USD cost for a Codex usage slice.
+ *
+ * @example
+ * ```ts
+ * const costUSD = calculateUsageCost('gpt-5', usage, resolvePricing)
+ * ```
+ */
 function calculateUsageCost(model: string, usage: TokenUsageDelta, resolvePricing: ModelPricingResolver) {
     return calculateUsageCostUSD(usage, resolvePricing(model))
 }
 
+/**
+ * Checks whether an OpenRouter model name represents a free model.
+ *
+ * @example
+ * ```ts
+ * isOpenRouterFreeModel('openrouter/qwen/qwen3-coder:free')
+ * // true
+ * ```
+ */
 function isOpenRouterFreeModel(model: string) {
     const normalizedModel = model.trim().toLowerCase()
 

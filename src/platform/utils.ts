@@ -17,6 +17,7 @@ import type {
 } from '~~/src/types'
 import { readFileSync } from 'node:fs'
 
+/** Normalized usage event emitted by platform loaders for date, project, model, and session aggregation. */
 interface UsageAggregateEvent extends TokenUsageDelta {
     costUSD?: number
     isFallbackModel: boolean
@@ -27,11 +28,13 @@ interface UsageAggregateEvent extends TokenUsageDelta {
     timestamp: string
 }
 
+/** Optional aggregation behavior, allowing platforms to override cost calculation or filter hidden models. */
 interface AggregateOptions<TEvent extends UsageAggregateEvent> {
     getCostUSD?: (event: TEvent) => number
     includeModel?: (event: TEvent) => boolean
 }
 
+/** Minimal shared session summary shape that covers Codex, Gemini, and Claude Code differences. */
 interface SessionUsageSummaryLike {
     costUSD: number
     durationMinutes: number
@@ -48,11 +51,20 @@ interface SessionUsageSummaryLike {
     topModel: string
 }
 
+/** Field access options used when converting session summaries into display rows. */
 interface SessionUsageOptions<TSession extends SessionUsageSummaryLike> {
     getCachedInputTokens?: (session: TSession) => number
     getReasoningOutputTokens?: (session: TSession) => number
 }
 
+/**
+ * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
+ *
+ * @example
+ * ```ts
+ * const lines = parseJsonlFile<SessionLogLine>('/path/to/session.jsonl')
+ * ```
+ */
 export function parseJsonlFile<T = unknown>(filePath: string) {
     const content = readFileSync(filePath, 'utf8')
 
@@ -80,6 +92,14 @@ export function parseJsonlFile<T = unknown>(filePath: string) {
     return lines
 }
 
+/**
+ * Reads a JSON file and returns null when parsing fails.
+ *
+ * @example
+ * ```ts
+ * const data = parseJsonFile('/path/to/session.json')
+ * ```
+ */
 export function parseJsonFile(filePath: string) {
     try {
         return JSON.parse(readFileSync(filePath, 'utf8')) as unknown
@@ -89,6 +109,15 @@ export function parseJsonFile(filePath: string) {
     }
 }
 
+/**
+ * Groups usage events by calendar day and totals tokens, cost, projects, models, and sessions.
+ *
+ * @example
+ * ```ts
+ * const dailyGroups = buildDailyUsageGroups(events)
+ * const today = dailyGroups.get(getDateKey(new Date()))
+ * ```
+ */
 export function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: AggregateOptions<TEvent> = {},
@@ -127,6 +156,14 @@ export function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
     return groups
 }
 
+/**
+ * Converts daily aggregate groups into daily token data for line or stacked charts.
+ *
+ * @example
+ * ```ts
+ * const chartRows = buildDailyTokenUsage(dailyGroups)
+ * ```
+ */
 export function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryGroup>): DailyTokenUsage[] {
     return Array.from(dailyGroups.values())
         .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
@@ -149,6 +186,14 @@ export function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryG
         }))
 }
 
+/**
+ * Converts daily aggregate groups into table rows sorted by date descending.
+ *
+ * @example
+ * ```ts
+ * const rows = buildDailyRows(dailyGroups)
+ * ```
+ */
 export function buildDailyRows(dailyGroups: Map<string, DailyUsageSummaryGroup>): TokenUsageRow[] {
     return Array.from(dailyGroups.values())
         .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
@@ -168,6 +213,15 @@ export function buildDailyRows(dailyGroups: Map<string, DailyUsageSummaryGroup>)
         }))
 }
 
+/**
+ * Aggregates events by week or month into shared token table rows.
+ *
+ * @example
+ * ```ts
+ * const weeklyRows = buildPeriodRows(events, 'week')
+ * const monthlyRows = buildPeriodRows(events, 'month')
+ * ```
+ */
 export function buildPeriodRows<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     periodType: 'month' | 'week',
@@ -211,6 +265,14 @@ export function buildPeriodRows<TEvent extends UsageAggregateEvent>(
         }))
 }
 
+/**
+ * Totals tokens by model for each month for model trend charts.
+ *
+ * @example
+ * ```ts
+ * const monthlyModelUsage = buildMonthlyModelUsage(events)
+ * ```
+ */
 export function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: Pick<AggregateOptions<TEvent>, 'includeModel'> = {},
@@ -246,6 +308,14 @@ export function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
         .sort((a, b) => a.month.localeCompare(b.month) || a.model.localeCompare(b.model))
 }
 
+/**
+ * Converts session summaries into session-level token table rows.
+ *
+ * @example
+ * ```ts
+ * const sessionRows = buildSessionRows(sessionSummaries)
+ * ```
+ */
 export function buildSessionRows<TSession extends SessionUsageSummaryLike>(
     sessions: TSession[],
     options: SessionUsageOptions<TSession> = {},
@@ -266,6 +336,14 @@ export function buildSessionRows<TSession extends SessionUsageSummaryLike>(
     }))
 }
 
+/**
+ * Converts a session summary into a dashboard session list item.
+ *
+ * @example
+ * ```ts
+ * const item = toUsageSessionUsageItem(sessionSummary)
+ * ```
+ */
 export function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
     session: TSession,
     options: SessionUsageOptions<TSession> = {},
@@ -294,6 +372,14 @@ export function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike
     }
 }
 
+/**
+ * Summarizes session list items by project to build project ranking data.
+ *
+ * @example
+ * ```ts
+ * const projectUsage = buildProjectUsage(sessionUsage)
+ * ```
+ */
 export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): ProjectUsageItem[] {
     const projects = new Map<string, {
         costUSD: number
@@ -332,6 +418,21 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
         .sort((a, b) => b.costUSD - a.costUSD)
 }
 
+/**
+ * Builds overview card data for the dashboard home view.
+ *
+ * @example
+ * ```ts
+ * const cards = buildOverviewCards({
+ *     cachedInputTokens: 100,
+ *     sessionCount: 2,
+ *     todayTopModel: null,
+ *     todayTopProject: null,
+ *     todayTotalCost: 0.01,
+ *     todayTotalTokens: 1_000,
+ * })
+ * ```
+ */
 export function buildOverviewCards(options: {
     cachedInputTokens: number
     sessionCount: number
@@ -372,6 +473,14 @@ export function buildOverviewCards(options: {
     ]
 }
 
+/**
+ * Gets the active "today" date key, falling back to the latest date with data when real today is empty.
+ *
+ * @example
+ * ```ts
+ * const activeDateKey = getActiveDateKey(dailyGroups)
+ * ```
+ */
 export function getActiveDateKey(dailyGroups: Map<string, DailyUsageSummaryGroup>) {
     const todayDateKey = getDateKey(new Date())
 
@@ -382,6 +491,14 @@ export function getActiveDateKey(dailyGroups: Map<string, DailyUsageSummaryGroup
     return Array.from(dailyGroups.keys()).sort((a, b) => b.localeCompare(a))[0] ?? todayDateKey
 }
 
+/**
+ * Finds the project with the highest session count in a set of events.
+ *
+ * @example
+ * ```ts
+ * const topProject = getTopProjectForDate(todayEvents)
+ * ```
+ */
 export function getTopProjectForDate<TEvent extends UsageAggregateEvent>(events: TEvent[]): UsageTopProject | null {
     const projects = new Map<string, Set<string>>()
 
@@ -398,6 +515,14 @@ export function getTopProjectForDate<TEvent extends UsageAggregateEvent>(events:
     return topProject ?? null
 }
 
+/**
+ * Finds the model with the highest token total in a set of events.
+ *
+ * @example
+ * ```ts
+ * const topModel = getTopModelForDate(todayEvents)
+ * ```
+ */
 export function getTopModelForDate<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: Pick<AggregateOptions<TEvent>, 'includeModel'> = {},
@@ -422,6 +547,14 @@ export function getTopModelForDate<TEvent extends UsageAggregateEvent>(
         : null
 }
 
+/**
+ * Creates an empty aggregate group for accumulating tokens, projects, models, and sessions.
+ *
+ * @example
+ * ```ts
+ * const group = createAggregateGroup('Apr 16, 2026')
+ * ```
+ */
 export function createAggregateGroup(label: string): SessionAggregateGroup {
     return {
         cachedInputTokens: 0,
@@ -437,6 +570,14 @@ export function createAggregateGroup(label: string): SessionAggregateGroup {
     }
 }
 
+/**
+ * Creates a usage object where every token field starts at zero.
+ *
+ * @example
+ * ```ts
+ * const usage = createEmptyUsage()
+ * ```
+ */
 export function createEmptyUsage(): TokenUsageDelta {
     return {
         cachedInputTokens: 0,
@@ -447,6 +588,15 @@ export function createEmptyUsage(): TokenUsageDelta {
     }
 }
 
+/**
+ * Adds one usage object into a target usage object.
+ *
+ * @example
+ * ```ts
+ * const total = createEmptyUsage()
+ * addUsage(total, event)
+ * ```
+ */
 export function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
     target.inputTokens += usage.inputTokens
     target.cachedInputTokens += usage.cachedInputTokens
@@ -455,6 +605,15 @@ export function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
     target.totalTokens += usage.totalTokens
 }
 
+/**
+ * Checks whether every usage field is zero.
+ *
+ * @example
+ * ```ts
+ * isZeroUsage(createEmptyUsage())
+ * // true
+ * ```
+ */
 export function isZeroUsage(usage: TokenUsageDelta) {
     return usage.inputTokens === 0
         && usage.cachedInputTokens === 0
@@ -463,6 +622,15 @@ export function isZeroUsage(usage: TokenUsageDelta) {
         && usage.totalTokens === 0
 }
 
+/**
+ * Derives a session name from the first user message or summary, truncating long text.
+ *
+ * @example
+ * ```ts
+ * getThreadName('Refactor the dashboard', 'usage-board')
+ * // 'Refactor the dashboard'
+ * ```
+ */
 export function getThreadName(message: string, project: string, summary?: string) {
     const firstLine = message
         .split('\n')
@@ -477,6 +645,15 @@ export function getThreadName(message: string, project: string, summary?: string
     return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine
 }
 
+/**
+ * Extracts a project name from a filesystem path.
+ *
+ * @example
+ * ```ts
+ * getProjectName('/Users/me/work/usage-board')
+ * // 'usage-board'
+ * ```
+ */
 export function getProjectName(path: string | undefined, fallback = 'unknown') {
     if (!path) {
         return fallback
@@ -487,6 +664,15 @@ export function getProjectName(path: string | undefined, fallback = 'unknown') {
     return parts.at(-1) ?? fallback
 }
 
+/**
+ * Normalizes a Git remote URL into owner/repo form.
+ *
+ * @example
+ * ```ts
+ * normalizeRepositoryUrl('git@github.com:lonewolfyx/usage-board.git')
+ * // 'lonewolfyx/usage-board'
+ * ```
+ */
 export function normalizeRepositoryUrl(repositoryUrl: string | undefined) {
     if (!repositoryUrl) {
         return ''
@@ -498,6 +684,15 @@ export function normalizeRepositoryUrl(repositoryUrl: string | undefined) {
         .replace(/\.git$/u, '')
 }
 
+/**
+ * Calculates minutes between two ISO timestamps, returning 0 for invalid or reversed ranges.
+ *
+ * @example
+ * ```ts
+ * getDurationMinutes('2026-04-16T10:00:00.000Z', '2026-04-16T10:45:00.000Z')
+ * // 45
+ * ```
+ */
 export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
     if (!endedAt) {
         return 0
@@ -512,10 +707,27 @@ export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
     return Math.round(durationMs / 60_000)
 }
 
+/**
+ * Safely converts an unknown value to a number, returning 0 for non-finite values.
+ *
+ * @example
+ * ```ts
+ * normalizeNumber(Number.NaN)
+ * // 0
+ * ```
+ */
 export function normalizeNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
 
+/**
+ * Safely converts a string timestamp into an ISO string.
+ *
+ * @example
+ * ```ts
+ * toIsoString('2026-04-16 18:00:00')
+ * ```
+ */
 export function toIsoString(value: unknown) {
     if (typeof value !== 'string') {
         return null
@@ -526,6 +738,15 @@ export function toIsoString(value: unknown) {
     return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
 }
 
+/**
+ * Gets a local date key in yyyy-MM-dd format.
+ *
+ * @example
+ * ```ts
+ * getDateKey(new Date('2026-04-16T08:00:00.000Z'))
+ * // '2026-04-16'
+ * ```
+ */
 export function getDateKey(date: Date) {
     const parts = new Intl.DateTimeFormat('en-CA', {
         day: '2-digit',
@@ -539,10 +760,28 @@ export function getDateKey(date: Date) {
     return `${year}-${month}-${day}`
 }
 
+/**
+ * Gets a month key in yyyy-MM format.
+ *
+ * @example
+ * ```ts
+ * getMonthKey(new Date('2026-04-16'))
+ * // '2026-04'
+ * ```
+ */
 export function getMonthKey(date: Date) {
     return getDateKey(date).slice(0, 7)
 }
 
+/**
+ * Gets a week label where Monday is the start and Sunday is the end.
+ *
+ * @example
+ * ```ts
+ * getWeekLabel(new Date('2026-04-16'))
+ * // '2026-04-13 - 2026-04-19'
+ * ```
+ */
 export function getWeekLabel(date: Date) {
     const weekStart = cloneDate(date)
     const day = weekStart.getDay()
@@ -555,6 +794,15 @@ export function getWeekLabel(date: Date) {
     return `${getDateKey(weekStart)} - ${getDateKey(weekEnd)}`
 }
 
+/**
+ * Formats a yyyy-MM-dd date key into an English display label.
+ *
+ * @example
+ * ```ts
+ * formatDateLabelFromDateKey('2026-04-16')
+ * // 'Apr 16, 2026'
+ * ```
+ */
 export function formatDateLabelFromDateKey(dateKey: string) {
     const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
     const date = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1))
@@ -567,6 +815,15 @@ export function formatDateLabelFromDateKey(dateKey: string) {
     }).format(date)
 }
 
+/**
+ * Formats a yyyy-MM month key into an English display label.
+ *
+ * @example
+ * ```ts
+ * formatMonthLabel('2026-04')
+ * // 'Apr 2026'
+ * ```
+ */
 export function formatMonthLabel(monthKey: string) {
     const [year, month] = monthKey.split('-').map(value => Number.parseInt(value, 10))
     const date = new Date(Date.UTC(year || 0, (month || 1) - 1, 1))
@@ -578,6 +835,15 @@ export function formatMonthLabel(monthKey: string) {
     }).format(date)
 }
 
+/**
+ * Formats a minute count into compact duration text.
+ *
+ * @example
+ * ```ts
+ * formatDuration(125)
+ * // '2h 5m'
+ * ```
+ */
 export function formatDuration(minutes: number) {
     const hours = Math.floor(minutes / 60)
     const remainingMinutes = minutes % 60
@@ -593,6 +859,15 @@ export function formatDuration(minutes: number) {
     return `${hours}h ${remainingMinutes}m`
 }
 
+/**
+ * Formats a number with compact English notation.
+ *
+ * @example
+ * ```ts
+ * formatCompactNumber(1500)
+ * // '1.5K'
+ * ```
+ */
 export function formatCompactNumber(value: number) {
     return new Intl.NumberFormat('en-US', {
         maximumFractionDigits: 1,
@@ -600,6 +875,15 @@ export function formatCompactNumber(value: number) {
     }).format(value)
 }
 
+/**
+ * Formats a number as a USD amount.
+ *
+ * @example
+ * ```ts
+ * formatCurrency(1.5)
+ * // '$1.50'
+ * ```
+ */
 export function formatCurrency(value: number) {
     return new Intl.NumberFormat('en-US', {
         currency: 'USD',
@@ -609,14 +893,40 @@ export function formatCurrency(value: number) {
     }).format(value)
 }
 
+/**
+ * Removes empty strings while preserving unique item order.
+ *
+ * @example
+ * ```ts
+ * uniqueItems(['a', '', 'a', 'b'])
+ * // ['a', 'b']
+ * ```
+ */
 export function uniqueItems(items: string[]) {
     return Array.from(new Set(items.filter(Boolean)))
 }
 
+/**
+ * Rounds a USD amount to 6 decimals to preserve precision for small token costs.
+ *
+ * @example
+ * ```ts
+ * roundCurrency(0.1234567)
+ * // 0.123457
+ * ```
+ */
 export function roundCurrency(value: number) {
     return Math.round(value * 1_000_000) / 1_000_000
 }
 
+/**
+ * Adds a single event into an aggregate group and updates model and project lists.
+ *
+ * @example
+ * ```ts
+ * addEventToAggregateGroup(group, event, {})
+ * ```
+ */
 function addEventToAggregateGroup<TEvent extends UsageAggregateEvent>(
     group: SessionAggregateGroup,
     event: TEvent,
@@ -632,10 +942,26 @@ function addEventToAggregateGroup<TEvent extends UsageAggregateEvent>(
     group.projects = uniqueItems([...group.projects, event.project])
 }
 
+/**
+ * Gets event cost, preferring a platform-provided dynamic cost function.
+ *
+ * @example
+ * ```ts
+ * const costUSD = getEventCostUSD(event, { getCostUSD: item => item.costUSD ?? 0 })
+ * ```
+ */
 function getEventCostUSD<TEvent extends UsageAggregateEvent>(event: TEvent, options: AggregateOptions<TEvent>) {
     return options.getCostUSD?.(event) ?? event.costUSD ?? 0
 }
 
+/**
+ * Checks whether an event's model should be included in model-level stats.
+ *
+ * @example
+ * ```ts
+ * shouldIncludeModel(event, { includeModel: item => item.model !== '<synthetic>' })
+ * ```
+ */
 function shouldIncludeModel<TEvent extends UsageAggregateEvent>(
     event: TEvent,
     options: Pick<AggregateOptions<TEvent>, 'includeModel'>,
@@ -643,6 +969,14 @@ function shouldIncludeModel<TEvent extends UsageAggregateEvent>(
     return options.includeModel?.(event) ?? true
 }
 
+/**
+ * Gets a session's cached input token count, allowing platform-specific accessors.
+ *
+ * @example
+ * ```ts
+ * const cached = getCachedInputTokens(session, {})
+ * ```
+ */
 function getCachedInputTokens<TSession extends SessionUsageSummaryLike>(
     session: TSession,
     options: SessionUsageOptions<TSession>,
@@ -651,6 +985,14 @@ function getCachedInputTokens<TSession extends SessionUsageSummaryLike>(
         ?? getNumericProperty(session, 'cachedInputTokens')
 }
 
+/**
+ * Gets a session's reasoning output token count, allowing platform-specific accessors.
+ *
+ * @example
+ * ```ts
+ * const reasoning = getReasoningOutputTokens(session, {})
+ * ```
+ */
 function getReasoningOutputTokens<TSession extends SessionUsageSummaryLike>(
     session: TSession,
     options: SessionUsageOptions<TSession>,
@@ -659,6 +1001,15 @@ function getReasoningOutputTokens<TSession extends SessionUsageSummaryLike>(
         ?? getNumericProperty(session, 'reasoningOutputTokens')
 }
 
+/**
+ * Safely reads a numeric property from an object.
+ *
+ * @example
+ * ```ts
+ * getNumericProperty({ cachedInputTokens: 10 }, 'cachedInputTokens')
+ * // 10
+ * ```
+ */
 function getNumericProperty(value: object, key: string) {
     const record = value as Record<string, unknown>
     const property = record[key]
@@ -666,6 +1017,14 @@ function getNumericProperty(value: object, key: string) {
     return typeof property === 'number' && Number.isFinite(property) ? property : 0
 }
 
+/**
+ * Clones only the year, month, and day parts of a Date to avoid mutating the input instance.
+ *
+ * @example
+ * ```ts
+ * const cloned = cloneDate(new Date())
+ * ```
+ */
 function cloneDate(date: Date) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }

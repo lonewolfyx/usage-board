@@ -36,7 +36,10 @@ import {
     toUsageSessionUsageItem,
 } from '~~/src/platform/utils'
 
+/** Default pricing model used when a Claude Code record has no billable model. */
 const CLAUDE_FALLBACK_MODEL = 'claude-sonnet-4-5'
+
+/** Maps common Claude aliases to LiteLLM or local pricing table names. */
 const CLAUDE_MODEL_ALIASES: Record<string, string> = {
     'claude-3-5-haiku-latest': 'claude-haiku-4-5',
     'claude-3-5-sonnet-latest': 'claude-sonnet-4-5',
@@ -49,6 +52,15 @@ const CLAUDE_MODEL_ALIASES: Record<string, string> = {
     'claude-4-5-sonnet': 'claude-sonnet-4-5',
 }
 
+/**
+ * Loads local Claude Code project logs and converts them into dashboard usage data.
+ *
+ * @example
+ * ```ts
+ * const usage = await loadClaudeCodeUsage(config)
+ * console.log(usage.todayTotalCost)
+ * ```
+ */
 export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CLAUDE_MODEL_ALIASES,
@@ -110,6 +122,14 @@ export const loadClaudeCodeUsage = async (config: IConfig): Promise<LoadUsageRes
     }
 }
 
+/**
+ * Loads, deduplicates, and normalizes all usage records from configured Claude Code paths.
+ *
+ * @example
+ * ```ts
+ * const entries = await loadClaudeUsageEntries(config, resolvePricing)
+ * ```
+ */
 async function loadClaudeUsageEntries(config: IConfig, resolvePricing: ModelPricingResolver) {
     const claudePaths = getConfiguredClaudePaths(config)
     const files = await globClaudeUsageFiles(claudePaths)
@@ -179,10 +199,26 @@ async function loadClaudeUsageEntries(config: IConfig, resolvePricing: ModelPric
     return entries
 }
 
+/**
+ * Gets the Claude Code root directories that should be scanned.
+ *
+ * @example
+ * ```ts
+ * const paths = getConfiguredClaudePaths(config)
+ * ```
+ */
 function getConfiguredClaudePaths(config: IConfig) {
     return config.claudeCodePaths?.length ? config.claudeCodePaths : [config.claudeCodePath]
 }
 
+/**
+ * Finds project JSONL log files under multiple Claude Code root directories.
+ *
+ * @example
+ * ```ts
+ * const files = await globClaudeUsageFiles(['/Users/me/.claude'])
+ * ```
+ */
 async function globClaudeUsageFiles(claudePaths: string[]) {
     const fileGroups = await Promise.all(claudePaths.map(async (claudePath) => {
         const projectsDir = `${claudePath}/projects`
@@ -199,6 +235,14 @@ async function globClaudeUsageFiles(claudePaths: string[]) {
     return fileGroups.flat()
 }
 
+/**
+ * Sorts log files by their earliest timestamp to keep cross-file processing stable.
+ *
+ * @example
+ * ```ts
+ * const sortedFiles = sortFilesByTimestamp(files)
+ * ```
+ */
 function sortFilesByTimestamp(files: string[]) {
     return files
         .map(file => ({
@@ -221,6 +265,14 @@ function sortFilesByTimestamp(files: string[]) {
         .map(item => item.file)
 }
 
+/**
+ * Reads the first parseable timestamp from a JSONL file.
+ *
+ * @example
+ * ```ts
+ * const earliest = getEarliestTimestamp('/tmp/session.jsonl')
+ * ```
+ */
 function getEarliestTimestamp(filePath: string) {
     for (const line of parseJsonlFile(filePath)) {
         if (!line || typeof line !== 'object') {
@@ -243,6 +295,16 @@ function getEarliestTimestamp(filePath: string) {
     return null
 }
 
+/**
+ * Checks whether an unknown value matches the minimal Claude Code usage record shape.
+ *
+ * @example
+ * ```ts
+ * if (isClaudeUsageRecord(line)) {
+ *     console.log(line.message.usage.input_tokens)
+ * }
+ * ```
+ */
 function isClaudeUsageRecord(value: unknown): value is ClaudeUsageRecord {
     if (!value || typeof value !== 'object') {
         return false
@@ -268,6 +330,14 @@ function isClaudeUsageRecord(value: unknown): value is ClaudeUsageRecord {
         && Number.isFinite(Date.parse(record.timestamp))
 }
 
+/**
+ * Builds a deduplication key from the message ID and request ID.
+ *
+ * @example
+ * ```ts
+ * const hash = createUniqueHash(record)
+ * ```
+ */
 function createUniqueHash(data: ClaudeUsageRecord) {
     const messageId = data.message.id
     const requestId = data.requestId
@@ -279,6 +349,14 @@ function createUniqueHash(data: ClaudeUsageRecord) {
     return `${messageId}:${requestId}`
 }
 
+/**
+ * Gets the model name used for display and aggregation, appending -fast for fast requests.
+ *
+ * @example
+ * ```ts
+ * const model = getDisplayModelName(record)
+ * ```
+ */
 function getDisplayModelName(data: ClaudeUsageRecord) {
     const model = data.message.model?.trim()
 
@@ -289,6 +367,15 @@ function getDisplayModelName(data: ClaudeUsageRecord) {
     return data.message.usage.speed === 'fast' ? `${model}-fast` : model
 }
 
+/**
+ * Extracts the project path segment from a Claude Code project log path.
+ *
+ * @example
+ * ```ts
+ * extractProjectFromPath('/Users/me/.claude/projects/-Users-me-work-app/session.jsonl')
+ * // '-Users-me-work-app'
+ * ```
+ */
 function extractProjectFromPath(jsonlPath: string) {
     const normalizedPath = jsonlPath.replace(/[/\\]/g, sep)
     const segments = normalizedPath.split(sep)
@@ -301,6 +388,14 @@ function extractProjectFromPath(jsonlPath: string) {
     return segments[projectsIndex + 1]?.trim() || 'unknown'
 }
 
+/**
+ * Aggregates normalized Claude usage records into session-level summaries.
+ *
+ * @example
+ * ```ts
+ * const sessions = buildClaudeSessionSummaries(entries)
+ * ```
+ */
 function buildClaudeSessionSummaries(entries: ClaudeUsageEntry[]) {
     const groups = new Map<string, ClaudeUsageEntry[]>()
 
@@ -382,6 +477,14 @@ function buildClaudeSessionSummaries(entries: ClaudeUsageEntry[]) {
     })
 }
 
+/**
+ * Converts a Claude usage record into a shared aggregate event.
+ *
+ * @example
+ * ```ts
+ * const event = toClaudeAggregateEvent(entry)
+ * ```
+ */
 function toClaudeAggregateEvent(entry: ClaudeUsageEntry): ClaudeAggregateEvent {
     const project = getProjectName(entry.cwd, '') || decodeClaudeProjectPath(entry.projectPath)
 
@@ -403,6 +506,14 @@ function toClaudeAggregateEvent(entry: ClaudeUsageEntry): ClaudeAggregateEvent {
     }
 }
 
+/**
+ * Generates possible LiteLLM pricing lookup names for a Claude model.
+ *
+ * @example
+ * ```ts
+ * getClaudeLookupCandidates('anthropic/claude-sonnet-4-5')
+ * ```
+ */
 function getClaudeLookupCandidates(model: string) {
     const normalizedModel = model.trim()
 
@@ -416,10 +527,28 @@ function getClaudeLookupCandidates(model: string) {
     ]
 }
 
+/**
+ * Calculates the total token count for a Claude Code record.
+ *
+ * @example
+ * ```ts
+ * getTotalTokens({ inputTokens: 10, outputTokens: 5, cacheCreationTokens: 0, cacheReadTokens: 2 })
+ * // 17
+ * ```
+ */
 function getTotalTokens(tokens: ClaudeTokenTotals) {
     return tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens
 }
 
+/**
+ * Decodes Claude Code's hyphen-encoded project path into a more readable project name.
+ *
+ * @example
+ * ```ts
+ * decodeClaudeProjectPath('-Users-me-work-usage-board')
+ * // 'usage-board'
+ * ```
+ */
 function decodeClaudeProjectPath(projectPath: string) {
     const normalized = projectPath.replace(/^-/, '').replace(/-/g, '/')
     const parts = normalized.split('/').filter(Boolean)

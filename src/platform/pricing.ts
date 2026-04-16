@@ -9,10 +9,16 @@ import type {
     TokenCostUsage,
 } from '~~/src/types'
 
+/** Multiplier used to convert per-token prices into per-million-token prices. */
 const MILLION = 1_000_000
+
+/** Default in-memory cache duration for LiteLLM pricing data, in milliseconds. */
 const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
+
+/** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 
+/** Built-in fallback prices so common models can still be estimated offline or when remote data is missing. */
 const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5': {
         cachedInputCostPerMTokens: 0.125,
@@ -60,8 +66,18 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     },
 }
 
+/** Caches fetched datasets and in-flight requests by pricing URL to avoid duplicate network calls. */
 const pricingCache = new Map<string, PricingCacheEntry>()
 
+/**
+ * Fetches the LiteLLM model pricing dataset and falls back to the built-in dataset on failure.
+ *
+ * @example
+ * ```ts
+ * const dataset = await fetchLiteLLMPricingDataset()
+ * console.log(dataset['gpt-5']?.input_cost_per_token)
+ * ```
+ */
 export async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
     const url = options.url ?? DEFAULT_LITELLM_PRICING_URL
     const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_PRICING_CACHE_TTL_MS
@@ -125,6 +141,18 @@ export async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDat
     return promise
 }
 
+/**
+ * Creates a model pricing resolver with support for aliases, platform-specific lookup candidates, fallback models, and zero-cost models.
+ *
+ * @example
+ * ```ts
+ * const resolvePricing = await createLiteLLMPricingResolver({
+ *     aliases: { 'gpt-5-codex': 'gpt-5' },
+ *     fallbackModel: 'gpt-5',
+ * })
+ * const pricing = resolvePricing('gpt-5-codex')
+ * ```
+ */
 export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricingResolverOptions = {}): Promise<ModelPricingResolver> {
     const dataset = await fetchLiteLLMPricingDataset(options)
     const aliases = options.aliases ?? {}
@@ -166,6 +194,18 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
     }
 }
 
+/**
+ * Calculates USD cost from token usage and model pricing.
+ *
+ * @example
+ * ```ts
+ * const costUSD = calculateUsageCostUSD({
+ *     cachedInputTokens: 100,
+ *     inputTokens: 1_000,
+ *     outputTokens: 500,
+ * }, pricing)
+ * ```
+ */
 export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing, options: { speed?: 'fast' | 'standard' } = {}): number {
     const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? 1) : 1
     const inputCost = calculateTieredCost(usage.inputTokens, pricing.inputCostPerMTokens, pricing.inputCostPerMTokensAbove200K)
@@ -176,6 +216,14 @@ export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPrici
     return (inputCost + cachedCost + cacheCreationCost + outputCost) * multiplier
 }
 
+/**
+ * Builds the minimal LiteLLM pricing dataset used as a local fallback.
+ *
+ * @example
+ * ```ts
+ * const fallbackDataset = createFallbackLiteLLMPricingDataset()
+ * ```
+ */
 function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
     return {
         'gpt-5': {
@@ -225,6 +273,16 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
     }
 }
 
+/**
+ * Checks whether an unknown payload can be treated as a LiteLLM pricing dataset.
+ *
+ * @example
+ * ```ts
+ * if (isLiteLLMPricingDataset(payload)) {
+ *     console.log(Object.keys(payload))
+ * }
+ * ```
+ */
 function isLiteLLMPricingDataset(value: unknown): value is LiteLLMPricingDataset {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
         return false
@@ -233,6 +291,14 @@ function isLiteLLMPricingDataset(value: unknown): value is LiteLLMPricingDataset
     return true
 }
 
+/**
+ * Generates model lookup candidates for common OpenAI, Azure, and OpenRouter prefixes.
+ *
+ * @example
+ * ```ts
+ * const candidates = defaultLookupCandidates('openai/gpt-5')
+ * ```
+ */
 function defaultLookupCandidates(model: string) {
     const normalizedModel = model.trim()
 
@@ -244,6 +310,14 @@ function defaultLookupCandidates(model: string) {
     ]
 }
 
+/**
+ * Expands platform lookup candidates and explicit aliases into a full lookup list.
+ *
+ * @example
+ * ```ts
+ * expandLookupCandidates('gpt-5-codex', { 'gpt-5-codex': 'gpt-5' }, defaultLookupCandidates)
+ * ```
+ */
 function expandLookupCandidates(
     model: string,
     aliases: Record<string, string>,
@@ -263,6 +337,14 @@ function expandLookupCandidates(
     return expanded
 }
 
+/**
+ * Resolves billable pricing from a LiteLLM dataset using candidate model names.
+ *
+ * @example
+ * ```ts
+ * const pricing = resolveDatasetPricing(dataset, ['gpt-5-codex', 'gpt-5'])
+ * ```
+ */
 function resolveDatasetPricing(dataset: LiteLLMPricingDataset, candidates: string[]) {
     for (const candidate of candidates) {
         const pricing = dataset[candidate]
@@ -277,6 +359,14 @@ function resolveDatasetPricing(dataset: LiteLLMPricingDataset, candidates: strin
     return null
 }
 
+/**
+ * Resolves pricing from the local fallback table using candidate model names.
+ *
+ * @example
+ * ```ts
+ * const pricing = resolveFallbackPricing(DEFAULT_FALLBACK_PRICING_TABLE, ['claude-sonnet-4-5'])
+ * ```
+ */
 function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricing>, candidates: string[]) {
     for (const candidate of candidates) {
         const pricing = fallbackPricingTable[candidate]
@@ -289,6 +379,15 @@ function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricin
     return null
 }
 
+/**
+ * Checks whether a LiteLLM pricing entry contains at least one non-zero token price.
+ *
+ * @example
+ * ```ts
+ * hasNonZeroTokenPricing({ input_cost_per_token: 1e-6 })
+ * // true
+ * ```
+ */
 function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
     return (pricing.input_cost_per_token ?? 0) > 0
         || (pricing.output_cost_per_token ?? 0) > 0
@@ -296,6 +395,14 @@ function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
         || (pricing.cache_read_input_token_cost ?? 0) > 0
 }
 
+/**
+ * Converts LiteLLM per-token price fields into the app's per-million-token pricing shape.
+ *
+ * @example
+ * ```ts
+ * const pricing = toModelPricing({ input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 })
+ * ```
+ */
 function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
     const inputCostPerToken = pricing.input_cost_per_token ?? 0
     const cachedInputCostPerToken = pricing.cache_read_input_token_cost ?? inputCostPerToken
@@ -323,6 +430,14 @@ function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
     }
 }
 
+/**
+ * Creates a pricing shape where every price is zero for free or unpriced models.
+ *
+ * @example
+ * ```ts
+ * const freePricing = createZeroPricing()
+ * ```
+ */
 function createZeroPricing(): ModelPricing {
     return {
         cachedInputCostPerMTokens: 0,
@@ -332,6 +447,15 @@ function createZeroPricing(): ModelPricing {
     }
 }
 
+/**
+ * Calculates token cost with optional tiered pricing above the 200K-token threshold.
+ *
+ * @example
+ * ```ts
+ * calculateTieredCost(250_000, 1, 2)
+ * // 0.3
+ * ```
+ */
 function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: number, above200KCostPerMTokens?: number) {
     const safeTokens = Math.max(tokens ?? 0, 0)
 
@@ -347,6 +471,15 @@ function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: num
     return (safeTokens / MILLION) * baseCostPerMTokens
 }
 
+/**
+ * Removes empty strings while preserving unique item order.
+ *
+ * @example
+ * ```ts
+ * uniqueItems(['gpt-5', '', 'gpt-5'])
+ * // ['gpt-5']
+ * ```
+ */
 function uniqueItems(items: string[]) {
     return Array.from(new Set(items.filter(Boolean)))
 }

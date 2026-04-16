@@ -45,10 +45,15 @@ import {
     uniqueItems,
 } from '~~/src/platform/utils'
 
+/** Default model used when a Gemini session message does not include a model field. */
 const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
+
+/** Maps Gemini-specific model names to pricing table names. */
 const GEMINI_MODEL_ALIASES: Record<string, string> = {
     'gemini-3-flash-preview': 'gemini-3-flash',
 }
+
+/** Gemini fallback prices for primary models when LiteLLM data is missing or unavailable. */
 const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gemini-2.5-flash': {
         cachedInputCostPerMTokens: 0.075,
@@ -86,6 +91,15 @@ const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     },
 }
 
+/**
+ * Loads local Gemini CLI session cache data and converts it into dashboard usage data.
+ *
+ * @example
+ * ```ts
+ * const usage = await loadGeminiUsage(config)
+ * console.log(usage.sessionUsage.length)
+ * ```
+ */
 export const loadGeminiUsage = async (config: IConfig): Promise<LoadUsageResult> => {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: GEMINI_MODEL_ALIASES,
@@ -144,6 +158,14 @@ export const loadGeminiUsage = async (config: IConfig): Promise<LoadUsageResult>
     }
 }
 
+/**
+ * Finds Gemini session JSON files under the tmp directory and parses them into session data.
+ *
+ * @example
+ * ```ts
+ * const sessions = await loadGeminiSessionFiles(config, resolvePricing)
+ * ```
+ */
 async function loadGeminiSessionFiles(config: IConfig, resolvePricing: (model: string) => ModelPricing) {
     const tmpDir = `${config.geminiPath}/tmp`
 
@@ -162,6 +184,14 @@ async function loadGeminiSessionFiles(config: IConfig, resolvePricing: (model: s
         .filter((item): item is GeminiSessionFileData => item !== null)
 }
 
+/**
+ * Parses a single Gemini session file and extracts metadata plus token usage events.
+ *
+ * @example
+ * ```ts
+ * const session = loadGeminiSessionFile('/tmp/session-1.json', resolvePricing)
+ * ```
+ */
 function loadGeminiSessionFile(filePath: string, resolvePricing: (model: string) => ModelPricing): GeminiSessionFileData | null {
     const data = parseJsonFile(filePath)
 
@@ -203,6 +233,16 @@ function loadGeminiSessionFile(filePath: string, resolvePricing: (model: string)
     }
 }
 
+/**
+ * Checks whether an unknown value matches the minimal Gemini session file shape.
+ *
+ * @example
+ * ```ts
+ * if (isGeminiSessionFile(data)) {
+ *     console.log(data.messages.length)
+ * }
+ * ```
+ */
 function isGeminiSessionFile(value: unknown): value is GeminiSessionFile {
     if (!value || typeof value !== 'object') {
         return false
@@ -213,6 +253,14 @@ function isGeminiSessionFile(value: unknown): value is GeminiSessionFile {
     return Array.isArray(record.messages)
 }
 
+/**
+ * Extracts model invocation events from Gemini messages and calculates cost for each event.
+ *
+ * @example
+ * ```ts
+ * const events = extractTokenUsageEvents(messages, meta, resolvePricing)
+ * ```
+ */
 function extractTokenUsageEvents(
     messages: GeminiSessionMessage[],
     meta: UsageSessionMeta,
@@ -262,6 +310,14 @@ function extractTokenUsageEvents(
     return events
 }
 
+/**
+ * Converts a Gemini token snapshot into the dashboard's normalized token fields.
+ *
+ * @example
+ * ```ts
+ * const usage = convertToDisplayUsage({ input: 100, cached: 20, output: 10 })
+ * ```
+ */
 function convertToDisplayUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
     const rawInputTokens = normalizeNumber(tokens.input)
     const cachedInputTokens = Math.min(normalizeNumber(tokens.cached), rawInputTokens)
@@ -281,6 +337,14 @@ function convertToDisplayUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
     }
 }
 
+/**
+ * Aggregates Gemini session files into session-level summaries.
+ *
+ * @example
+ * ```ts
+ * const summaries = buildSessionSummaries(sessionFiles)
+ * ```
+ */
 function buildSessionSummaries(sessionFiles: GeminiSessionFileData[]) {
     const summaries: SessionUsageSummary[] = []
 
@@ -337,6 +401,14 @@ function buildSessionSummaries(sessionFiles: GeminiSessionFileData[]) {
     return summaries
 }
 
+/**
+ * Generates possible LiteLLM pricing lookup names for a Gemini model.
+ *
+ * @example
+ * ```ts
+ * getGeminiLookupCandidates('google/gemini-2.5-pro')
+ * ```
+ */
 function getGeminiLookupCandidates(model: string) {
     const normalizedModel = model.trim()
 
@@ -349,6 +421,14 @@ function getGeminiLookupCandidates(model: string) {
     ]
 }
 
+/**
+ * Reads the real project root from the .project_root file beside the Gemini cache directory.
+ *
+ * @example
+ * ```ts
+ * const projectRoot = getProjectRoot('/home/me/.gemini/tmp/hash/chats/session-1.json')
+ * ```
+ */
 function getProjectRoot(filePath: string) {
     const projectDir = dirname(dirname(filePath))
     const projectRootFile = `${projectDir}/.project_root`
@@ -365,6 +445,15 @@ function getProjectRoot(filePath: string) {
     }
 }
 
+/**
+ * Extracts the cached project key from a Gemini tmp path as a project-name fallback.
+ *
+ * @example
+ * ```ts
+ * getProjectKeyFromPath('/home/me/.gemini/tmp/project-key/chats/session-1.json')
+ * // 'project-key'
+ * ```
+ */
 function getProjectKeyFromPath(filePath: string) {
     const normalizedPath = filePath.replace(/[/\\]/g, sep)
     const segments = normalizedPath.split(sep)
@@ -377,6 +466,14 @@ function getProjectKeyFromPath(filePath: string) {
     return segments[tmpIndex + 1]?.trim() || 'unknown'
 }
 
+/**
+ * Reads and normalizes the origin repository name from the project root's Git config.
+ *
+ * @example
+ * ```ts
+ * const repository = getRepositoryName('/Users/me/work/usage-board')
+ * ```
+ */
 function getRepositoryName(projectRoot: string) {
     if (!projectRoot) {
         return ''
@@ -398,6 +495,14 @@ function getRepositoryName(projectRoot: string) {
     }
 }
 
+/**
+ * Extracts the remote origin URL from .git/config text.
+ *
+ * @example
+ * ```ts
+ * getOriginUrlFromGitConfig('[remote "origin"]\n    url = git@github.com:lonewolfyx/usage-board.git')
+ * ```
+ */
 function getOriginUrlFromGitConfig(config: string) {
     let isOriginBlock = false
 
@@ -419,6 +524,14 @@ function getOriginUrlFromGitConfig(config: string) {
     return ''
 }
 
+/**
+ * Gets the first user message in a Gemini session for thread-name generation.
+ *
+ * @example
+ * ```ts
+ * const firstMessage = getFirstUserMessage(sessionFile)
+ * ```
+ */
 function getFirstUserMessage(data: GeminiSessionFile) {
     return data.messages
         ?.filter(message => message.type === 'user')
@@ -426,6 +539,15 @@ function getFirstUserMessage(data: GeminiSessionFile) {
         .find(Boolean) ?? ''
 }
 
+/**
+ * Converts Gemini message content into plain text.
+ *
+ * @example
+ * ```ts
+ * extractMessageText([{ text: 'hello' }, { text: 'world' }])
+ * // 'hello\nworld'
+ * ```
+ */
 function extractMessageText(content: GeminiSessionMessage['content']) {
     if (typeof content === 'string') {
         return content
