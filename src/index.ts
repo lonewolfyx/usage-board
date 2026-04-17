@@ -27,6 +27,7 @@ cli.command('', 'Start tokens usage analysis')
         const port = await getPort({
             host: config.host,
             port: config.port,
+            portRange: [7777, 9000],
         })
 
         const app = await createHostServer({
