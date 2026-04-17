@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveConfig } from '../src/config'
 import { loadCodexUsage } from '../src/platform'
 
@@ -13,12 +13,19 @@ const config = resolveConfig({
 })
 
 describe('test codex', () => {
+    afterEach(() => {
+        vi.useRealTimers()
+    })
+
     it('should ', async () => {
         const data = await loadCodexUsage(config)
         await expect(data).toMatchFileSnapshot('./codex.json')
     })
 
     it('reports input tokens excluding cached input, matching ccusage table display', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-16T08:00:00.000Z'))
+
         const codexPath = await mkdtemp(join(tmpdir(), 'usage-board-codex-'))
 
         try {
@@ -77,6 +84,78 @@ describe('test codex', () => {
             expect(data.dailyRows[0]?.totalTokens).toBe(1_050)
             expect(data.sessionUsage[0]?.inputTokens).toBe(800)
             expect(data.sessionUsage[0]?.cachedInputTokens).toBe(200)
+        }
+        finally {
+            await rm(codexPath, { force: true, recursive: true })
+        }
+    })
+
+    it('does not include historical usage in daily rows when today is empty', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-17T08:00:00.000Z'))
+
+        const codexPath = await mkdtemp(join(tmpdir(), 'usage-board-codex-'))
+
+        try {
+            const sessionsDir = join(codexPath, 'sessions', '2026', '04', '16')
+            await mkdir(sessionsDir, { recursive: true })
+            await writeFile(join(sessionsDir, 'rollout.jsonl'), [
+                JSON.stringify({
+                    timestamp: '2026-04-16T00:00:00.000Z',
+                    type: 'session_meta',
+                    payload: {
+                        cwd: '/tmp/example-project',
+                        id: 'fixture-session',
+                        timestamp: '2026-04-16T00:00:00.000Z',
+                    },
+                }),
+                JSON.stringify({
+                    timestamp: '2026-04-16T00:00:01.000Z',
+                    type: 'turn_context',
+                    payload: {
+                        model: 'gpt-5.4',
+                    },
+                }),
+                JSON.stringify({
+                    timestamp: '2026-04-16T00:00:02.000Z',
+                    type: 'event_msg',
+                    payload: {
+                        type: 'token_count',
+                        info: {
+                            last_token_usage: {
+                                cached_input_tokens: 200,
+                                input_tokens: 1_000,
+                                output_tokens: 50,
+                                reasoning_output_tokens: 10,
+                                total_tokens: 1_050,
+                            },
+                            total_token_usage: {
+                                cached_input_tokens: 200,
+                                input_tokens: 1_000,
+                                output_tokens: 50,
+                                reasoning_output_tokens: 10,
+                                total_tokens: 1_050,
+                            },
+                        },
+                    },
+                }),
+            ].join('\n'))
+
+            const data = await loadCodexUsage({
+                ...config,
+                codexPath,
+            })
+
+            expect(data.dailyRows).toHaveLength(0)
+            expect(data.dailyTokenUsage).toHaveLength(1)
+            expect(data.monthlyRows).toHaveLength(1)
+            expect(data.sessionUsage).toHaveLength(1)
+            expect(data.todayTotalCost).toBe(0)
+            expect(data.todayTotalTokens).toBe(0)
+            expect(data.todayTopModel).toBeNull()
+            expect(data.todayTopProject).toBeNull()
+            expect(data.overviewCards[2]?.value).toBe('-')
+            expect(data.overviewCards[3]?.value).toBe('-')
         }
         finally {
             await rm(codexPath, { force: true, recursive: true })
