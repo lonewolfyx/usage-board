@@ -107,6 +107,12 @@ const navItems = [
     //     label: 'amp',
     //     link: '/amp',
     // },
+    {
+        icon: 'ri:apps-ai-line',
+        iconType: 'icon',
+        label: 'Project',
+        link: '/project',
+    },
 ] satisfies NavItem[]
 
 const route = useRoute()
