@@ -27,7 +27,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "nuxt build",
+        "build": "nuxt build && tsdown",
         "dev": "nuxt dev",
         "generate": "nuxt generate",
         "preview": "nuxt preview",
@@ -35,9 +35,10 @@
         "typecheck": "nuxt typecheck",
         "lint": "eslint .",
         "lint:fix": "eslint --fix",
-        "prepare": "simple-git-hooks",
         "dev:cli": "tsdown -w",
-        "test": "vitest"
+        "test": "vitest",
+        "prepare": "nuxt prepare && simple-git-hooks",
+        "prepublishOnly": "pnpm build"
     },
     "dependencies": {
         "@tailwindcss/vite": "^4.2.2",
