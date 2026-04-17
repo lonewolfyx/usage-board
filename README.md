@@ -1,4 +1,11 @@
-# usage-board
+<div align="center">
+    <img src="https://cdn.jsdelivr.net/gh/lonewolfyx/usage-board@master/public/logo.svg" alt="usage-board logo" width="256" height="256">
+    <h1>usage-board</h1>
+</div>
+<div align="center">
+    <img src="https://cdn.jsdelivr.net/gh/lonewolfyx/usage-board@master/Snapshot.png" alt="usage-board">
+</div>
+
 
 An all-in-one dashboard to quickly analyze token usage from local json files
 
