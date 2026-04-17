@@ -8,6 +8,16 @@ import { name, version } from '../package.json' with { type: 'json' }
 
 const cli = cac(name)
 
+function resolveUrl(host: string, port: number) {
+    const urlHost = host === '0.0.0.0' || host === '::'
+        ? 'localhost'
+        : host.includes(':')
+            ? `[${host}]`
+            : host
+
+    return `http://${urlHost}:${port}`
+}
+
 cli.command('', 'Start tokens usage analysis')
     .option('--host <host>', 'Host', { default: '127.0.0.1' })
     .option('--port <port>', 'Port', { default: 7777 })
@@ -25,9 +35,18 @@ cli.command('', 'Start tokens usage analysis')
         })
 
         app.listen(port, config.host, async () => {
+            const url = resolveUrl(config.host, port)
+            console.log(`Usage board is running at ${url}`)
+
             if (config.open) {
-                await open(`http://${config.host}:${port}`)
-                console.log(`Usage board is running at http://${config.host}:${port}`)
+                try {
+                    await open(url)
+                }
+                catch (error) {
+                    const message = error instanceof Error ? error.message : String(error)
+                    console.warn(`Unable to open the browser automatically: ${message}`)
+                    console.warn(`Open ${url} manually.`)
+                }
             }
         })
     })
