@@ -4,17 +4,25 @@
         class="flex min-h-dvh w-full flex-col items-center justify-center gap-5 px-6 text-center"
         aria-live="polite"
     >
-        <div class="flex size-12 items-center justify-center rounded-md border bg-background shadow-xs">
-            <Spinner class="size-6 text-muted-foreground" />
+        <div class="my-4">
+            <NuxtLink
+                :class="cn(
+                    'flex items-center gap-2',
+                    'capitalize',
+                    'font-mono font-extralight font-stretch-condensed',
+                )"
+                target="_blank"
+                to="https://github.com/"
+            >
+                <img alt="" class="size-8 inline-block" src="/logo.svg">
+                <SiteLogo class="w-48 fill-foreground" />
+            </NuxtLink>
         </div>
-
-        <div class="space-y-2">
-            <p class="text-lg font-medium">
-                {{ loadingText }}
-            </p>
-            <p class="max-w-sm text-sm text-muted-foreground">
-                正在读取本地使用记录，请稍候。
-            </p>
+        <div
+            class="flex gap-2 items-center flex-auto animate-pulse text-2xl"
+        >
+            <Icon mode="svg" name="svg-spinners:90-ring-with-bg" />
+            Please wait while reading the local usage record...
         </div>
     </main>
 
@@ -45,10 +53,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import { Button } from '~/components/ui/button'
-import { Spinner } from '~/components/ui/spinner'
-import { usePayloadContext } from '~/composables/usePayloadContext'
+import { cn } from '~/lib/utils'
 
 defineOptions({
     name: 'PayloadStatusBoundary',
