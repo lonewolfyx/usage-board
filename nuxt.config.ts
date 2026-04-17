@@ -17,6 +17,10 @@ export default defineNuxtConfig({
         enabled: true,
     },
 
+    icon: {
+        mode: 'svg',
+    },
+
     app: {
         head: {
             title: 'Tokens Usage Analysis',
