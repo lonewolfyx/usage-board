@@ -25,6 +25,7 @@ import { formatCompactNumber, formatCurrency, formatPercent, useUsageDashboard }
 
 const {
     cachedInputTokens,
+    costGrowthTrend,
     dailyTokenUsage,
     efficiencyMetrics,
     inputTokens,
@@ -34,21 +35,22 @@ const {
     totalCost,
     totalSessions,
     totalTokens,
+    tokenGrowthTrend,
 } = useUsageDashboard()
 
 const overviewCards = computed(() => [
     {
         icon: 'lucide:wallet',
         name: 'Total Spend',
-        trend: `${totalSessions.value} sessions`,
-        trendTone: 'neutral' as const,
+        trend: costGrowthTrend.value.trend,
+        trendTone: costGrowthTrend.value.trendTone,
         value: formatCurrency(totalCost.value),
     },
     {
         icon: 'solar:cpu-line-duotone',
         name: 'Token Usage',
-        trend: `${formatCompactNumber(inputTokens.value)} input`,
-        trendTone: 'neutral' as const,
+        trend: tokenGrowthTrend.value.trend,
+        trendTone: tokenGrowthTrend.value.trendTone,
         value: formatCompactNumber(totalTokens.value),
     },
     {

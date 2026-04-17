@@ -1,5 +1,5 @@
 import { computed } from 'vue'
-import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
+import { buildGrowthTrend, formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
 const codexTodayDateKey = '2026-04-15'
 
@@ -393,24 +393,30 @@ export function createSessionTokenDashboard(
     })
 
     const todaySessions = computed(() => sessionUsage.value.filter(session => getDateKey(new Date(session.startedAt)) === options.todayDateKey))
+    const previousDayDateKey = getPreviousDateKey(options.todayDateKey)
+    const previousDaySessions = computed(() => sessionUsage.value.filter(session => getDateKey(new Date(session.startedAt)) === previousDayDateKey))
     const todayTotalTokens = computed(() => todaySessions.value.reduce((sum, session) => sum + session.tokenTotal, 0))
     const todayTotalCost = computed(() => todaySessions.value.reduce((sum, session) => sum + session.costUSD, 0))
+    const previousDayTotalTokens = computed(() => previousDaySessions.value.reduce((sum, session) => sum + session.tokenTotal, 0))
+    const previousDayTotalCost = computed(() => previousDaySessions.value.reduce((sum, session) => sum + session.costUSD, 0))
     const todayTopProject = computed(() => getTopSessionProject(todaySessions.value))
     const todayTopModel = computed(() => getTopModel(todaySessions.value))
+    const tokenGrowthTrend = computed(() => buildGrowthTrend(todayTotalTokens.value, previousDayTotalTokens.value, formatCompactNumber))
+    const costGrowthTrend = computed(() => buildGrowthTrend(todayTotalCost.value, previousDayTotalCost.value, formatCurrency))
 
     const overviewCards = computed(() => [
         {
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
-            trend: `${todaySessions.value.length} sessions`,
-            trendTone: 'neutral' as const,
+            trend: tokenGrowthTrend.value.trend,
+            trendTone: tokenGrowthTrend.value.trendTone,
             value: formatCompactNumber(todayTotalTokens.value),
         },
         {
             icon: 'lucide:wallet',
             name: 'Today Spend',
-            trend: `${formatCompactNumber(todaySessions.value.reduce((sum, session) => sum + session.cachedInputTokens, 0))} cached`,
-            trendTone: 'neutral' as const,
+            trend: costGrowthTrend.value.trend,
+            trendTone: costGrowthTrend.value.trendTone,
             value: formatCurrency(todayTotalCost.value),
         },
         {
@@ -599,6 +605,14 @@ function parseDateLabel(label: string) {
 
 function getDateKey(date: Date) {
     return `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`
+}
+
+function getPreviousDateKey(dateKey: string) {
+    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
+    const date = new Date(year || 0, (month || 1) - 1, day || 1)
+    date.setDate(date.getDate() - 1)
+
+    return getDateKey(date)
 }
 
 function getMonthKey(date: Date) {

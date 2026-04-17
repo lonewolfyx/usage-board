@@ -30,6 +30,7 @@ import {
     createEmptyUsage,
     getDateKey,
     getDurationMinutes,
+    getPreviousDateKey,
     getProjectName,
     getThreadName,
     getTopModelForDate,
@@ -117,7 +118,9 @@ export async function loadGeminiUsage(config: IConfig): Promise<LoadUsageResult>
 
     const dailyGroups = buildDailyUsageGroups(events)
     const todayDateKey = getDateKey(new Date())
+    const previousDayDateKey = getPreviousDateKey(todayDateKey)
     const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
     const todayDailyGroups = todayDailyGroup
         ? new Map([[todayDateKey, todayDailyGroup]])
         : new Map()
@@ -135,8 +138,8 @@ export async function loadGeminiUsage(config: IConfig): Promise<LoadUsageResult>
     const todayTopProject = getTopProjectForDate(todayEvents)
     const todayTopModel = getTopModelForDate(todayEvents)
     const overviewCards = buildOverviewCards({
-        cachedInputTokens: todayDailyGroup?.cachedInputTokens ?? 0,
-        sessionCount: new Set(todayEvents.map(event => event.sessionId)).size,
+        previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
+        previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
         todayTopModel,
         todayTopProject,
         todayTotalCost,

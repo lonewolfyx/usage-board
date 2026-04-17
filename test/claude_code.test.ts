@@ -64,8 +64,9 @@ describe('test claude code', () => {
             expect(data.todayTopModel).toBeNull()
             expect(data.todayTopProject).toBeNull()
             expect(data.overviewCards[0]?.value).toBe('0')
-            expect(data.overviewCards[0]?.trend).toBe('0 sessions')
+            expect(data.overviewCards[0]?.trend).toBe('-100.0%')
             expect(data.overviewCards[1]?.value).toBe('$0.00')
+            expect(data.overviewCards[1]?.trend).toBe('-100.0%')
             expect(data.overviewCards[2]?.value).toBe('-')
             expect(data.overviewCards[3]?.value).toBe('-')
         }

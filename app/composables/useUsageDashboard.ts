@@ -5,6 +5,7 @@ import type {
     MonthlyModelUsage,
     ProjectUsageItem,
     RankedUsageItem,
+    UsageOverviewCard,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
 import type { ComputedRef } from 'vue'
@@ -35,6 +36,36 @@ export function formatPercent(value: number) {
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
     }).format(normalizeNumber(value))
+}
+
+export function buildGrowthTrend(
+    currentValue: number,
+    previousValue: number,
+    formatValue: (value: number) => string,
+): Pick<UsageOverviewCard, 'trend' | 'trendTone'> {
+    const current = Math.max(normalizeNumber(currentValue), 0)
+    const previous = Math.max(normalizeNumber(previousValue), 0)
+
+    if (previous === 0) {
+        if (current === 0) {
+            return {
+                trend: '0.0%',
+                trendTone: 'neutral',
+            }
+        }
+
+        return {
+            trend: `+${formatValue(current)}`,
+            trendTone: 'up',
+        }
+    }
+
+    const ratio = (current - previous) / previous
+
+    return {
+        trend: formatSignedPercent(ratio),
+        trendTone: getTrendTone(ratio),
+    }
 }
 
 export function useUsageDashboard() {
@@ -73,6 +104,20 @@ export function useUsageDashboard() {
     const outputTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.outputTokens, 0))
     const reasoningOutputTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.reasoningOutputTokens, 0))
     const totalSessions = computed(() => sessionUsage.value.length)
+    const todayDateKey = getDateKey(new Date())
+    const previousDayDateKey = getPreviousDateKey(todayDateKey)
+    const todayDailyUsage = computed(() => dailyTokenUsage.value.find(item => getDateKeyFromLabel(item.date) === todayDateKey))
+    const previousDayDailyUsage = computed(() => dailyTokenUsage.value.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey))
+    const costGrowthTrend = computed(() => buildGrowthTrend(
+        todayDailyUsage.value?.costUSD ?? 0,
+        previousDayDailyUsage.value?.costUSD ?? 0,
+        formatCurrency,
+    ))
+    const tokenGrowthTrend = computed(() => buildGrowthTrend(
+        todayDailyUsage.value?.totalTokens ?? 0,
+        previousDayDailyUsage.value?.totalTokens ?? 0,
+        formatCompactNumber,
+    ))
 
     const modelUsage: ComputedRef<RankedUsageItem[]> = computed(() => {
         const models = new Map<string, {
@@ -145,6 +190,7 @@ export function useUsageDashboard() {
 
     return {
         cachedInputTokens,
+        costGrowthTrend,
         dailyTokenUsage,
         efficiencyMetrics,
         inputTokens,
@@ -157,6 +203,7 @@ export function useUsageDashboard() {
         totalCost,
         totalSessions,
         totalTokens,
+        tokenGrowthTrend,
     }
 }
 
@@ -307,6 +354,14 @@ function getDateKey(date: Date) {
     return `${year}-${month}-${day}`
 }
 
+function getPreviousDateKey(dateKey: string) {
+    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
+    const date = new Date(year || 0, (month || 1) - 1, day || 1)
+    date.setDate(date.getDate() - 1)
+
+    return getDateKey(date)
+}
+
 function formatDateLabelFromDateKey(dateKey: string, fallback: string) {
     const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
 
@@ -326,6 +381,24 @@ function formatDateLabelFromDateKey(dateKey: string, fallback: string) {
 
 function safeRatio(numerator: number, denominator: number) {
     return denominator > 0 ? numerator / denominator : 0
+}
+
+function formatSignedPercent(value: number) {
+    const prefix = value > 0 ? '+' : ''
+
+    return `${prefix}${formatPercent(value)}`
+}
+
+function getTrendTone(value: number) {
+    if (value > 0) {
+        return 'up'
+    }
+
+    if (value < 0) {
+        return 'down'
+    }
+
+    return 'neutral'
 }
 
 function normalizeNumber(value: number) {

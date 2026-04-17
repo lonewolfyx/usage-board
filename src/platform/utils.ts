@@ -388,8 +388,8 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
  * @example
  * ```ts
  * const cards = buildOverviewCards({
- *     cachedInputTokens: 100,
- *     sessionCount: 2,
+ *     previousDayCost: 0.01,
+ *     previousDayTokens: 800,
  *     todayTopModel: null,
  *     todayTopProject: null,
  *     todayTotalCost: 0.01,
@@ -398,26 +398,29 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
  * ```
  */
 export function buildOverviewCards(options: {
-    cachedInputTokens: number
-    sessionCount: number
+    previousDayCost: number
+    previousDayTokens: number
     todayTopModel: UsageTopModel | null
     todayTopProject: UsageTopProject | null
     todayTotalCost: number
     todayTotalTokens: number
 }): UsageOverviewCard[] {
+    const tokenTrend = buildGrowthTrend(options.todayTotalTokens, options.previousDayTokens, formatCompactNumber)
+    const costTrend = buildGrowthTrend(options.todayTotalCost, options.previousDayCost, formatCurrency)
+
     return [
         {
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
-            trend: `${options.sessionCount} sessions`,
-            trendTone: 'neutral',
+            trend: tokenTrend.trend,
+            trendTone: tokenTrend.trendTone,
             value: formatCompactNumber(options.todayTotalTokens),
         },
         {
             icon: 'lucide:wallet',
             name: 'Today Spend',
-            trend: `${formatCompactNumber(options.cachedInputTokens)} cached`,
-            trendTone: 'neutral',
+            trend: costTrend.trend,
+            trendTone: costTrend.trendTone,
             value: formatCurrency(options.todayTotalCost),
         },
         {
@@ -435,6 +438,58 @@ export function buildOverviewCards(options: {
             value: options.todayTopModel?.model ?? '-',
         },
     ]
+}
+
+function buildGrowthTrend(
+    currentValue: number,
+    previousValue: number,
+    formatValue: (value: number) => string,
+): Pick<UsageOverviewCard, 'trend' | 'trendTone'> {
+    const current = Math.max(normalizeNumber(currentValue), 0)
+    const previous = Math.max(normalizeNumber(previousValue), 0)
+
+    if (previous === 0) {
+        if (current === 0) {
+            return {
+                trend: '0.0%',
+                trendTone: 'neutral',
+            }
+        }
+
+        return {
+            trend: `+${formatValue(current)}`,
+            trendTone: 'up',
+        }
+    }
+
+    const ratio = (current - previous) / previous
+
+    return {
+        trend: formatSignedPercent(ratio),
+        trendTone: getTrendTone(ratio),
+    }
+}
+
+function formatSignedPercent(value: number) {
+    const prefix = value > 0 ? '+' : ''
+
+    return `${prefix}${new Intl.NumberFormat('en-US', {
+        maximumFractionDigits: 1,
+        minimumFractionDigits: 1,
+        style: 'percent',
+    }).format(value)}`
+}
+
+function getTrendTone(value: number) {
+    if (value > 0) {
+        return 'up'
+    }
+
+    if (value < 0) {
+        return 'down'
+    }
+
+    return 'neutral'
 }
 
 /**
@@ -704,6 +759,23 @@ export function getDateKey(date: Date) {
     const day = parts.find(part => part.type === 'day')?.value ?? '01'
 
     return `${year}-${month}-${day}`
+}
+
+/**
+ * Gets the local date key immediately before a yyyy-MM-dd date key.
+ *
+ * @example
+ * ```ts
+ * getPreviousDateKey('2026-04-16')
+ * // '2026-04-15'
+ * ```
+ */
+export function getPreviousDateKey(dateKey: string) {
+    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
+    const date = new Date(year || 0, (month || 1) - 1, day || 1)
+    date.setDate(date.getDate() - 1)
+
+    return getDateKey(date)
 }
 
 /**
