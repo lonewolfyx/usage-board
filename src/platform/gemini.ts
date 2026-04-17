@@ -28,7 +28,6 @@ import {
     buildProjectUsage,
     buildSessionRows,
     createEmptyUsage,
-    getActiveDateKey,
     getDateKey,
     getDurationMinutes,
     getProjectName,
@@ -117,17 +116,20 @@ export async function loadGeminiUsage(config: IConfig): Promise<LoadUsageResult>
     const sessionUsage = sessionSummaries.map(session => toUsageSessionUsageItem(session))
 
     const dailyGroups = buildDailyUsageGroups(events)
+    const todayDateKey = getDateKey(new Date())
+    const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const todayDailyGroups = todayDailyGroup
+        ? new Map([[todayDateKey, todayDailyGroup]])
+        : new Map()
     const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(dailyGroups)
+    const dailyRows = buildDailyRows(todayDailyGroups)
     const weeklyRows = buildPeriodRows(events, 'week')
     const monthlyRows = buildPeriodRows(events, 'month')
     const sessionRows = buildSessionRows(sessionSummaries)
 
     const monthlyModelUsage = buildMonthlyModelUsage(events)
     const projectUsage = buildProjectUsage(sessionUsage)
-    const todayDateKey = getActiveDateKey(dailyGroups)
     const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
     const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
     const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
     const todayTopProject = getTopProjectForDate(todayEvents)

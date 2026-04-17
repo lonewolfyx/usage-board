@@ -24,7 +24,6 @@ import {
     buildPeriodRows,
     buildProjectUsage,
     buildSessionRows,
-    getActiveDateKey,
     getDateKey,
     getDurationMinutes,
     getProjectName,
@@ -81,17 +80,20 @@ export async function loadClaudeCodeUsage(config: IConfig): Promise<LoadUsageRes
     }
 
     const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
+    const todayDateKey = getDateKey(new Date())
+    const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const todayDailyGroups = todayDailyGroup
+        ? new Map([[todayDateKey, todayDailyGroup]])
+        : new Map()
     const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(dailyGroups)
+    const dailyRows = buildDailyRows(todayDailyGroups)
     const weeklyRows = buildPeriodRows(events, 'week', aggregateOptions)
     const monthlyRows = buildPeriodRows(events, 'month', aggregateOptions)
     const sessionRows = buildSessionRows(sessionSummaries, sessionOptions)
 
     const monthlyModelUsage = buildMonthlyModelUsage(events, aggregateOptions)
     const projectUsage = buildProjectUsage(sessionUsage)
-    const todayDateKey = getActiveDateKey(dailyGroups)
     const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
     const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
     const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
     const todayTopProject = getTopProjectForDate(todayEvents)

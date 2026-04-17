@@ -79,17 +79,20 @@ export async function loadCodexUsage(config: IConfig): Promise<LoadUsageResult> 
     const getEventCostUSD = (event: CodexTokenUsageEvent) => calculateUsageCost(event.model, event, resolvePricing)
     const aggregateOptions = { getCostUSD: getEventCostUSD }
     const dailyGroups = buildDailyUsageGroups(tokenEvents, aggregateOptions)
+    const todayDateKey = getDateKey(new Date())
+    const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const todayDailyGroups = todayDailyGroup
+        ? new Map([[todayDateKey, todayDailyGroup]])
+        : new Map()
     const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(dailyGroups)
+    const dailyRows = buildDailyRows(todayDailyGroups)
     const weeklyRows = buildPeriodRows(tokenEvents, 'week', aggregateOptions)
     const monthlyRows = buildPeriodRows(tokenEvents, 'month', aggregateOptions)
     const sessionRows = buildSessionRows(sessionSummaries)
 
     const monthlyModelUsage = buildMonthlyModelUsage(tokenEvents)
     const projectUsage = buildProjectUsage(sessionUsage)
-    const todayDateKey = getDateKey(new Date())
     const todayEvents = tokenEvents.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
     const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
     const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
     const todayTopProject = getTopProjectForDate(todayEvents)

@@ -438,24 +438,6 @@ export function buildOverviewCards(options: {
 }
 
 /**
- * Gets the active "today" date key, falling back to the latest date with data when real today is empty.
- *
- * @example
- * ```ts
- * const activeDateKey = getActiveDateKey(dailyGroups)
- * ```
- */
-export function getActiveDateKey(dailyGroups: Map<string, DailyUsageSummaryGroup>) {
-    const todayDateKey = getDateKey(new Date())
-
-    if (dailyGroups.has(todayDateKey)) {
-        return todayDateKey
-    }
-
-    return Array.from(dailyGroups.keys()).sort((a, b) => b.localeCompare(a))[0] ?? todayDateKey
-}
-
-/**
  * Finds the project with the highest session count in a set of events.
  *
  * @example
