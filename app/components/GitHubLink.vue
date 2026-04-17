@@ -26,8 +26,14 @@
 </template>
 
 <script lang="ts" setup>
+interface UnghRepoResponse {
+    repo?: {
+        stars?: number
+    }
+}
+
 const app = useAppConfig()
-const { data, pending } = useLazyFetch(`https://ungh.cc/repos/${app.github.repo}`)
+const { data, pending } = useLazyFetch<UnghRepoResponse>(`https://ungh.cc/repos/${app.github.repo}`)
 
 const stars = computed(() => {
     const count = data.value?.repo?.stars
