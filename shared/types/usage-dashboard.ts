@@ -85,6 +85,58 @@ export interface UsageSessionUsageItem {
     costUSD: number
 }
 
+export interface ProjectInteractionUsage {
+    cachedInputTokens: number
+    cacheCreationTokens?: number
+    cacheReadTokens?: number
+    costUSD: number
+    inputTokens: number
+    isFallbackModel?: boolean
+    outputTokens: number
+    reasoningOutputTokens: number
+    toolTokens?: number
+    totalTokens: number
+}
+
+export type ProjectInteractionRole = 'assistant' | 'system' | 'tool' | 'unknown' | 'usage' | 'user'
+
+export interface ProjectSessionInteractionItem {
+    content: string
+    costUSD: number
+    index: number
+    model: string | null
+    raw: unknown
+    role: ProjectInteractionRole
+    timestamp: string | null
+    type: string
+    usage: ProjectInteractionUsage | null
+}
+
+export interface ProjectSessionUsageItem extends UsageSessionUsageItem {
+    interactions: ProjectSessionInteractionItem[]
+    models: string[]
+}
+
+export interface ProjectPlatformUsage extends LoadUsageResult {
+    sessions: ProjectSessionUsageItem[]
+}
+
+export interface ProjectUsageAnalyzing {
+    claudeCode: ProjectPlatformUsage
+    codex: ProjectPlatformUsage
+    gemini: ProjectPlatformUsage
+}
+
+export interface ProjectUsageDetail {
+    label: string
+    models: string[]
+    createTime: string | null
+    sessionCound: number
+    analyzing: ProjectUsageAnalyzing
+}
+
+export type LoadProjectsUsageResult = Array<Record<string, ProjectUsageDetail>>
+
 export interface UsageTopProject {
     project: string
     sessionCount: number

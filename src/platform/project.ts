@@ -1,23 +1,34 @@
 import type {
+    LoadProjectsUsageResult,
     LoadUsageResult,
-    UsageSessionUsageItem,
+    ProjectInteractionRole,
+    ProjectInteractionUsage,
+    ProjectPlatformUsage,
+    ProjectSessionInteractionItem,
+    ProjectSessionUsageItem,
+    ProjectUsageAnalyzing,
 } from '#shared/types/usage-dashboard'
 import type {
     GeminiSessionFile,
-    GeminiSessionMessage,
     GeminiTokenSnapshot,
     IConfig,
-    ModelPricing,
     ModelPricingResolver,
     RawUsage,
     SessionLogLine,
-    TokenUsageDelta,
-    TokenUsageSnapshot,
     UsageAggregateEvent,
 } from '~~/src/types'
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, join, sep } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename, join } from 'node:path'
 import { glob } from 'glob'
+import {
+    CLAUDE_FALLBACK_MODEL,
+    CLAUDE_MODEL_ALIASES,
+    CODEX_FALLBACK_MODEL,
+    CODEX_MODEL_ALIASES,
+    GEMINI_FALLBACK_MODEL,
+    GEMINI_FALLBACK_PRICING_TABLE,
+    GEMINI_MODEL_ALIASES,
+} from '~~/src/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 import {
     buildDailyRows,
@@ -27,133 +38,40 @@ import {
     buildOverviewCards,
     buildPeriodRows,
     buildProjectUsage,
+    convertCodexRawUsage,
+    convertGeminiTokenUsage,
+    decodeClaudeProjectPath,
+    extractClaudeProjectFromPath,
+    extractGeminiMessageText,
+    extractModelName,
     formatDateLabelFromDateKey,
     formatDuration,
+    getClaudeLookupCandidates,
     getDateKey,
     getDurationMinutes,
+    getGeminiLookupCandidates,
+    getGeminiProjectKeyFromPath,
+    getGeminiProjectRoot,
     getMonthKey,
     getPreviousDateKey,
     getProjectName,
+    getRepositoryNameFromProjectRoot,
     getTopModelForDate,
     getTopProjectForDate,
     getWeekLabel,
+    isOpenRouterFreeModel,
+    isZeroUsage,
     normalizeNumber,
+    normalizeRawUsage,
     normalizeRepositoryUrl,
     parseJsonFile,
     parseJsonlFile,
     roundCurrency,
+    subtractRawUsage,
     toIsoString,
 } from '~~/src/platform/utils'
 
 type ProjectUsagePlatform = 'claudeCode' | 'codex' | 'gemini'
-type InteractionRole = 'assistant' | 'system' | 'tool' | 'unknown' | 'usage' | 'user'
-
-const CLAUDE_FALLBACK_MODEL = 'claude-sonnet-4-5'
-const CODEX_FALLBACK_MODEL = 'gpt-5'
-const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
-
-const CLAUDE_MODEL_ALIASES: Record<string, string> = {
-    'claude-3-5-haiku-latest': 'claude-haiku-4-5',
-    'claude-3-5-sonnet-latest': 'claude-sonnet-4-5',
-    'claude-3-7-sonnet-latest': 'claude-sonnet-4-5',
-    'claude-haiku-4.5': 'claude-haiku-4-5',
-    'claude-opus-4.1': 'claude-opus-4-1',
-    'claude-sonnet-4.5': 'claude-sonnet-4-5',
-    'claude-4-1-opus': 'claude-opus-4-1',
-    'claude-4-5-haiku': 'claude-haiku-4-5',
-    'claude-4-5-sonnet': 'claude-sonnet-4-5',
-}
-
-const CODEX_MODEL_ALIASES: Record<string, string> = {
-    'gpt-5-codex': 'gpt-5',
-    'gpt-5.3-codex': 'gpt-5.2-codex',
-}
-
-const GEMINI_MODEL_ALIASES: Record<string, string> = {
-    'gemini-3-flash-preview': 'gemini-3-flash',
-}
-
-const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
-    'gemini-2.5-flash': {
-        cachedInputCostPerMTokens: 0.075,
-        cacheCreationInputCostPerMTokens: 0.3,
-        inputCostPerMTokens: 0.3,
-        outputCostPerMTokens: 2.5,
-    },
-    'gemini-2.5-flash-lite': {
-        cachedInputCostPerMTokens: 0.025,
-        cacheCreationInputCostPerMTokens: 0.1,
-        inputCostPerMTokens: 0.1,
-        outputCostPerMTokens: 0.4,
-    },
-    'gemini-2.5-pro': {
-        cachedInputCostPerMTokens: 0.31,
-        cachedInputCostPerMTokensAbove200K: 0.625,
-        cacheCreationInputCostPerMTokens: 1.25,
-        cacheCreationInputCostPerMTokensAbove200K: 2.5,
-        inputCostPerMTokens: 1.25,
-        inputCostPerMTokensAbove200K: 2.5,
-        outputCostPerMTokens: 10,
-        outputCostPerMTokensAbove200K: 15,
-    },
-    'gemini-3-flash': {
-        cachedInputCostPerMTokens: 0.05,
-        cacheCreationInputCostPerMTokens: 0.5,
-        inputCostPerMTokens: 0.5,
-        outputCostPerMTokens: 3,
-    },
-    'gemini-3-flash-preview': {
-        cachedInputCostPerMTokens: 0.05,
-        cacheCreationInputCostPerMTokens: 0.5,
-        inputCostPerMTokens: 0.5,
-        outputCostPerMTokens: 3,
-    },
-}
-
-export interface ProjectInteractionUsage extends TokenUsageDelta {
-    cacheCreationTokens?: number
-    cacheReadTokens?: number
-    costUSD: number
-    isFallbackModel?: boolean
-    toolTokens?: number
-}
-
-export interface ProjectSessionInteractionItem {
-    content: string
-    costUSD: number
-    index: number
-    model: string | null
-    raw: unknown
-    role: InteractionRole
-    timestamp: string | null
-    type: string
-    usage: ProjectInteractionUsage | null
-}
-
-export interface ProjectSessionUsageItem extends UsageSessionUsageItem {
-    interactions: ProjectSessionInteractionItem[]
-    models: string[]
-}
-
-export interface ProjectPlatformUsage extends LoadUsageResult {
-    sessions: ProjectSessionUsageItem[]
-}
-
-export interface ProjectUsageAnalyzing {
-    claudeCode: ProjectPlatformUsage
-    codex: ProjectPlatformUsage
-    gemini: ProjectPlatformUsage
-}
-
-export interface ProjectUsageDetail {
-    label: string
-    models: string[]
-    createTime: string | null
-    sessionCound: number
-    analyzing: ProjectUsageAnalyzing
-}
-
-export type LoadProjectsUsageResult = Array<Record<string, ProjectUsageDetail>>
 
 /**
  * Loads Claude Code, Codex, and Gemini usage, then groups all sessions by project.
@@ -462,7 +380,7 @@ async function loadCodexSessionDetails(config: IConfig, resolvePricing: ModelPri
             const line = lines[index]!
 
             if (line.type === 'turn_context') {
-                const contextModel = extractModel(line.payload)
+                const contextModel = extractModelName(line.payload)
 
                 if (contextModel) {
                     currentModel = contextModel
@@ -471,7 +389,7 @@ async function loadCodexSessionDetails(config: IConfig, resolvePricing: ModelPri
             }
 
             const timestamp = toIsoString(line.timestamp) ?? toIsoString(line.payload?.timestamp)
-            const extractedModel = extractModel(line.payload)
+            const extractedModel = extractModelName(line.payload)
 
             if (extractedModel) {
                 currentModel = extractedModel
@@ -547,7 +465,7 @@ async function loadGeminiSessionDetails(config: IConfig, resolvePricing: ModelPr
             ?? null
         const projectRoot = getGeminiProjectRoot(filePath)
         const project = getProjectName(projectRoot, '') || getGeminiProjectKeyFromPath(filePath)
-        const repository = getGeminiRepositoryName(projectRoot) || `local/${project}`
+        const repository = getRepositoryNameFromProjectRoot(projectRoot) || `local/${project}`
         const sessionId = data.sessionId?.trim() || basename(filePath, '.json')
         const detail = createSessionDetail({
             project,
@@ -634,7 +552,7 @@ function getCodexInteractionUsage(
     model: string,
     resolvePricing: ModelPricingResolver,
 ): ProjectInteractionUsage | null {
-    const usage = convertCodexUsage(rawUsage)
+    const usage = convertCodexRawUsage(rawUsage)
 
     if (isZeroUsage(usage)) {
         return null
@@ -651,7 +569,7 @@ function getGeminiInteractionUsage(
     model: string,
     resolvePricing: ModelPricingResolver,
 ): ProjectInteractionUsage | null {
-    const usage = convertGeminiUsage(tokens)
+    const usage = convertGeminiTokenUsage(tokens)
 
     if (isZeroUsage(usage)) {
         return null
@@ -804,77 +722,6 @@ async function globClaudeUsageFiles(config: IConfig) {
     return fileGroups.flat()
 }
 
-function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined): RawUsage | null {
-    if (!usage) {
-        return null
-    }
-
-    const input = normalizeNumber(usage.input_tokens)
-    const cachedInput = normalizeNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens)
-    const output = normalizeNumber(usage.output_tokens)
-    const reasoning = normalizeNumber(usage.reasoning_output_tokens)
-    const total = normalizeNumber(usage.total_tokens)
-
-    return {
-        cached_input_tokens: cachedInput,
-        input_tokens: input,
-        output_tokens: output,
-        reasoning_output_tokens: reasoning,
-        total_tokens: total > 0 ? total : input + output,
-    }
-}
-
-function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsage {
-    return {
-        cached_input_tokens: Math.max(current.cached_input_tokens - (previous?.cached_input_tokens ?? 0), 0),
-        input_tokens: Math.max(current.input_tokens - (previous?.input_tokens ?? 0), 0),
-        output_tokens: Math.max(current.output_tokens - (previous?.output_tokens ?? 0), 0),
-        reasoning_output_tokens: Math.max(current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0), 0),
-        total_tokens: Math.max(current.total_tokens - (previous?.total_tokens ?? 0), 0),
-    }
-}
-
-function convertCodexUsage(rawUsage: RawUsage): TokenUsageDelta {
-    const cachedInputTokens = Math.min(rawUsage.cached_input_tokens, rawUsage.input_tokens)
-    const inputTokens = Math.max(rawUsage.input_tokens - cachedInputTokens, 0)
-    const outputTokens = Math.max(rawUsage.output_tokens, 0)
-
-    return {
-        cachedInputTokens,
-        inputTokens,
-        outputTokens,
-        reasoningOutputTokens: Math.max(rawUsage.reasoning_output_tokens, 0),
-        totalTokens: rawUsage.total_tokens > 0 ? rawUsage.total_tokens : inputTokens + outputTokens,
-    }
-}
-
-function convertGeminiUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
-    const rawInputTokens = normalizeNumber(tokens.input)
-    const cachedInputTokens = Math.min(normalizeNumber(tokens.cached), rawInputTokens)
-    const outputTokens = normalizeNumber(tokens.output)
-    const reasoningOutputTokens = normalizeNumber(tokens.thoughts)
-    const toolTokens = normalizeNumber(tokens.tool)
-    const totalTokens = normalizeNumber(tokens.total)
-
-    return {
-        cachedInputTokens,
-        inputTokens: Math.max(rawInputTokens - cachedInputTokens, 0),
-        outputTokens,
-        reasoningOutputTokens,
-        totalTokens: totalTokens > 0
-            ? totalTokens
-            : rawInputTokens + outputTokens + reasoningOutputTokens + toolTokens,
-    }
-}
-
-function isZeroUsage(usage: TokenUsageDelta) {
-    return usage.inputTokens === 0
-        && usage.cachedInputTokens === 0
-        && usage.outputTokens === 0
-        && usage.reasoningOutputTokens === 0
-        && usage.totalTokens === 0
-}
-
 function getClaudeDisplayModel(line: Record<string, unknown>) {
     const message = getRecord(line.message)
     const model = getString(message?.model)
@@ -893,35 +740,6 @@ function getClaudeUniqueHash(line: Record<string, unknown>) {
     const requestId = getString(line.requestId)
 
     return messageId && requestId ? `${messageId}:${requestId}` : null
-}
-
-function extractModel(value: unknown): string | undefined {
-    if (!value || typeof value !== 'object') {
-        return undefined
-    }
-
-    const record = value as Record<string, unknown>
-    const info = getRecord(record.info)
-    const metadata = getRecord(record.metadata)
-    const infoMetadata = getRecord(info?.metadata)
-    const candidates = [
-        record.model,
-        record.model_name,
-        info?.model,
-        info?.model_name,
-        infoMetadata?.model,
-        metadata?.model,
-    ]
-
-    for (const candidate of candidates) {
-        const model = getString(candidate)
-
-        if (model) {
-            return model
-        }
-    }
-
-    return undefined
 }
 
 function extractClaudeMessageText(content: unknown) {
@@ -957,28 +775,13 @@ function extractCodexContent(line: SessionLogLine) {
     return text
 }
 
-function extractGeminiMessageText(content: GeminiSessionMessage['content']) {
-    if (typeof content === 'string') {
-        return content
-    }
-
-    if (!Array.isArray(content)) {
-        return ''
-    }
-
-    return content
-        .map(item => item.text?.trim())
-        .filter(Boolean)
-        .join('\n')
-}
-
-function getInteractionRole(line: Record<string, unknown>, message: Record<string, unknown> | null): InteractionRole {
+function getInteractionRole(line: Record<string, unknown>, message: Record<string, unknown> | null): ProjectInteractionRole {
     const role = getString(line.type) || getString(message?.role) || getString(message?.type)
 
     return normalizeRole(role)
 }
 
-function getCodexRole(line: SessionLogLine): InteractionRole {
+function getCodexRole(line: SessionLogLine): ProjectInteractionRole {
     const type = line.payload?.type ?? line.type ?? ''
 
     if (type === 'token_count') {
@@ -988,7 +791,7 @@ function getCodexRole(line: SessionLogLine): InteractionRole {
     return normalizeRole(type)
 }
 
-function getGeminiRole(message: GeminiSessionMessage): InteractionRole {
+function getGeminiRole(message: GeminiSessionFile['messages'][number]): ProjectInteractionRole {
     if (message.type === 'gemini') {
         return 'assistant'
     }
@@ -996,7 +799,7 @@ function getGeminiRole(message: GeminiSessionMessage): InteractionRole {
     return normalizeRole(message.type ?? '')
 }
 
-function normalizeRole(value: string): InteractionRole {
+function normalizeRole(value: string): ProjectInteractionRole {
     const normalized = value.toLowerCase()
 
     if (normalized.includes('user')) {
@@ -1026,99 +829,12 @@ function getSessionId(filePath: string, sessionMetaId: string | undefined) {
     return sessionMetaId?.trim() || basename(filePath, '.jsonl')
 }
 
-function extractClaudeProjectFromPath(jsonlPath: string) {
-    const normalizedPath = jsonlPath.replace(/[/\\]/g, sep)
-    const segments = normalizedPath.split(sep)
-    const projectsIndex = segments.findIndex(segment => segment === 'projects')
-
-    if (projectsIndex === -1 || projectsIndex + 1 >= segments.length) {
-        return 'unknown'
-    }
-
-    return segments[projectsIndex + 1]?.trim() || 'unknown'
-}
-
-function decodeClaudeProjectPath(projectPath: string) {
-    const normalized = projectPath.replace(/^-/, '').replace(/-/g, '/')
-    const parts = normalized.split('/').filter(Boolean)
-
-    return parts.at(-1) ?? projectPath
-}
-
 function isGeminiSessionFile(value: unknown): value is GeminiSessionFile {
     if (!value || typeof value !== 'object') {
         return false
     }
 
     return Array.isArray((value as Record<string, unknown>).messages)
-}
-
-function getGeminiProjectRoot(filePath: string) {
-    const projectDir = dirname(dirname(filePath))
-    const projectRootFile = `${projectDir}/.project_root`
-
-    if (!existsSync(projectRootFile)) {
-        return ''
-    }
-
-    try {
-        return readFileSync(projectRootFile, 'utf8').trim()
-    }
-    catch {
-        return ''
-    }
-}
-
-function getGeminiProjectKeyFromPath(filePath: string) {
-    const normalizedPath = filePath.replace(/[/\\]/g, sep)
-    const segments = normalizedPath.split(sep)
-    const tmpIndex = segments.findIndex(segment => segment === 'tmp')
-
-    if (tmpIndex === -1 || tmpIndex + 1 >= segments.length) {
-        return 'unknown'
-    }
-
-    return segments[tmpIndex + 1]?.trim() || 'unknown'
-}
-
-function getGeminiRepositoryName(projectRoot: string) {
-    if (!projectRoot) {
-        return ''
-    }
-
-    const gitConfigPath = `${projectRoot}/.git/config`
-
-    if (!existsSync(gitConfigPath)) {
-        return ''
-    }
-
-    try {
-        return normalizeRepositoryUrl(getOriginUrlFromGitConfig(readFileSync(gitConfigPath, 'utf8')))
-    }
-    catch {
-        return ''
-    }
-}
-
-function getOriginUrlFromGitConfig(config: string) {
-    let isOriginBlock = false
-
-    for (const rawLine of config.split('\n')) {
-        const line = rawLine.trim()
-
-        if (line.startsWith('[')) {
-            isOriginBlock = line === '[remote "origin"]'
-            continue
-        }
-
-        if (!isOriginBlock || !line.startsWith('url =')) {
-            continue
-        }
-
-        return line.slice('url ='.length).trim()
-    }
-
-    return ''
 }
 
 function getGeminiThreadName(data: GeminiSessionFile, project: string) {
@@ -1134,38 +850,6 @@ function getGeminiThreadName(data: GeminiSessionFile, project: string) {
     }
 
     return name.length > 96 ? `${name.slice(0, 93)}...` : name
-}
-
-function getClaudeLookupCandidates(model: string) {
-    const normalizedModel = model.trim()
-
-    return [
-        normalizedModel,
-        normalizedModel.replace(/-fast$/u, ''),
-        normalizedModel.replace(/^anthropic\//u, ''),
-        `anthropic/${normalizedModel}`,
-        normalizedModel.replace(/^claude-3-5-/u, 'claude-'),
-        normalizedModel.replace(/^claude-3-7-/u, 'claude-'),
-    ]
-}
-
-function getGeminiLookupCandidates(model: string) {
-    const normalizedModel = model.trim()
-
-    return [
-        normalizedModel,
-        normalizedModel.replace(/^gemini\//u, ''),
-        normalizedModel.replace(/^google\//u, ''),
-        `gemini/${normalizedModel}`,
-        `google/${normalizedModel}`,
-    ]
-}
-
-function isOpenRouterFreeModel(model: string) {
-    const normalizedModel = model.trim().toLowerCase()
-
-    return normalizedModel === 'openrouter/free'
-        || (normalizedModel.startsWith('openrouter/') && normalizedModel.endsWith(':free'))
 }
 
 function collectSessionModels(sessions: ProjectSessionUsageItem[]) {

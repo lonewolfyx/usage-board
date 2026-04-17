@@ -11,48 +11,31 @@ import type {
     SessionLogLine,
     SessionUsageSummary,
     TokenUsageDelta,
-    TokenUsageSnapshot,
     UsageSessionMeta,
 } from '~~/src/types'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { glob } from 'glob'
+import { CODEX_FALLBACK_MODEL, CODEX_MODEL_ALIASES } from '~~/src/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 import {
     addUsage,
-    buildDailyRows,
-    buildDailyTokenUsage,
-    buildDailyUsageGroups,
-    buildMonthlyModelUsage,
-    buildOverviewCards,
-    buildPeriodRows,
-    buildProjectUsage,
-    buildSessionRows,
+    buildLoadUsageResult,
+    convertCodexRawUsage,
     createEmptyUsage,
-    getDateKey,
+    extractModelName,
     getDurationMinutes,
-    getPreviousDateKey,
     getProjectName,
     getThreadName,
-    getTopModelForDate,
-    getTopProjectForDate,
+    isOpenRouterFreeModel,
     isZeroUsage,
-    normalizeNumber,
+    normalizeRawUsage,
     normalizeRepositoryUrl,
     parseJsonlFile,
     roundCurrency,
+    subtractRawUsage,
     toIsoString,
-    toUsageSessionUsageItem,
 } from '~~/src/platform/utils'
-
-/** Display and pricing fallback model used when Codex logs do not include a model field. */
-const LEGACY_FALLBACK_MODEL = 'gpt-5'
-
-/** Maps Codex-specific model names to LiteLLM or local pricing table names. */
-const CODEX_MODEL_ALIASES: Record<string, string> = {
-    'gpt-5-codex': 'gpt-5',
-    'gpt-5.3-codex': 'gpt-5.2-codex',
-}
 
 /**
  * Loads local Codex session logs and converts them into dashboard usage data.
@@ -66,7 +49,7 @@ const CODEX_MODEL_ALIASES: Record<string, string> = {
 export async function loadCodexUsage(config: IConfig): Promise<LoadUsageResult> {
     const resolvePricing = await createLiteLLMPricingResolver({
         aliases: CODEX_MODEL_ALIASES,
-        fallbackModel: LEGACY_FALLBACK_MODEL,
+        fallbackModel: CODEX_FALLBACK_MODEL,
         isZeroCostModel: isOpenRouterFreeModel,
     })
     const sessionFiles = await loadSessionFiles(config)
@@ -76,54 +59,10 @@ export async function loadCodexUsage(config: IConfig): Promise<LoadUsageResult> 
 
     const sessionSummaries = buildSessionSummaries(sessionFiles, resolvePricing)
         .sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))
-    const sessionUsage = sessionSummaries.map(session => toUsageSessionUsageItem(session))
     const getEventCostUSD = (event: CodexTokenUsageEvent) => calculateUsageCost(event.model, event, resolvePricing)
     const aggregateOptions = { getCostUSD: getEventCostUSD }
-    const dailyGroups = buildDailyUsageGroups(tokenEvents, aggregateOptions)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
-    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayDailyGroups = todayDailyGroup
-        ? new Map([[todayDateKey, todayDailyGroup]])
-        : new Map()
-    const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(todayDailyGroups)
-    const weeklyRows = buildPeriodRows(tokenEvents, 'week', aggregateOptions)
-    const monthlyRows = buildPeriodRows(tokenEvents, 'month', aggregateOptions)
-    const sessionRows = buildSessionRows(sessionSummaries)
 
-    const monthlyModelUsage = buildMonthlyModelUsage(tokenEvents)
-    const projectUsage = buildProjectUsage(sessionUsage)
-    const todayEvents = tokenEvents.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
-    const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
-    const todayTopProject = getTopProjectForDate(todayEvents)
-    const todayTopModel = getTopModelForDate(todayEvents)
-    const overviewCards = buildOverviewCards({
-        previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
-        previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
-    })
-
-    return {
-        dailyRows,
-        dailyTokenUsage,
-        monthlyModelUsage,
-        monthlyRows,
-        overviewCards,
-        projectUsage,
-        sessionRows,
-        sessionUsage,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
-        weeklyRows,
-    }
+    return buildLoadUsageResult(tokenEvents, sessionSummaries, { aggregateOptions })
 }
 
 /**
@@ -269,7 +208,7 @@ function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta
 
     for (const line of lines) {
         if (line.type === 'turn_context') {
-            const contextModel = extractModel(line.payload)
+            const contextModel = extractModelName(line.payload)
 
             if (contextModel) {
                 currentModel = contextModel
@@ -302,13 +241,13 @@ function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta
             continue
         }
 
-        const delta = convertToDisplayDelta(rawUsage)
+        const delta = convertCodexRawUsage(rawUsage)
 
         if (isZeroUsage(delta)) {
             continue
         }
 
-        const extractedModel = extractModel({
+        const extractedModel = extractModelName({
             ...(line.payload ?? {}),
             info: info ?? undefined,
         })
@@ -322,7 +261,7 @@ function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta
         let isFallbackModel = false
 
         if (!model) {
-            model = LEGACY_FALLBACK_MODEL
+            model = CODEX_FALLBACK_MODEL
             isFallbackModel = true
             currentModel = model
             currentModelIsFallback = true
@@ -343,107 +282,6 @@ function extractTokenUsageEvents(lines: SessionLogLine[], meta: UsageSessionMeta
     }
 
     return events
-}
-
-/**
- * Normalizes a raw Codex token snapshot into a complete RawUsage shape.
- *
- * @example
- * ```ts
- * const rawUsage = normalizeRawUsage({ input_tokens: 100, output_tokens: 20 })
- * ```
- */
-function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined): RawUsage | null {
-    if (!usage) {
-        return null
-    }
-
-    const input = normalizeNumber(usage.input_tokens)
-    const cachedInput = normalizeNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens)
-    const output = normalizeNumber(usage.output_tokens)
-    const reasoning = normalizeNumber(usage.reasoning_output_tokens)
-    const total = normalizeNumber(usage.total_tokens)
-
-    return {
-        input_tokens: input,
-        cached_input_tokens: cachedInput,
-        output_tokens: output,
-        reasoning_output_tokens: reasoning,
-        total_tokens: total > 0 ? total : input + output,
-    }
-}
-
-/**
- * Subtracts the previous cumulative usage from the current cumulative usage to produce a delta.
- *
- * @example
- * ```ts
- * subtractRawUsage(currentUsage, previousUsage)
- * ```
- */
-function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsage {
-    return {
-        input_tokens: Math.max(current.input_tokens - (previous?.input_tokens ?? 0), 0),
-        cached_input_tokens: Math.max(current.cached_input_tokens - (previous?.cached_input_tokens ?? 0), 0),
-        output_tokens: Math.max(current.output_tokens - (previous?.output_tokens ?? 0), 0),
-        reasoning_output_tokens: Math.max(current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0), 0),
-        total_tokens: Math.max(current.total_tokens - (previous?.total_tokens ?? 0), 0),
-    }
-}
-
-/**
- * Converts a raw Codex delta into the dashboard's normalized token fields.
- *
- * @example
- * ```ts
- * const delta = convertToDisplayDelta(rawUsage)
- * ```
- */
-function convertToDisplayDelta(rawUsage: RawUsage): TokenUsageDelta {
-    const cachedInputTokens = Math.min(rawUsage.cached_input_tokens, rawUsage.input_tokens)
-    const inputTokens = Math.max(rawUsage.input_tokens - cachedInputTokens, 0)
-    const outputTokens = Math.max(rawUsage.output_tokens, 0)
-
-    return {
-        cachedInputTokens,
-        inputTokens,
-        outputTokens,
-        reasoningOutputTokens: Math.max(rawUsage.reasoning_output_tokens, 0),
-        totalTokens: rawUsage.total_tokens > 0 ? rawUsage.total_tokens : inputTokens + outputTokens,
-    }
-}
-
-/**
- * Extracts a model name from several possible payload locations.
- *
- * @example
- * ```ts
- * extractModel({ info: { model: 'gpt-5-codex' } })
- * // 'gpt-5-codex'
- * ```
- */
-function extractModel(value: unknown): string | undefined {
-    if (!value || typeof value !== 'object') {
-        return undefined
-    }
-
-    const record = value as Record<string, unknown>
-    const directCandidates = [
-        record.model,
-        record.model_name,
-        (record.info as Record<string, unknown> | null | undefined)?.model,
-        (record.info as Record<string, unknown> | null | undefined)?.model_name,
-        ((record.info as Record<string, unknown> | null | undefined)?.metadata as Record<string, unknown> | null | undefined)?.model,
-        (record.metadata as Record<string, unknown> | null | undefined)?.model,
-    ]
-
-    for (const candidate of directCandidates) {
-        if (typeof candidate === 'string' && candidate.trim() !== '') {
-            return candidate.trim()
-        }
-    }
-
-    return undefined
 }
 
 /**
@@ -490,7 +328,7 @@ function buildSessionSummaries(sessionFiles: CodexSessionFileData[], resolvePric
 
         const models = Array.from(usageByModel.keys()).sort((a, b) => a.localeCompare(b))
         const topModel = Array.from(usageByModel.entries())
-            .sort((a, b) => b[1].totalTokens - a[1].totalTokens || a[0].localeCompare(b[0]))[0]?.[0] ?? LEGACY_FALLBACK_MODEL
+            .sort((a, b) => b[1].totalTokens - a[1].totalTokens || a[0].localeCompare(b[0]))[0]?.[0] ?? CODEX_FALLBACK_MODEL
 
         summaries.push({
             sessionId: sessionFile.meta.sessionId,
@@ -524,23 +362,4 @@ function buildSessionSummaries(sessionFiles: CodexSessionFileData[], resolvePric
  */
 function calculateUsageCost(model: string, usage: TokenUsageDelta, resolvePricing: ModelPricingResolver) {
     return calculateUsageCostUSD(usage, resolvePricing(model))
-}
-
-/**
- * Checks whether an OpenRouter model name represents a free model.
- *
- * @example
- * ```ts
- * isOpenRouterFreeModel('openrouter/qwen/qwen3-coder:free')
- * // true
- * ```
- */
-function isOpenRouterFreeModel(model: string) {
-    const normalizedModel = model.trim().toLowerCase()
-
-    if (normalizedModel === 'openrouter/free') {
-        return true
-    }
-
-    return normalizedModel.startsWith('openrouter/') && normalizedModel.endsWith(':free')
 }

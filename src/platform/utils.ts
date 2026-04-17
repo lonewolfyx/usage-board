@@ -1,5 +1,6 @@
 import type {
     DailyTokenUsage,
+    LoadUsageResult,
     MonthlyModelUsage,
     ProjectUsageItem,
     TokenUsageRow,
@@ -11,15 +12,20 @@ import type {
 import type {
     AggregateOptions,
     DailyUsageSummaryGroup,
+    GeminiSessionMessage,
+    GeminiTokenSnapshot,
     ModelUsageSummary,
     PeriodRowGroup,
+    RawUsage,
     SessionAggregateGroup,
     SessionUsageOptions,
     SessionUsageSummaryLike,
     TokenUsageDelta,
+    TokenUsageSnapshot,
     UsageAggregateEvent,
 } from '~~/src/types'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
+import { dirname, sep } from 'node:path'
 
 /**
  * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
@@ -438,6 +444,66 @@ export function buildOverviewCards(options: {
             value: options.todayTopModel?.model ?? '-',
         },
     ]
+}
+
+/**
+ * Builds a complete dashboard usage result from normalized events and session summaries.
+ *
+ * @example
+ * ```ts
+ * const usage = buildLoadUsageResult(events, sessionSummaries)
+ * ```
+ */
+export function buildLoadUsageResult<
+    TEvent extends UsageAggregateEvent,
+    TSession extends SessionUsageSummaryLike,
+>(
+    events: TEvent[],
+    sessions: TSession[],
+    options: {
+        aggregateOptions?: AggregateOptions<TEvent>
+        sessionOptions?: SessionUsageOptions<TSession>
+    } = {},
+): LoadUsageResult {
+    const aggregateOptions = options.aggregateOptions ?? {}
+    const sessionOptions = options.sessionOptions ?? {}
+    const sessionUsage = sessions.map(session => toUsageSessionUsageItem(session, sessionOptions))
+    const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
+    const todayDateKey = getDateKey(new Date())
+    const previousDayDateKey = getPreviousDateKey(todayDateKey)
+    const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
+    const todayDailyGroups = todayDailyGroup
+        ? new Map([[todayDateKey, todayDailyGroup]])
+        : new Map()
+    const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
+    const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
+    const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
+    const todayTopProject = getTopProjectForDate(todayEvents)
+    const todayTopModel = getTopModelForDate(todayEvents, aggregateOptions)
+
+    return {
+        dailyRows: buildDailyRows(todayDailyGroups),
+        dailyTokenUsage: buildDailyTokenUsage(dailyGroups),
+        monthlyModelUsage: buildMonthlyModelUsage(events, aggregateOptions),
+        monthlyRows: buildPeriodRows(events, 'month', aggregateOptions),
+        overviewCards: buildOverviewCards({
+            previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
+            previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
+            todayTopModel,
+            todayTopProject,
+            todayTotalCost,
+            todayTotalTokens,
+        }),
+        projectUsage: buildProjectUsage(sessionUsage),
+        sessionRows: buildSessionRows(sessions, sessionOptions),
+        sessionUsage,
+        todayTopModel,
+        todayTopProject,
+        todayTotalCost,
+        todayTotalTokens,
+        weeklyRows: buildPeriodRows(events, 'week', aggregateOptions),
+    }
 }
 
 function buildGrowthTrend(
@@ -938,6 +1004,356 @@ export function roundCurrency(value: number) {
 }
 
 /**
+ * Normalizes a raw Codex token snapshot into a complete RawUsage shape.
+ *
+ * @example
+ * ```ts
+ * const rawUsage = normalizeRawUsage({ input_tokens: 100, output_tokens: 20 })
+ * ```
+ */
+export function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined): RawUsage | null {
+    if (!usage) {
+        return null
+    }
+
+    const input = normalizeNumber(usage.input_tokens)
+    const cachedInput = normalizeNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens)
+    const output = normalizeNumber(usage.output_tokens)
+    const reasoning = normalizeNumber(usage.reasoning_output_tokens)
+    const total = normalizeNumber(usage.total_tokens)
+
+    return {
+        cached_input_tokens: cachedInput,
+        input_tokens: input,
+        output_tokens: output,
+        reasoning_output_tokens: reasoning,
+        total_tokens: total > 0 ? total : input + output,
+    }
+}
+
+/**
+ * Subtracts the previous cumulative usage from the current cumulative usage to produce a delta.
+ *
+ * @example
+ * ```ts
+ * subtractRawUsage(currentUsage, previousUsage)
+ * ```
+ */
+export function subtractRawUsage(current: RawUsage, previous: RawUsage | null): RawUsage {
+    return {
+        cached_input_tokens: Math.max(current.cached_input_tokens - (previous?.cached_input_tokens ?? 0), 0),
+        input_tokens: Math.max(current.input_tokens - (previous?.input_tokens ?? 0), 0),
+        output_tokens: Math.max(current.output_tokens - (previous?.output_tokens ?? 0), 0),
+        reasoning_output_tokens: Math.max(current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0), 0),
+        total_tokens: Math.max(current.total_tokens - (previous?.total_tokens ?? 0), 0),
+    }
+}
+
+/**
+ * Converts a raw Codex delta into the dashboard's normalized token fields.
+ *
+ * @example
+ * ```ts
+ * const delta = convertCodexRawUsage({ input_tokens: 100, cached_input_tokens: 20, output_tokens: 10, reasoning_output_tokens: 0, total_tokens: 110 })
+ * ```
+ */
+export function convertCodexRawUsage(rawUsage: RawUsage): TokenUsageDelta {
+    const cachedInputTokens = Math.min(rawUsage.cached_input_tokens, rawUsage.input_tokens)
+    const inputTokens = Math.max(rawUsage.input_tokens - cachedInputTokens, 0)
+    const outputTokens = Math.max(rawUsage.output_tokens, 0)
+
+    return {
+        cachedInputTokens,
+        inputTokens,
+        outputTokens,
+        reasoningOutputTokens: Math.max(rawUsage.reasoning_output_tokens, 0),
+        totalTokens: rawUsage.total_tokens > 0 ? rawUsage.total_tokens : inputTokens + outputTokens,
+    }
+}
+
+/**
+ * Converts a Gemini token snapshot into the dashboard's normalized token fields.
+ *
+ * @example
+ * ```ts
+ * const usage = convertGeminiTokenUsage({ input: 100, cached: 20, output: 10 })
+ * ```
+ */
+export function convertGeminiTokenUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
+    const rawInputTokens = normalizeNumber(tokens.input)
+    const cachedInputTokens = Math.min(normalizeNumber(tokens.cached), rawInputTokens)
+    const outputTokens = normalizeNumber(tokens.output)
+    const reasoningOutputTokens = normalizeNumber(tokens.thoughts)
+    const toolTokens = normalizeNumber(tokens.tool)
+    const totalTokens = normalizeNumber(tokens.total)
+
+    return {
+        cachedInputTokens,
+        inputTokens: Math.max(rawInputTokens - cachedInputTokens, 0),
+        outputTokens,
+        reasoningOutputTokens,
+        totalTokens: totalTokens > 0
+            ? totalTokens
+            : rawInputTokens + outputTokens + reasoningOutputTokens + toolTokens,
+    }
+}
+
+/**
+ * Extracts a model name from several possible payload locations.
+ *
+ * @example
+ * ```ts
+ * extractModelName({ info: { model: 'gpt-5-codex' } })
+ * // 'gpt-5-codex'
+ * ```
+ */
+export function extractModelName(value: unknown): string | undefined {
+    if (!value || typeof value !== 'object') {
+        return undefined
+    }
+
+    const record = value as Record<string, unknown>
+    const info = getObjectRecord(record.info)
+    const metadata = getObjectRecord(record.metadata)
+    const infoMetadata = getObjectRecord(info?.metadata)
+    const candidates = [
+        record.model,
+        record.model_name,
+        info?.model,
+        info?.model_name,
+        infoMetadata?.model,
+        metadata?.model,
+    ]
+
+    for (const candidate of candidates) {
+        if (typeof candidate === 'string' && candidate.trim() !== '') {
+            return candidate.trim()
+        }
+    }
+
+    return undefined
+}
+
+/**
+ * Extracts the project path segment from a Claude Code project log path.
+ *
+ * @example
+ * ```ts
+ * extractClaudeProjectFromPath('/Users/me/.claude/projects/-Users-me-work-app/session.jsonl')
+ * // '-Users-me-work-app'
+ * ```
+ */
+export function extractClaudeProjectFromPath(jsonlPath: string) {
+    const normalizedPath = jsonlPath.replace(/[/\\]/g, sep)
+    const segments = normalizedPath.split(sep)
+    const projectsIndex = segments.findIndex(segment => segment === 'projects')
+
+    if (projectsIndex === -1 || projectsIndex + 1 >= segments.length) {
+        return 'unknown'
+    }
+
+    return segments[projectsIndex + 1]?.trim() || 'unknown'
+}
+
+/**
+ * Decodes Claude Code's hyphen-encoded project path into a more readable project name.
+ *
+ * @example
+ * ```ts
+ * decodeClaudeProjectPath('-Users-me-work-usage-board')
+ * // 'usage-board'
+ * ```
+ */
+export function decodeClaudeProjectPath(projectPath: string) {
+    const normalized = projectPath.replace(/^-/, '').replace(/-/g, '/')
+    const parts = normalized.split('/').filter(Boolean)
+
+    return parts.at(-1) ?? projectPath
+}
+
+/**
+ * Generates possible LiteLLM pricing lookup names for a Claude model.
+ *
+ * @example
+ * ```ts
+ * getClaudeLookupCandidates('anthropic/claude-sonnet-4-5')
+ * ```
+ */
+export function getClaudeLookupCandidates(model: string) {
+    const normalizedModel = model.trim()
+
+    return [
+        normalizedModel,
+        normalizedModel.replace(/-fast$/u, ''),
+        normalizedModel.replace(/^anthropic\//u, ''),
+        `anthropic/${normalizedModel}`,
+        normalizedModel.replace(/^claude-3-5-/u, 'claude-'),
+        normalizedModel.replace(/^claude-3-7-/u, 'claude-'),
+    ]
+}
+
+/**
+ * Generates possible LiteLLM pricing lookup names for a Gemini model.
+ *
+ * @example
+ * ```ts
+ * getGeminiLookupCandidates('google/gemini-2.5-pro')
+ * ```
+ */
+export function getGeminiLookupCandidates(model: string) {
+    const normalizedModel = model.trim()
+
+    return [
+        normalizedModel,
+        normalizedModel.replace(/^gemini\//u, ''),
+        normalizedModel.replace(/^google\//u, ''),
+        `gemini/${normalizedModel}`,
+        `google/${normalizedModel}`,
+    ]
+}
+
+/**
+ * Checks whether an OpenRouter model name represents a free model.
+ *
+ * @example
+ * ```ts
+ * isOpenRouterFreeModel('openrouter/qwen/qwen3-coder:free')
+ * // true
+ * ```
+ */
+export function isOpenRouterFreeModel(model: string) {
+    const normalizedModel = model.trim().toLowerCase()
+
+    return normalizedModel === 'openrouter/free'
+        || (normalizedModel.startsWith('openrouter/') && normalizedModel.endsWith(':free'))
+}
+
+/**
+ * Reads the real project root from the .project_root file beside the Gemini cache directory.
+ *
+ * @example
+ * ```ts
+ * getGeminiProjectRoot('/home/me/.gemini/tmp/hash/chats/session-1.json')
+ * ```
+ */
+export function getGeminiProjectRoot(filePath: string) {
+    const projectDir = dirname(dirname(filePath))
+    const projectRootFile = `${projectDir}/.project_root`
+
+    if (!existsSync(projectRootFile)) {
+        return ''
+    }
+
+    try {
+        return readFileSync(projectRootFile, 'utf8').trim()
+    }
+    catch {
+        return ''
+    }
+}
+
+/**
+ * Extracts the cached project key from a Gemini tmp path as a project-name fallback.
+ *
+ * @example
+ * ```ts
+ * getGeminiProjectKeyFromPath('/home/me/.gemini/tmp/project-key/chats/session-1.json')
+ * // 'project-key'
+ * ```
+ */
+export function getGeminiProjectKeyFromPath(filePath: string) {
+    const normalizedPath = filePath.replace(/[/\\]/g, sep)
+    const segments = normalizedPath.split(sep)
+    const tmpIndex = segments.findIndex(segment => segment === 'tmp')
+
+    if (tmpIndex === -1 || tmpIndex + 1 >= segments.length) {
+        return 'unknown'
+    }
+
+    return segments[tmpIndex + 1]?.trim() || 'unknown'
+}
+
+/**
+ * Reads and normalizes the origin repository name from the project root's Git config.
+ *
+ * @example
+ * ```ts
+ * getRepositoryNameFromProjectRoot('/Users/me/work/usage-board')
+ * ```
+ */
+export function getRepositoryNameFromProjectRoot(projectRoot: string) {
+    if (!projectRoot) {
+        return ''
+    }
+
+    const gitConfigPath = `${projectRoot}/.git/config`
+
+    if (!existsSync(gitConfigPath)) {
+        return ''
+    }
+
+    try {
+        return normalizeRepositoryUrl(getOriginUrlFromGitConfig(readFileSync(gitConfigPath, 'utf8')))
+    }
+    catch {
+        return ''
+    }
+}
+
+/**
+ * Extracts the remote origin URL from .git/config text.
+ *
+ * @example
+ * ```ts
+ * getOriginUrlFromGitConfig('[remote "origin"]\n    url = git@github.com:lonewolfyx/usage-board.git')
+ * ```
+ */
+export function getOriginUrlFromGitConfig(config: string) {
+    let isOriginBlock = false
+
+    for (const rawLine of config.split('\n')) {
+        const line = rawLine.trim()
+
+        if (line.startsWith('[')) {
+            isOriginBlock = line === '[remote "origin"]'
+            continue
+        }
+
+        if (!isOriginBlock || !line.startsWith('url =')) {
+            continue
+        }
+
+        return line.slice('url ='.length).trim()
+    }
+
+    return ''
+}
+
+/**
+ * Converts Gemini message content into plain text.
+ *
+ * @example
+ * ```ts
+ * extractGeminiMessageText([{ text: 'hello' }, { text: 'world' }])
+ * // 'hello\nworld'
+ * ```
+ */
+export function extractGeminiMessageText(content: GeminiSessionMessage['content']) {
+    if (typeof content === 'string') {
+        return content
+    }
+
+    if (!Array.isArray(content)) {
+        return ''
+    }
+
+    return content
+        .map(item => item.text?.trim())
+        .filter(Boolean)
+        .join('\n')
+}
+
+/**
  * Adds a single event into an aggregate group and updates model and project lists.
  *
  * @example
@@ -1033,6 +1449,10 @@ function getNumericProperty(value: object, key: string) {
     const property = record[key]
 
     return typeof property === 'number' && Number.isFinite(property) ? property : 0
+}
+
+function getObjectRecord(value: unknown): Record<string, unknown> | null {
+    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
 /**

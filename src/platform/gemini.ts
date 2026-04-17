@@ -5,7 +5,6 @@ import type {
     GeminiSessionFile,
     GeminiSessionFileData,
     GeminiSessionMessage,
-    GeminiTokenSnapshot,
     GeminiTokenUsageEvent,
     IConfig,
     ModelPricing,
@@ -13,83 +12,31 @@ import type {
     TokenUsageDelta,
     UsageSessionMeta,
 } from '~~/src/types'
-import { existsSync, readFileSync } from 'node:fs'
-import { basename, dirname, sep } from 'node:path'
+import { existsSync } from 'node:fs'
+import { basename } from 'node:path'
 import { glob } from 'glob'
+import { GEMINI_FALLBACK_MODEL, GEMINI_FALLBACK_PRICING_TABLE, GEMINI_MODEL_ALIASES } from '~~/src/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 import {
     addUsage,
-    buildDailyRows,
-    buildDailyTokenUsage,
-    buildDailyUsageGroups,
-    buildMonthlyModelUsage,
-    buildOverviewCards,
-    buildPeriodRows,
-    buildProjectUsage,
-    buildSessionRows,
+    buildLoadUsageResult,
+    convertGeminiTokenUsage,
     createEmptyUsage,
-    getDateKey,
+    extractGeminiMessageText,
     getDurationMinutes,
-    getPreviousDateKey,
+    getGeminiLookupCandidates,
+    getGeminiProjectKeyFromPath,
+    getGeminiProjectRoot,
     getProjectName,
+    getRepositoryNameFromProjectRoot,
     getThreadName,
-    getTopModelForDate,
-    getTopProjectForDate,
     isZeroUsage,
     normalizeNumber,
-    normalizeRepositoryUrl,
     parseJsonFile,
     roundCurrency,
     toIsoString,
-    toUsageSessionUsageItem,
     uniqueItems,
 } from '~~/src/platform/utils'
-
-/** Default model used when a Gemini session message does not include a model field. */
-const GEMINI_FALLBACK_MODEL = 'gemini-2.5-flash'
-
-/** Maps Gemini-specific model names to pricing table names. */
-const GEMINI_MODEL_ALIASES: Record<string, string> = {
-    'gemini-3-flash-preview': 'gemini-3-flash',
-}
-
-/** Gemini fallback prices for primary models when LiteLLM data is missing or unavailable. */
-const GEMINI_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
-    'gemini-2.5-flash': {
-        cachedInputCostPerMTokens: 0.075,
-        cacheCreationInputCostPerMTokens: 0.3,
-        inputCostPerMTokens: 0.3,
-        outputCostPerMTokens: 2.5,
-    },
-    'gemini-2.5-flash-lite': {
-        cachedInputCostPerMTokens: 0.025,
-        cacheCreationInputCostPerMTokens: 0.1,
-        inputCostPerMTokens: 0.1,
-        outputCostPerMTokens: 0.4,
-    },
-    'gemini-2.5-pro': {
-        cachedInputCostPerMTokens: 0.31,
-        cachedInputCostPerMTokensAbove200K: 0.625,
-        cacheCreationInputCostPerMTokens: 1.25,
-        cacheCreationInputCostPerMTokensAbove200K: 2.5,
-        inputCostPerMTokens: 1.25,
-        inputCostPerMTokensAbove200K: 2.5,
-        outputCostPerMTokens: 10,
-        outputCostPerMTokensAbove200K: 15,
-    },
-    'gemini-3-flash': {
-        cachedInputCostPerMTokens: 0.05,
-        cacheCreationInputCostPerMTokens: 0.5,
-        inputCostPerMTokens: 0.5,
-        outputCostPerMTokens: 3,
-    },
-    'gemini-3-flash-preview': {
-        cachedInputCostPerMTokens: 0.05,
-        cacheCreationInputCostPerMTokens: 0.5,
-        inputCostPerMTokens: 0.5,
-        outputCostPerMTokens: 3,
-    },
-}
 
 /**
  * Loads local Gemini CLI session cache data and converts it into dashboard usage data.
@@ -114,53 +61,8 @@ export async function loadGeminiUsage(config: IConfig): Promise<LoadUsageResult>
 
     const sessionSummaries = buildSessionSummaries(sessionFiles)
         .sort((a, b) => Date.parse(b.lastActivity) - Date.parse(a.lastActivity))
-    const sessionUsage = sessionSummaries.map(session => toUsageSessionUsageItem(session))
 
-    const dailyGroups = buildDailyUsageGroups(events)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
-    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayDailyGroups = todayDailyGroup
-        ? new Map([[todayDateKey, todayDailyGroup]])
-        : new Map()
-    const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(todayDailyGroups)
-    const weeklyRows = buildPeriodRows(events, 'week')
-    const monthlyRows = buildPeriodRows(events, 'month')
-    const sessionRows = buildSessionRows(sessionSummaries)
-
-    const monthlyModelUsage = buildMonthlyModelUsage(events)
-    const projectUsage = buildProjectUsage(sessionUsage)
-    const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
-    const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
-    const todayTopProject = getTopProjectForDate(todayEvents)
-    const todayTopModel = getTopModelForDate(todayEvents)
-    const overviewCards = buildOverviewCards({
-        previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
-        previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
-    })
-
-    return {
-        dailyRows,
-        dailyTokenUsage,
-        monthlyModelUsage,
-        monthlyRows,
-        overviewCards,
-        projectUsage,
-        sessionRows,
-        sessionUsage,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
-        weeklyRows,
-    }
+    return buildLoadUsageResult(events, sessionSummaries)
 }
 
 /**
@@ -213,9 +115,9 @@ function loadGeminiSessionFile(filePath: string, resolvePricing: (model: string)
 
     const lastTimestamp = toIsoString(data.lastUpdated)
         ?? [...data.messages].reverse().map(message => toIsoString(message.timestamp)).find(Boolean)
-    const projectRoot = getProjectRoot(filePath)
-    const project = getProjectName(projectRoot, '') || getProjectKeyFromPath(filePath)
-    const repository = getRepositoryName(projectRoot) || `local/${project}`
+    const projectRoot = getGeminiProjectRoot(filePath)
+    const project = getProjectName(projectRoot, '') || getGeminiProjectKeyFromPath(filePath)
+    const repository = getRepositoryNameFromProjectRoot(projectRoot) || `local/${project}`
     const sessionId = data.sessionId?.trim() || basename(filePath, '.json')
 
     const meta: UsageSessionMeta = {
@@ -286,7 +188,7 @@ function extractTokenUsageEvents(
 
         const model = message.model?.trim() || GEMINI_FALLBACK_MODEL
         const isFallbackModel = !message.model?.trim()
-        const usage = convertToDisplayUsage(message.tokens)
+        const usage = convertGeminiTokenUsage(message.tokens)
 
         if (isZeroUsage(usage)) {
             continue
@@ -313,33 +215,6 @@ function extractTokenUsageEvents(
     }
 
     return events
-}
-
-/**
- * Converts a Gemini token snapshot into the dashboard's normalized token fields.
- *
- * @example
- * ```ts
- * const usage = convertToDisplayUsage({ input: 100, cached: 20, output: 10 })
- * ```
- */
-function convertToDisplayUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
-    const rawInputTokens = normalizeNumber(tokens.input)
-    const cachedInputTokens = Math.min(normalizeNumber(tokens.cached), rawInputTokens)
-    const outputTokens = normalizeNumber(tokens.output)
-    const reasoningOutputTokens = normalizeNumber(tokens.thoughts)
-    const toolTokens = normalizeNumber(tokens.tool)
-    const totalTokens = normalizeNumber(tokens.total)
-
-    return {
-        cachedInputTokens,
-        inputTokens: Math.max(rawInputTokens - cachedInputTokens, 0),
-        outputTokens,
-        reasoningOutputTokens,
-        totalTokens: totalTokens > 0
-            ? totalTokens
-            : rawInputTokens + outputTokens + reasoningOutputTokens + toolTokens,
-    }
 }
 
 /**
@@ -407,129 +282,6 @@ function buildSessionSummaries(sessionFiles: GeminiSessionFileData[]) {
 }
 
 /**
- * Generates possible LiteLLM pricing lookup names for a Gemini model.
- *
- * @example
- * ```ts
- * getGeminiLookupCandidates('google/gemini-2.5-pro')
- * ```
- */
-function getGeminiLookupCandidates(model: string) {
-    const normalizedModel = model.trim()
-
-    return [
-        normalizedModel,
-        normalizedModel.replace(/^gemini\//u, ''),
-        normalizedModel.replace(/^google\//u, ''),
-        `gemini/${normalizedModel}`,
-        `google/${normalizedModel}`,
-    ]
-}
-
-/**
- * Reads the real project root from the .project_root file beside the Gemini cache directory.
- *
- * @example
- * ```ts
- * const projectRoot = getProjectRoot('/home/me/.gemini/tmp/hash/chats/session-1.json')
- * ```
- */
-function getProjectRoot(filePath: string) {
-    const projectDir = dirname(dirname(filePath))
-    const projectRootFile = `${projectDir}/.project_root`
-
-    if (!existsSync(projectRootFile)) {
-        return ''
-    }
-
-    try {
-        return readFileSync(projectRootFile, 'utf8').trim()
-    }
-    catch {
-        return ''
-    }
-}
-
-/**
- * Extracts the cached project key from a Gemini tmp path as a project-name fallback.
- *
- * @example
- * ```ts
- * getProjectKeyFromPath('/home/me/.gemini/tmp/project-key/chats/session-1.json')
- * // 'project-key'
- * ```
- */
-function getProjectKeyFromPath(filePath: string) {
-    const normalizedPath = filePath.replace(/[/\\]/g, sep)
-    const segments = normalizedPath.split(sep)
-    const tmpIndex = segments.findIndex(segment => segment === 'tmp')
-
-    if (tmpIndex === -1 || tmpIndex + 1 >= segments.length) {
-        return 'unknown'
-    }
-
-    return segments[tmpIndex + 1]?.trim() || 'unknown'
-}
-
-/**
- * Reads and normalizes the origin repository name from the project root's Git config.
- *
- * @example
- * ```ts
- * const repository = getRepositoryName('/Users/me/work/usage-board')
- * ```
- */
-function getRepositoryName(projectRoot: string) {
-    if (!projectRoot) {
-        return ''
-    }
-
-    const gitConfigPath = `${projectRoot}/.git/config`
-
-    if (!existsSync(gitConfigPath)) {
-        return ''
-    }
-
-    try {
-        const config = readFileSync(gitConfigPath, 'utf8')
-
-        return normalizeRepositoryUrl(getOriginUrlFromGitConfig(config))
-    }
-    catch {
-        return ''
-    }
-}
-
-/**
- * Extracts the remote origin URL from .git/config text.
- *
- * @example
- * ```ts
- * getOriginUrlFromGitConfig('[remote "origin"]\n    url = git@github.com:lonewolfyx/usage-board.git')
- * ```
- */
-function getOriginUrlFromGitConfig(config: string) {
-    let isOriginBlock = false
-
-    for (const rawLine of config.split('\n')) {
-        const line = rawLine.trim()
-
-        if (line.startsWith('[')) {
-            isOriginBlock = line === '[remote "origin"]'
-            continue
-        }
-
-        if (!isOriginBlock || !line.startsWith('url =')) {
-            continue
-        }
-
-        return line.slice('url ='.length).trim()
-    }
-
-    return ''
-}
-
-/**
  * Gets the first user message in a Gemini session for thread-name generation.
  *
  * @example
@@ -540,30 +292,6 @@ function getOriginUrlFromGitConfig(config: string) {
 function getFirstUserMessage(data: GeminiSessionFile) {
     return data.messages
         ?.filter(message => message.type === 'user')
-        .map(message => extractMessageText(message.content))
+        .map(message => extractGeminiMessageText(message.content))
         .find(Boolean) ?? ''
-}
-
-/**
- * Converts Gemini message content into plain text.
- *
- * @example
- * ```ts
- * extractMessageText([{ text: 'hello' }, { text: 'world' }])
- * // 'hello\nworld'
- * ```
- */
-function extractMessageText(content: GeminiSessionMessage['content']) {
-    if (typeof content === 'string') {
-        return content
-    }
-
-    if (!Array.isArray(content)) {
-        return ''
-    }
-
-    return content
-        .map(item => item.text?.trim())
-        .filter(Boolean)
-        .join('\n')
 }

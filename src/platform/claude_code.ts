@@ -12,45 +12,21 @@ import type {
     ModelPricingResolver,
 } from '~~/src/types'
 import { existsSync } from 'node:fs'
-import { basename, sep } from 'node:path'
+import { basename } from 'node:path'
 import { glob } from 'glob'
+import { CLAUDE_FALLBACK_MODEL, CLAUDE_MODEL_ALIASES } from '~~/src/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
 import {
-    buildDailyRows,
-    buildDailyTokenUsage,
-    buildDailyUsageGroups,
-    buildMonthlyModelUsage,
-    buildOverviewCards,
-    buildPeriodRows,
-    buildProjectUsage,
-    buildSessionRows,
-    getDateKey,
+    buildLoadUsageResult,
+    decodeClaudeProjectPath,
+    extractClaudeProjectFromPath,
+    getClaudeLookupCandidates,
     getDurationMinutes,
-    getPreviousDateKey,
     getProjectName,
-    getTopModelForDate,
-    getTopProjectForDate,
     normalizeNumber,
     parseJsonlFile,
     roundCurrency,
-    toUsageSessionUsageItem,
 } from '~~/src/platform/utils'
-
-/** Default pricing model used when a Claude Code record has no billable model. */
-const CLAUDE_FALLBACK_MODEL = 'claude-sonnet-4-5'
-
-/** Maps common Claude aliases to LiteLLM or local pricing table names. */
-const CLAUDE_MODEL_ALIASES: Record<string, string> = {
-    'claude-3-5-haiku-latest': 'claude-haiku-4-5',
-    'claude-3-5-sonnet-latest': 'claude-sonnet-4-5',
-    'claude-3-7-sonnet-latest': 'claude-sonnet-4-5',
-    'claude-haiku-4.5': 'claude-haiku-4-5',
-    'claude-opus-4.1': 'claude-opus-4-1',
-    'claude-sonnet-4.5': 'claude-sonnet-4-5',
-    'claude-4-1-opus': 'claude-opus-4-1',
-    'claude-4-5-haiku': 'claude-haiku-4-5',
-    'claude-4-5-sonnet': 'claude-sonnet-4-5',
-}
 
 /**
  * Loads local Claude Code project logs and converts them into dashboard usage data.
@@ -74,57 +50,15 @@ export async function loadClaudeCodeUsage(config: IConfig): Promise<LoadUsageRes
         getCachedInputTokens: (session: ClaudeSessionSummary) => session.cacheCreationTokens + session.cacheReadTokens,
         getReasoningOutputTokens: () => 0,
     }
-    const sessionUsage = sessionSummaries.map(session => toUsageSessionUsageItem(session, sessionOptions))
     const events = entries.map(toClaudeAggregateEvent)
     const aggregateOptions = {
         includeModel: (event: ClaudeAggregateEvent) => event.model !== '<synthetic>',
     }
 
-    const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
-    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayDailyGroups = todayDailyGroup
-        ? new Map([[todayDateKey, todayDailyGroup]])
-        : new Map()
-    const dailyTokenUsage = buildDailyTokenUsage(dailyGroups)
-    const dailyRows = buildDailyRows(todayDailyGroups)
-    const weeklyRows = buildPeriodRows(events, 'week', aggregateOptions)
-    const monthlyRows = buildPeriodRows(events, 'month', aggregateOptions)
-    const sessionRows = buildSessionRows(sessionSummaries, sessionOptions)
-
-    const monthlyModelUsage = buildMonthlyModelUsage(events, aggregateOptions)
-    const projectUsage = buildProjectUsage(sessionUsage)
-    const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
-    const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
-    const todayTopProject = getTopProjectForDate(todayEvents)
-    const todayTopModel = getTopModelForDate(todayEvents, aggregateOptions)
-    const overviewCards = buildOverviewCards({
-        previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
-        previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
+    return buildLoadUsageResult(events, sessionSummaries, {
+        aggregateOptions,
+        sessionOptions,
     })
-
-    return {
-        dailyRows,
-        dailyTokenUsage,
-        monthlyModelUsage,
-        monthlyRows,
-        overviewCards,
-        projectUsage,
-        sessionRows,
-        sessionUsage,
-        todayTopModel,
-        todayTopProject,
-        todayTotalCost,
-        todayTotalTokens,
-        weeklyRows,
-    }
 }
 
 /**
@@ -148,7 +82,7 @@ async function loadClaudeUsageEntries(config: IConfig, resolvePricing: ModelPric
     const entries: ClaudeUsageEntry[] = []
 
     for (const filePath of sortedFiles) {
-        const projectPath = extractProjectFromPath(filePath)
+        const projectPath = extractClaudeProjectFromPath(filePath)
         const fallbackSessionId = basename(filePath, '.jsonl')
         const lines = parseJsonlFile(filePath)
 
@@ -373,27 +307,6 @@ function getDisplayModelName(data: ClaudeUsageRecord) {
 }
 
 /**
- * Extracts the project path segment from a Claude Code project log path.
- *
- * @example
- * ```ts
- * extractProjectFromPath('/Users/me/.claude/projects/-Users-me-work-app/session.jsonl')
- * // '-Users-me-work-app'
- * ```
- */
-function extractProjectFromPath(jsonlPath: string) {
-    const normalizedPath = jsonlPath.replace(/[/\\]/g, sep)
-    const segments = normalizedPath.split(sep)
-    const projectsIndex = segments.findIndex(segment => segment === 'projects')
-
-    if (projectsIndex === -1 || projectsIndex + 1 >= segments.length) {
-        return 'unknown'
-    }
-
-    return segments[projectsIndex + 1]?.trim() || 'unknown'
-}
-
-/**
  * Aggregates normalized Claude usage records into session-level summaries.
  *
  * @example
@@ -512,27 +425,6 @@ function toClaudeAggregateEvent(entry: ClaudeUsageEntry): ClaudeAggregateEvent {
 }
 
 /**
- * Generates possible LiteLLM pricing lookup names for a Claude model.
- *
- * @example
- * ```ts
- * getClaudeLookupCandidates('anthropic/claude-sonnet-4-5')
- * ```
- */
-function getClaudeLookupCandidates(model: string) {
-    const normalizedModel = model.trim()
-
-    return [
-        normalizedModel,
-        normalizedModel.replace(/-fast$/u, ''),
-        normalizedModel.replace(/^anthropic\//u, ''),
-        `anthropic/${normalizedModel}`,
-        normalizedModel.replace(/^claude-3-5-/u, 'claude-'),
-        normalizedModel.replace(/^claude-3-7-/u, 'claude-'),
-    ]
-}
-
-/**
  * Calculates the total token count for a Claude Code record.
  *
  * @example
@@ -543,20 +435,4 @@ function getClaudeLookupCandidates(model: string) {
  */
 function getTotalTokens(tokens: ClaudeTokenTotals) {
     return tokens.inputTokens + tokens.outputTokens + tokens.cacheCreationTokens + tokens.cacheReadTokens
-}
-
-/**
- * Decodes Claude Code's hyphen-encoded project path into a more readable project name.
- *
- * @example
- * ```ts
- * decodeClaudeProjectPath('-Users-me-work-usage-board')
- * // 'usage-board'
- * ```
- */
-function decodeClaudeProjectPath(projectPath: string) {
-    const normalized = projectPath.replace(/^-/, '').replace(/-/g, '/')
-    const parts = normalized.split('/').filter(Boolean)
-
-    return parts.at(-1) ?? projectPath
 }
