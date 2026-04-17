@@ -26,7 +26,7 @@ export async function createHostServer(_options: HostServerOptions) {
     }
 
     app.get('/api/payload.json', async (event) => {
-        event.headers.set('content-type', 'application/json')
+        event.res.headers.set('content-type', 'application/json')
         return await ws.getData()
     })
 
