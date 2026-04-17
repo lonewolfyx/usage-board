@@ -37,7 +37,7 @@
 
         <div class="space-y-2">
             <p class="text-lg font-medium">
-                数据加载失败
+                Failed to load data
             </p>
             <p class="max-w-sm text-sm text-muted-foreground">
                 {{ errorText }}
@@ -45,7 +45,7 @@
         </div>
 
         <Button type="button" variant="outline" @click="refresh()">
-            重新加载
+            Reload
         </Button>
     </main>
 
@@ -72,10 +72,10 @@ const shouldShowLoading = computed(() => !hasPayload.value && !shouldShowError.v
 
 const loadingText = computed(() => {
     if (status.value === 'idle') {
-        return '准备加载数据'
+        return 'Preparing to load data'
     }
 
-    return '数据正在加载中'
+    return 'Loading data'
 })
 
 const errorText = computed(() => {
@@ -89,6 +89,6 @@ const errorText = computed(() => {
         return value
     }
 
-    return '请检查本地数据源后重试。'
+    return 'Please check the local data source and try again.'
 })
 </script>
