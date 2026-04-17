@@ -193,3 +193,5 @@ export interface TokensConsumptionResult {
     codex: LoadUsageResult
     gemini: LoadUsageResult
 }
+
+export type PayloadDashboardKey = 'claudeCode' | 'codex' | 'gemini'

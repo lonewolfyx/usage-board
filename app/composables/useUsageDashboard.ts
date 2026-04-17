@@ -3,70 +3,26 @@ import type {
     LoadUsageResult,
     ModelTokenUsage,
     MonthlyModelUsage,
-    ProjectUsageItem,
     RankedUsageItem,
-    UsageOverviewCard,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
 import type { ComputedRef } from 'vue'
+import {
+    buildGrowthTrend,
+    buildProjectUsage,
+    formatCompactNumber,
+    formatCurrency,
+    formatDateLabelFromDateKey,
+    formatPercent,
+    getDateKey,
+    getDateKeyFromLabel,
+    getPreviousDateKey,
+    roundCurrency,
+} from '#shared/utils/usage-dashboard'
 import { computed } from 'vue'
 import { usePayloadContext } from '~/composables/usePayloadContext'
 
 const payloadDashboardKeys = ['claudeCode', 'codex', 'gemini'] as const
-
-export function formatCurrency(value: number) {
-    return new Intl.NumberFormat('en-US', {
-        style: 'currency',
-        currency: 'USD',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2,
-    }).format(normalizeNumber(value))
-}
-
-export function formatCompactNumber(value: number) {
-    return new Intl.NumberFormat('en-US', {
-        notation: 'compact',
-        maximumFractionDigits: 1,
-    }).format(normalizeNumber(value))
-}
-
-export function formatPercent(value: number) {
-    return new Intl.NumberFormat('en-US', {
-        style: 'percent',
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-    }).format(normalizeNumber(value))
-}
-
-export function buildGrowthTrend(
-    currentValue: number,
-    previousValue: number,
-    formatValue: (value: number) => string,
-): Pick<UsageOverviewCard, 'trend' | 'trendTone'> {
-    const current = Math.max(normalizeNumber(currentValue), 0)
-    const previous = Math.max(normalizeNumber(previousValue), 0)
-
-    if (previous === 0) {
-        if (current === 0) {
-            return {
-                trend: '0.0%',
-                trendTone: 'neutral',
-            }
-        }
-
-        return {
-            trend: `+${formatValue(current)}`,
-            trendTone: 'up',
-        }
-    }
-
-    const ratio = (current - previous) / previous
-
-    return {
-        trend: formatSignedPercent(ratio),
-        trendTone: getTrendTone(ratio),
-    }
-}
 
 export function useUsageDashboard() {
     const { payload } = usePayloadContext()
@@ -95,7 +51,7 @@ export function useUsageDashboard() {
         dashboards.value.flatMap(dashboard => dashboard.monthlyModelUsage),
     ))
 
-    const projectUsage = computed<ProjectUsageItem[]>(() => buildProjectUsage(sessionUsage.value))
+    const projectUsage = computed(() => buildProjectUsage(sessionUsage.value))
 
     const totalCost = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.costUSD, 0))
     const totalTokens = computed(() => dailyTokenUsage.value.reduce((sum, item) => sum + item.totalTokens, 0))
@@ -286,45 +242,6 @@ function mergeMonthlyModelUsage(items: MonthlyModelUsage[]) {
         .sort((a, b) => a.month.localeCompare(b.month) || a.model.localeCompare(b.model))
 }
 
-function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]) {
-    const projects = new Map<string, {
-        costUSD: number
-        repository: string
-        sessions: number
-        tokenTotal: number
-    }>()
-
-    for (const session of sessionUsage) {
-        const project = projects.get(session.project) ?? {
-            costUSD: 0,
-            repository: session.repository,
-            sessions: 0,
-            tokenTotal: 0,
-        }
-
-        project.costUSD += session.costUSD
-        project.sessions += 1
-        project.tokenTotal += session.tokenTotal
-        projects.set(session.project, project)
-    }
-
-    const maxCost = Math.max(...Array.from(projects.values()).map(project => project.costUSD), 0)
-
-    return Array.from(projects.entries())
-        .map(([label, project]) => ({
-            costUSD: project.costUSD,
-            detail: `${project.sessions} sessions / ${formatCompactNumber(project.tokenTotal)} tokens`,
-            label,
-            percent: maxCost > 0 ? (project.costUSD / maxCost) * 100 : 0,
-            repository: project.repository,
-            sessions: project.sessions,
-            tokenTotal: project.tokenTotal,
-            tone: 'amber' as const,
-            value: formatCurrency(project.costUSD),
-        }))
-        .sort((a, b) => b.costUSD - a.costUSD)
-}
-
 function createEmptyModelUsage(): ModelTokenUsage {
     return {
         cachedInputTokens: 0,
@@ -336,75 +253,6 @@ function createEmptyModelUsage(): ModelTokenUsage {
     }
 }
 
-function getDateKeyFromLabel(label: string) {
-    const date = new Date(label)
-
-    if (Number.isNaN(date.getTime())) {
-        return label
-    }
-
-    return getDateKey(date)
-}
-
-function getDateKey(date: Date) {
-    const year = date.getFullYear()
-    const month = `${date.getMonth() + 1}`.padStart(2, '0')
-    const day = `${date.getDate()}`.padStart(2, '0')
-
-    return `${year}-${month}-${day}`
-}
-
-function getPreviousDateKey(dateKey: string) {
-    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
-    const date = new Date(year || 0, (month || 1) - 1, day || 1)
-    date.setDate(date.getDate() - 1)
-
-    return getDateKey(date)
-}
-
-function formatDateLabelFromDateKey(dateKey: string, fallback: string) {
-    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
-
-    if (!year || !month || !day) {
-        return fallback
-    }
-
-    const date = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1))
-
-    return new Intl.DateTimeFormat('en-US', {
-        day: '2-digit',
-        month: 'short',
-        timeZone: 'UTC',
-        year: 'numeric',
-    }).format(date)
-}
-
 function safeRatio(numerator: number, denominator: number) {
     return denominator > 0 ? numerator / denominator : 0
-}
-
-function formatSignedPercent(value: number) {
-    const prefix = value > 0 ? '+' : ''
-
-    return `${prefix}${formatPercent(value)}`
-}
-
-function getTrendTone(value: number) {
-    if (value > 0) {
-        return 'up'
-    }
-
-    if (value < 0) {
-        return 'down'
-    }
-
-    return 'neutral'
-}
-
-function normalizeNumber(value: number) {
-    return Number.isFinite(value) ? value : 0
-}
-
-function roundCurrency(value: number) {
-    return Math.round(value * 1_000_000) / 1_000_000
 }

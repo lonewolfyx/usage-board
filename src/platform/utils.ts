@@ -2,7 +2,6 @@ import type {
     DailyTokenUsage,
     LoadUsageResult,
     MonthlyModelUsage,
-    ProjectUsageItem,
     TokenUsageRow,
     UsageOverviewCard,
     UsageSessionUsageItem,
@@ -26,6 +25,30 @@ import type {
 } from '~~/src/types'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
+import {
+    buildGrowthTrend,
+    buildProjectUsage,
+    formatCompactNumber,
+    formatCurrency,
+    formatDateLabelFromDateKey,
+    getDateKey,
+    getPreviousDateKey,
+    normalizeNumber,
+    roundCurrency,
+    uniqueItems,
+} from '#shared/utils/usage-dashboard'
+
+export {
+    buildProjectUsage,
+    formatCompactNumber,
+    formatCurrency,
+    formatDateLabelFromDateKey,
+    getDateKey,
+    getPreviousDateKey,
+    normalizeNumber,
+    roundCurrency,
+    uniqueItems,
+}
 
 /**
  * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
@@ -343,52 +366,6 @@ export function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike
 }
 
 /**
- * Summarizes session list items by project to build project ranking data.
- *
- * @example
- * ```ts
- * const projectUsage = buildProjectUsage(sessionUsage)
- * ```
- */
-export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): ProjectUsageItem[] {
-    const projects = new Map<string, {
-        costUSD: number
-        repository: string
-        sessions: number
-        tokenTotal: number
-    }>()
-
-    for (const session of sessionUsage) {
-        const project = projects.get(session.project) ?? {
-            costUSD: 0,
-            repository: session.repository,
-            sessions: 0,
-            tokenTotal: 0,
-        }
-        project.costUSD += session.costUSD
-        project.sessions += 1
-        project.tokenTotal += session.tokenTotal
-        projects.set(session.project, project)
-    }
-
-    const maxCost = Math.max(...Array.from(projects.values()).map(project => project.costUSD), 0)
-
-    return Array.from(projects.entries())
-        .map(([label, project]) => ({
-            costUSD: project.costUSD,
-            detail: `${project.sessions} sessions / ${formatCompactNumber(project.tokenTotal)} tokens`,
-            label,
-            percent: maxCost > 0 ? (project.costUSD / maxCost) * 100 : 0,
-            repository: project.repository,
-            sessions: project.sessions,
-            tokenTotal: project.tokenTotal,
-            tone: 'amber' as const,
-            value: formatCurrency(project.costUSD),
-        }))
-        .sort((a, b) => b.costUSD - a.costUSD)
-}
-
-/**
  * Builds overview card data for the dashboard home view.
  *
  * @example
@@ -504,58 +481,6 @@ export function buildLoadUsageResult<
         todayTotalTokens,
         weeklyRows: buildPeriodRows(events, 'week', aggregateOptions),
     }
-}
-
-function buildGrowthTrend(
-    currentValue: number,
-    previousValue: number,
-    formatValue: (value: number) => string,
-): Pick<UsageOverviewCard, 'trend' | 'trendTone'> {
-    const current = Math.max(normalizeNumber(currentValue), 0)
-    const previous = Math.max(normalizeNumber(previousValue), 0)
-
-    if (previous === 0) {
-        if (current === 0) {
-            return {
-                trend: '0.0%',
-                trendTone: 'neutral',
-            }
-        }
-
-        return {
-            trend: `+${formatValue(current)}`,
-            trendTone: 'up',
-        }
-    }
-
-    const ratio = (current - previous) / previous
-
-    return {
-        trend: formatSignedPercent(ratio),
-        trendTone: getTrendTone(ratio),
-    }
-}
-
-function formatSignedPercent(value: number) {
-    const prefix = value > 0 ? '+' : ''
-
-    return `${prefix}${new Intl.NumberFormat('en-US', {
-        maximumFractionDigits: 1,
-        minimumFractionDigits: 1,
-        style: 'percent',
-    }).format(value)}`
-}
-
-function getTrendTone(value: number) {
-    if (value > 0) {
-        return 'up'
-    }
-
-    if (value < 0) {
-        return 'down'
-    }
-
-    return 'neutral'
 }
 
 /**
@@ -775,19 +700,6 @@ export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
 }
 
 /**
- * Safely converts an unknown value to a number, returning 0 for non-finite values.
- *
- * @example
- * ```ts
- * normalizeNumber(Number.NaN)
- * // 0
- * ```
- */
-export function normalizeNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
-/**
  * Safely converts a string timestamp into an ISO string.
  *
  * @example
@@ -803,45 +715,6 @@ export function toIsoString(value: unknown) {
     const timestamp = Date.parse(value)
 
     return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
-}
-
-/**
- * Gets a local date key in yyyy-MM-dd format.
- *
- * @example
- * ```ts
- * getDateKey(new Date('2026-04-16T08:00:00.000Z'))
- * // '2026-04-16'
- * ```
- */
-export function getDateKey(date: Date) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric',
-    }).formatToParts(date)
-    const year = parts.find(part => part.type === 'year')?.value ?? '0000'
-    const month = parts.find(part => part.type === 'month')?.value ?? '01'
-    const day = parts.find(part => part.type === 'day')?.value ?? '01'
-
-    return `${year}-${month}-${day}`
-}
-
-/**
- * Gets the local date key immediately before a yyyy-MM-dd date key.
- *
- * @example
- * ```ts
- * getPreviousDateKey('2026-04-16')
- * // '2026-04-15'
- * ```
- */
-export function getPreviousDateKey(dateKey: string) {
-    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
-    const date = new Date(year || 0, (month || 1) - 1, day || 1)
-    date.setDate(date.getDate() - 1)
-
-    return getDateKey(date)
 }
 
 /**
@@ -876,27 +749,6 @@ export function getWeekLabel(date: Date) {
     weekEnd.setDate(weekEnd.getDate() + 6)
 
     return `${getDateKey(weekStart)} - ${getDateKey(weekEnd)}`
-}
-
-/**
- * Formats a yyyy-MM-dd date key into an English display label.
- *
- * @example
- * ```ts
- * formatDateLabelFromDateKey('2026-04-16')
- * // 'Apr 16, 2026'
- * ```
- */
-export function formatDateLabelFromDateKey(dateKey: string) {
-    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
-    const date = new Date(Date.UTC(year || 0, (month || 1) - 1, day || 1))
-
-    return new Intl.DateTimeFormat('en-US', {
-        day: '2-digit',
-        month: 'short',
-        timeZone: 'UTC',
-        year: 'numeric',
-    }).format(date)
 }
 
 /**
@@ -941,66 +793,6 @@ export function formatDuration(minutes: number) {
     }
 
     return `${hours}h ${remainingMinutes}m`
-}
-
-/**
- * Formats a number with compact English notation.
- *
- * @example
- * ```ts
- * formatCompactNumber(1500)
- * // '1.5K'
- * ```
- */
-export function formatCompactNumber(value: number) {
-    return new Intl.NumberFormat('en-US', {
-        maximumFractionDigits: 1,
-        notation: 'compact',
-    }).format(value)
-}
-
-/**
- * Formats a number as a USD amount.
- *
- * @example
- * ```ts
- * formatCurrency(1.5)
- * // '$1.50'
- * ```
- */
-export function formatCurrency(value: number) {
-    return new Intl.NumberFormat('en-US', {
-        currency: 'USD',
-        maximumFractionDigits: 2,
-        minimumFractionDigits: 2,
-        style: 'currency',
-    }).format(value)
-}
-
-/**
- * Removes empty strings while preserving unique item order.
- *
- * @example
- * ```ts
- * uniqueItems(['a', '', 'a', 'b'])
- * // ['a', 'b']
- * ```
- */
-export function uniqueItems(items: string[]) {
-    return Array.from(new Set(items.filter(Boolean)))
-}
-
-/**
- * Rounds a USD amount to 6 decimals to preserve precision for small token costs.
- *
- * @example
- * ```ts
- * roundCurrency(0.1234567)
- * // 0.123457
- * ```
- */
-export function roundCurrency(value: number) {
-    return Math.round(value * 1_000_000) / 1_000_000
 }
 
 /**

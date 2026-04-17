@@ -21,7 +21,7 @@
                 :to="item.link"
             >
                 <Icon v-if="item.iconType === 'icon'" :name="item.icon" class="size-5" mode="svg" />
-                <IconAi v-else :name="item.icon" />
+                <IconAi v-else :name="item.icon as AiIconName" />
                 <span class="capitalize text-xs font-medium font-mono">{{ item.label }}</span>
             </nuxtlink>
         </div>
@@ -29,6 +29,8 @@
 </template>
 
 <script lang="ts" setup>
+import type { AiIconName, NavItem } from '#shared/types/navigation'
+import { dashboardProductNavItems } from '~/lib/dashboard-products'
 import { cn } from '~/lib/utils'
 
 defineOptions({
@@ -42,48 +44,7 @@ const navItems = [
         label: 'home',
         link: '/',
     },
-    {
-        icon: 'claude_code',
-        iconFillClass: '[&_svg]:fill-foreground/50',
-        iconType: 'ai',
-        label: 'Claude Code',
-        link: '/claude_code',
-    },
-    {
-        icon: 'codex',
-        iconFillClass: '[&_svg]:fill-foreground/50',
-        iconType: 'ai',
-        label: 'Codex',
-        link: '/codex',
-    },
-    // {
-    //     icon: 'cursor',
-    //     iconFillClass: '[&_svg]:fill-foreground/50',
-    //     iconType: 'ai',
-    //     label: 'Cursor',
-    //     link: '/cursor',
-    // },
-    // {
-    //     icon: 'open_code',
-    //     iconFillClass: '[&_svg]:fill-foreground/50',
-    //     iconType: 'ai',
-    //     label: 'open code',
-    //     link: '/open_code',
-    // },
-    // {
-    //     icon: 'copilot',
-    //     iconFillClass: '[&_svg]:fill-foreground/50',
-    //     iconType: 'ai',
-    //     label: 'copilot',
-    //     link: '/copilot',
-    // },
-    {
-        icon: 'gemini',
-        iconFillClass: '[&_svg]:fill-foreground/50',
-        iconType: 'ai',
-        label: 'gemini',
-        link: '/gemini',
-    },
+    ...dashboardProductNavItems,
     // {
     //     icon: 'kimi_code',
     //     iconFillClass: '[&_svg]:fill-foreground/50',
@@ -119,6 +80,7 @@ const path = computed(() => route.path)
 
 function getNavItemClass(item: NavItem) {
     const isActive = path.value === item.link
+    const inactiveIconClass = item.iconFillClass ?? (item.iconType === 'ai' ? '[&_svg]:fill-foreground/50' : '')
 
     return cn(
         'relative flex flex-col items-center gap-1.5',
@@ -129,7 +91,7 @@ function getNavItemClass(item: NavItem) {
                 ]
             : [
                     'text-foreground/50',
-                    item.iconFillClass,
+                    inactiveIconClass,
                 ],
     )
 }

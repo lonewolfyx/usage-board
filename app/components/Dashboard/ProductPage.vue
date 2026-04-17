@@ -5,7 +5,7 @@
         :monthly-model-usage="monthlyModelUsage"
         :monthly-rows="monthlyRows"
         :overview-cards="overviewCards"
-        product-name="Codex"
+        :product-name="productName"
         :project-usage="projectUsage"
         :session-rows="sessionRows"
         :session-usage="sessionUsage"
@@ -14,6 +14,17 @@
 </template>
 
 <script setup lang="ts">
+import type { PayloadDashboardKey } from '#shared/types/usage-dashboard'
+
+defineOptions({
+    name: 'DashboardProductPage',
+})
+
+const props = defineProps<{
+    productKey: PayloadDashboardKey
+    productName: string
+}>()
+
 const {
     dailyRows,
     dailyTokenUsage,
@@ -24,5 +35,5 @@ const {
     sessionRows,
     sessionUsage,
     weeklyRows,
-} = usePayloadDashboard('codex')
+} = usePayloadDashboard(props.productKey)
 </script>

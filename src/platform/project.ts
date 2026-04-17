@@ -178,8 +178,7 @@ function getProjectSessions(
 }
 
 function buildProjectLoadUsageResult(sessions: ProjectSessionUsageItem[], projectName: string): LoadUsageResult {
-    const scopedSessions = sessions.filter(session => session.project === projectName)
-    const events = getProjectAggregateEvents(scopedSessions, projectName)
+    const events = getProjectAggregateEvents(sessions, projectName)
     const dailyGroups = buildDailyUsageGroups(events)
     const todayDateKey = getDateKey(new Date())
     const previousDayDateKey = getPreviousDateKey(todayDateKey)
@@ -207,9 +206,9 @@ function buildProjectLoadUsageResult(sessions: ProjectSessionUsageItem[], projec
             todayTotalCost,
             todayTotalTokens,
         }),
-        projectUsage: buildProjectUsage(scopedSessions).filter(project => project.label === projectName),
-        sessionRows: buildProjectSessionRows(scopedSessions, projectName),
-        sessionUsage: scopedSessions,
+        projectUsage: buildProjectUsage(sessions),
+        sessionRows: buildProjectSessionRows(sessions, projectName),
+        sessionUsage: sessions,
         todayTopModel,
         todayTopProject: todayTopProject?.project === projectName ? todayTopProject : null,
         todayTotalCost,
@@ -224,7 +223,6 @@ interface ProjectAggregateEvent extends UsageAggregateEvent {
 
 function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[], projectName: string): ProjectAggregateEvent[] {
     return sessions
-        .filter(session => session.project === projectName)
         .flatMap(session => session.interactions
             .filter(interaction => interaction.usage && interaction.timestamp && hasBillableUsage(interaction.usage))
             .map((interaction): ProjectAggregateEvent => ({
@@ -250,7 +248,6 @@ function hasBillableUsage(usage: ProjectInteractionUsage) {
 
 function buildProjectSessionRows(sessions: ProjectSessionUsageItem[], projectName: string) {
     return sessions
-        .filter(session => session.project === projectName)
         .map(session => ({
             cachedInputTokens: session.cachedInputTokens,
             costUSD: session.costUSD,

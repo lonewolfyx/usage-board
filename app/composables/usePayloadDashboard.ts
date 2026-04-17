@@ -1,8 +1,6 @@
-import type { LoadUsageResult } from '#shared/types/usage-dashboard'
+import type { LoadUsageResult, PayloadDashboardKey } from '#shared/types/usage-dashboard'
 import { computed } from 'vue'
 import { usePayloadContext } from '~/composables/usePayloadContext'
-
-type PayloadDashboardKey = 'claudeCode' | 'codex' | 'gemini'
 
 const emptyDashboard: LoadUsageResult = {
     dailyRows: [],
