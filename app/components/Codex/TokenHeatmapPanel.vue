@@ -145,20 +145,16 @@ const weekdayLabels = [
     { key: 'sat', label: 'S', row: '7' },
 ]
 
-const latestUsageDate = computed(() => {
-    const latestItem = props.items.at(-1)
-
-    return latestItem ? cloneDate(parseUsageDate(latestItem.date)) : cloneDate(new Date())
-})
+const rangeEndDate = computed(() => cloneDate(new Date()))
 
 const rangeStartDate = computed(() => {
-    const startDate = cloneDate(latestUsageDate.value)
+    const startDate = cloneDate(rangeEndDate.value)
     startDate.setDate(startDate.getDate() - 364)
 
     return startDate
 })
 
-const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(latestUsageDate.value)}`)
+const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(rangeEndDate.value)}`)
 
 const trendItems = computed(() => {
     const usageByDate = new Map(props.items.map(item => [formatDateKey(parseUsageDate(item.date)), item]))

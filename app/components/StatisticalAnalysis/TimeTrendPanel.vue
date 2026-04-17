@@ -153,20 +153,16 @@ function formatDateKey(date: Date) {
     return `${year}-${month}-${day}`
 }
 
-const latestUsageDate = computed(() => {
-    const latestItem = props.items.at(-1)
-
-    return latestItem ? cloneDate(parseUsageDate(latestItem.date)) : cloneDate(new Date())
-})
+const rangeEndDate = computed(() => cloneDate(new Date()))
 
 const rangeStartDate = computed(() => {
-    const startDate = cloneDate(latestUsageDate.value)
+    const startDate = cloneDate(rangeEndDate.value)
     startDate.setDate(startDate.getDate() - 364)
 
     return startDate
 })
 
-const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(latestUsageDate.value)}`)
+const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(rangeEndDate.value)}`)
 
 function cloneDate(date: Date) {
     return new Date(date.getFullYear(), date.getMonth(), date.getDate())
