@@ -9,6 +9,23 @@
     "bugs": {
         "url": "https://github.com/lonewolfyx/usage-board/issues"
     },
+    "keywords": [
+        "ai",
+        "gemini",
+        "codex",
+        "claude",
+        "claude-code",
+        "token-usage",
+        "analysis",
+        "usage-board"
+    ],
+    "bin": {
+        "usage-board": "./bin/cli.js",
+        "ub": "./bin/cli.js"
+    },
+    "files": [
+        "dist"
+    ],
     "scripts": {
         "build": "nuxt build",
         "dev": "nuxt dev",
