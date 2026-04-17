@@ -1,32 +1,20 @@
 <template>
     <StatisticalAnalysisPanel
-        :description="`${rangeLabel} token heatmap. Darker cells mean higher daily token usage.`"
+        :description="heatmapDescription"
         icon="lucide:calendar-days"
-        :title="`${productName} Token Heatmap`"
+        :title="props.title"
     >
         <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="rounded-md border px-3 py-2">
+            <div
+                v-for="card in summaryCards"
+                :key="card.key"
+                class="rounded-md border px-3 py-2"
+            >
                 <p class="text-xs text-muted-foreground">
-                    Year Tokens
+                    {{ card.label }}
                 </p>
                 <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ yearTokens }}
-                </p>
-            </div>
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Year Spend
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ yearCost }}
-                </p>
-            </div>
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Active Days
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ activeDays }}
+                    {{ card.value }}
                 </p>
             </div>
         </div>
@@ -60,7 +48,10 @@
                         role="tooltip"
                     >
                         <span class="font-medium">{{ cell.date }}</span>
-                        <span class="flex items-center justify-between gap-4 text-muted-foreground">
+                        <span
+                            v-if="props.heatMetric === 'tokens'"
+                            class="flex items-center justify-between gap-4 text-muted-foreground"
+                        >
                             <span>Tokens</span>
                             <span class="font-mono font-medium text-foreground">{{ cell.tokenLabel }}</span>
                         </span>
@@ -68,13 +59,20 @@
                             <span>Cost</span>
                             <span class="font-mono font-medium text-foreground">{{ cell.costLabel }}</span>
                         </span>
+                        <span
+                            v-if="props.heatMetric === 'cost'"
+                            class="flex items-center justify-between gap-4 text-muted-foreground"
+                        >
+                            <span>Tokens</span>
+                            <span class="font-mono font-medium text-foreground">{{ cell.tokenLabel }}</span>
+                        </span>
                         <span class="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-border bg-popover" />
                     </div>
                 </div>
             </div>
             <div class="mt-4 flex items-center justify-between gap-4">
                 <p class="text-xs text-muted-foreground">
-                    Colored by daily tokens
+                    {{ legendLabel }}
                 </p>
                 <div class="flex items-center gap-1 text-xs text-muted-foreground">
                     <span>Less</span>
@@ -99,8 +97,12 @@
                     {{ item.date }}
                 </p>
                 <div class="mt-1 flex items-center justify-between gap-2">
-                    <span class="text-sm font-semibold">{{ formatCompactNumber(item.totalTokens) }}</span>
-                    <span class="text-xs text-muted-foreground">{{ formatCurrency(item.costUSD) }}</span>
+                    <span class="text-sm font-semibold">
+                        {{ props.heatMetric === 'cost' ? formatCurrency(item.costUSD) : formatCompactNumber(item.totalTokens) }}
+                    </span>
+                    <span class="text-xs text-muted-foreground">
+                        {{ props.heatMetric === 'cost' ? formatCompactNumber(item.totalTokens) : formatCurrency(item.costUSD) }}
+                    </span>
                 </div>
             </div>
         </div>
@@ -109,17 +111,27 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
 defineOptions({
-    name: 'UsageAnalyticsTokenHeatmapPanel',
+    name: 'UsageHeatmapPanel',
 })
 
 const props = withDefaults(defineProps<{
+    heatMetric?: HeatmapMetric
     items: DailyTokenUsage[]
-    productName?: string
+    title: string
 }>(), {
-    productName: 'Product',
+    heatMetric: 'tokens',
 })
+
+type HeatmapMetric = 'cost' | 'tokens'
+
+interface SummaryCard {
+    key: string
+    label: string
+    value: string
+}
 
 const heatmapLevels = [
     'bg-zinc-100 dark:bg-zinc-800/80',
@@ -133,6 +145,7 @@ const heatmapLevels = [
     'bg-sky-400 dark:bg-sky-500/95',
     'bg-blue-500 dark:bg-blue-400',
 ] as const
+
 const legendLevels = [...heatmapLevels]
 const weekdayLabels = [
     { key: 'sun', label: 'S', row: '1' },
@@ -154,28 +167,46 @@ const rangeStartDate = computed(() => {
 })
 
 const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(rangeEndDate.value)}`)
+const heatMetricLabel = computed(() => props.heatMetric === 'cost' ? 'spend' : 'tokens')
+const heatmapDescription = computed(() =>
+    `${rangeLabel.value} ${heatMetricLabel.value} heatmap. Darker cells mean higher daily ${heatMetricLabel.value}.`,
+)
+const legendLabel = computed(() => `Colored by daily ${heatMetricLabel.value}`)
 
-const trendItems = computed(() => {
+const yearItems = computed(() => {
     const usageByDate = new Map(props.items.map(item => [formatDateKey(parseUsageDate(item.date)), item]))
-    const yearItems = Array.from({ length: 365 }, (_, index) => {
+
+    return Array.from({ length: 365 }, (_, index) => {
         const date = cloneDate(rangeStartDate.value)
         date.setDate(date.getDate() + index)
-        const usage = usageByDate.get(formatDateKey(date))
-
-        return { date, usage }
-    })
-    const maxTokens = Math.max(...yearItems.map(item => item.usage?.totalTokens ?? 0))
-
-    return yearItems.map((item) => {
-        const costUSD = item.usage?.costUSD ?? 0
-        const totalTokens = item.usage?.totalTokens ?? 0
 
         return {
-            date: formatRangeDate(item.date),
-            hasUsage: Boolean(item.usage),
-            colorClass: heatmapLevels[getHeatmapLevel(totalTokens, maxTokens)],
+            date,
+            usage: usageByDate.get(formatDateKey(date)),
+        }
+    })
+})
+
+const trendItems = computed(() => {
+    const maxMetricValue = Math.max(
+        ...yearItems.value.map(item =>
+            props.heatMetric === 'cost'
+                ? item.usage?.costUSD ?? 0
+                : item.usage?.totalTokens ?? 0,
+        ),
+    )
+
+    return yearItems.value.map((item) => {
+        const costUSD = item.usage?.costUSD ?? 0
+        const totalTokens = item.usage?.totalTokens ?? 0
+        const metricValue = props.heatMetric === 'cost' ? costUSD : totalTokens
+
+        return {
+            colorClass: heatmapLevels[getHeatmapLevel(metricValue, maxMetricValue)],
             costLabel: formatCurrency(costUSD),
             costUSD,
+            date: formatRangeDate(item.date),
+            hasUsage: Boolean(item.usage),
             tokenLabel: formatCompactNumber(totalTokens),
             totalTokens,
         }
@@ -188,13 +219,13 @@ const heatmapCells = computed(() => {
     const blanks = Array.from({ length: leadingBlankCount }, (_, index) => ({
         column: String(Math.floor(index / 7) + 2),
         colorClass: 'bg-transparent',
+        costLabel: '',
         date: '',
         isBlank: true,
         key: `blank-${index}`,
         row: String((index % 7) + 1),
-        costLabel: '',
-        tokenLabel: '',
         title: 'No date',
+        tokenLabel: '',
     }))
     const days = trendItems.value.map((item, index) => ({
         ...item,
@@ -202,18 +233,20 @@ const heatmapCells = computed(() => {
         isBlank: false,
         key: item.date,
         row: String(((leadingBlankCount + index) % 7) + 1),
-        title: `${item.date}: ${formatCompactNumber(item.totalTokens)} tokens / ${formatCurrency(item.costUSD)}`,
+        title: props.heatMetric === 'cost'
+            ? `${item.date}: ${formatCurrency(item.costUSD)} / ${formatCompactNumber(item.totalTokens)} tokens`
+            : `${item.date}: ${formatCompactNumber(item.totalTokens)} tokens / ${formatCurrency(item.costUSD)}`,
     }))
     const trailingBlanks = Array.from({ length: trailingBlankCount }, (_, index) => ({
         column: String(Math.floor((leadingBlankCount + trendItems.value.length + index) / 7) + 2),
         colorClass: 'bg-transparent',
+        costLabel: '',
         date: '',
         isBlank: true,
         key: `trailing-blank-${index}`,
         row: String(((leadingBlankCount + trendItems.value.length + index) % 7) + 1),
-        costLabel: '',
-        tokenLabel: '',
         title: 'No date',
+        tokenLabel: '',
     }))
 
     return [...blanks, ...days, ...trailingBlanks]
@@ -228,6 +261,19 @@ const recentTrendItems = computed(() => trendItems.value.filter(item => item.has
 const activeDays = computed(() => trendItems.value.filter(item => item.hasUsage).length)
 const yearCost = computed(() => formatCurrency(trendItems.value.reduce((sum, item) => sum + item.costUSD, 0)))
 const yearTokens = computed(() => formatCompactNumber(trendItems.value.reduce((sum, item) => sum + item.totalTokens, 0)))
+const summaryCards = computed<SummaryCard[]>(() => (
+    props.heatMetric === 'cost'
+        ? [
+                { key: 'year-cost', label: 'Year Spend', value: yearCost.value },
+                { key: 'year-tokens', label: 'Year Tokens', value: yearTokens.value },
+                { key: 'active-days', label: 'Active Days', value: String(activeDays.value) },
+            ]
+        : [
+                { key: 'year-tokens', label: 'Year Tokens', value: yearTokens.value },
+                { key: 'year-cost', label: 'Year Spend', value: yearCost.value },
+                { key: 'active-days', label: 'Active Days', value: String(activeDays.value) },
+            ]
+))
 
 function parseUsageDate(value: string) {
     return new Date(value)
@@ -253,11 +299,11 @@ function formatRangeDate(date: Date) {
     }).format(date)
 }
 
-function getHeatmapLevel(tokens: number, maxTokens: number) {
-    if (tokens <= 0 || maxTokens <= 0) {
+function getHeatmapLevel(value: number, maxValue: number) {
+    if (value <= 0 || maxValue <= 0) {
         return 0
     }
 
-    return Math.min(9, Math.max(1, Math.ceil((tokens / maxTokens) * 9)))
+    return Math.min(9, Math.max(1, Math.ceil((value / maxValue) * 9)))
 }
 </script>

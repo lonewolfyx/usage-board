@@ -5,10 +5,10 @@
         <DashboardPanelGrid>
             <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
             <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
-            <UsageAnalyticsTokenHeatmapPanel
+            <UsageHeatmapPanel
                 :items="dailyTokenUsage"
-                :product-name="productName"
                 class="md:col-span-12"
+                :title="`${productName} Token Heatmap`"
             />
             <UsageAnalyticsTokenUsageTabsPanel
                 :daily-items="sessionDailyRows"

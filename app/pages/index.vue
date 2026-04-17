@@ -5,7 +5,12 @@
         <DashboardPanelGrid>
             <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
             <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
-            <StatisticalAnalysisTimeTrendPanel :items="dailyTokenUsage" class="md:col-span-12" />
+            <UsageHeatmapPanel
+                :items="dailyTokenUsage"
+                class="md:col-span-12"
+                heat-metric="cost"
+                title="Usage Trend"
+            />
             <StatisticalAnalysisSessionAnalysisPanel
                 :items="sessionUsage" :total-sessions="totalSessions"
                 class="md:col-span-6"
