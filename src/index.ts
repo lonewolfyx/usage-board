@@ -1,6 +1,7 @@
 import type { IOptions } from '~~/src/types'
 import cac from 'cac'
 import { getPort } from 'get-port-please'
+import open from 'open'
 import { resolveConfig } from '~~/src/config'
 import { createHostServer } from '~~/src/server'
 import { name, version } from '../package.json' with { type: 'json' }
@@ -23,8 +24,11 @@ cli.command('', 'Start tokens usage analysis')
             port,
         })
 
-        app.listen(port, config.host, () => {
-            console.log(`Usage board is running at http://${config.host}:${port}`)
+        app.listen(port, config.host, async () => {
+            if (config.open) {
+                await open(`http://${config.host}:${port}`)
+                console.log(`Usage board is running at http://${config.host}:${port}`)
+            }
         })
     })
 
