@@ -425,14 +425,14 @@ export function buildOverviewCards(options: {
             name: 'Top Session Project',
             trend: options.todayTopProject ? `${options.todayTopProject.sessionCount} sessions` : 'No sessions',
             trendTone: 'up',
-            value: options.todayTopProject?.project ?? 'No data',
+            value: options.todayTopProject?.project ?? '-',
         },
         {
             icon: 'lucide:bot',
             name: 'Top Invoked Model',
             trend: options.todayTopModel ? `${formatCompactNumber(options.todayTopModel.totalTokens)} tokens` : 'No usage',
             trendTone: 'up',
-            value: options.todayTopModel?.model ?? 'No data',
+            value: options.todayTopModel?.model ?? '-',
         },
     ]
 }

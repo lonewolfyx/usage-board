@@ -418,14 +418,14 @@ export function createSessionTokenDashboard(
             name: 'Top Session Project',
             trend: todayTopProject.value ? `${todayTopProject.value.sessionCount} sessions` : 'No sessions',
             trendTone: 'up' as const,
-            value: todayTopProject.value?.project ?? 'No data',
+            value: todayTopProject.value?.project ?? '-',
         },
         {
             icon: 'lucide:bot',
             name: 'Top Invoked Model',
             trend: todayTopModel.value ? `${formatCompactNumber(todayTopModel.value.totalTokens)} tokens` : 'No usage',
             trendTone: 'up' as const,
-            value: todayTopModel.value?.model ?? 'No data',
+            value: todayTopModel.value?.model ?? '-',
         },
     ])
 
