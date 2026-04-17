@@ -109,17 +109,16 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
 defineOptions({
-    name: 'CodexTokenHeatmapPanel',
+    name: 'UsageAnalyticsTokenHeatmapPanel',
 })
 
 const props = withDefaults(defineProps<{
     items: DailyTokenUsage[]
     productName?: string
 }>(), {
-    productName: 'Codex',
+    productName: 'Product',
 })
 
 const heatmapLevels = [

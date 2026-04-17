@@ -38,10 +38,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Button } from '@/components/ui/button'
 
 defineOptions({
-    name: 'CodexPaginationFooter',
+    name: 'UsageAnalyticsPaginationFooter',
 })
 
 const props = defineProps<{

@@ -90,7 +90,7 @@
                     </TableBody>
                 </Table>
 
-                <CodexPaginationFooter
+                <UsageAnalyticsPaginationFooter
                     :page="tabState[tab.value].page"
                     :page-count="tabState[tab.value].pageCount"
                     :page-size="pageSize"
@@ -104,26 +104,21 @@
 
 <script setup lang="ts">
 import { formatNumber } from '@lonewolfyx/utils'
-import { computed, reactive, shallowRef } from 'vue'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { formatCurrency } from '~/composables/useUsageDashboard'
-import CodexPaginationFooter from './PaginationFooter.vue'
 
 defineOptions({
-    name: 'CodexTokenUsageTabsPanel',
+    name: 'UsageAnalyticsTokenUsageTabsPanel',
 })
 
 const props = withDefaults(defineProps<{
-    dailyItems: CodexTokenUsageRow[]
-    weeklyItems: CodexTokenUsageRow[]
-    monthlyItems: CodexTokenUsageRow[]
-    sessionItems: CodexTokenUsageRow[]
+    dailyItems: UsageAnalyticsTokenUsageRow[]
+    weeklyItems: UsageAnalyticsTokenUsageRow[]
+    monthlyItems: UsageAnalyticsTokenUsageRow[]
+    sessionItems: UsageAnalyticsTokenUsageRow[]
     pageSize?: number
     productName?: string
 }>(), {
     pageSize: 10,
-    productName: 'Codex',
+    productName: 'Product',
 })
 
 const activeTab = shallowRef<TokenTabValue>('day')
@@ -141,7 +136,7 @@ const tabs: TokenTab[] = [
     { heading: 'Session ID', label: 'Session', value: 'session' },
 ]
 
-const itemsByTab = computed<Record<TokenTabValue, CodexTokenUsageRow[]>>(() => ({
+const itemsByTab = computed<Record<TokenTabValue, UsageAnalyticsTokenUsageRow[]>>(() => ({
     day: props.dailyItems,
     month: props.monthlyItems,
     session: props.sessionItems,

@@ -1,4 +1,4 @@
-import type { CodexTokenUsageRow } from './codex-dashboard'
+import type { UsageAnalyticsTokenUsageRow } from './usage-analytics'
 
 export type TokenTabValue = 'day' | 'month' | 'session' | 'week'
 
@@ -9,8 +9,8 @@ export interface TokenTab {
 }
 
 export interface TokenTabState {
-    items: CodexTokenUsageRow[]
+    items: UsageAnalyticsTokenUsageRow[]
     page: number
     pageCount: number
-    paginatedItems: CodexTokenUsageRow[]
+    paginatedItems: UsageAnalyticsTokenUsageRow[]
 }

@@ -93,7 +93,7 @@
             </TableBody>
         </Table>
 
-        <CodexPaginationFooter
+        <UsageAnalyticsPaginationFooter
             v-model:page="page"
             :page-count="pageCount"
             :page-size="pageSize"
@@ -104,22 +104,18 @@
 
 <script setup lang="ts">
 import { formatNumber } from '@lonewolfyx/utils'
-import { computed, shallowRef } from 'vue'
-import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
-import CodexPaginationFooter from './PaginationFooter.vue'
 
 defineOptions({
-    name: 'CodexSessionUsageTable',
+    name: 'UsageAnalyticsSessionUsageTable',
 })
 
 const props = withDefaults(defineProps<{
-    items: CodexSessionUsageItem[]
+    items: UsageAnalyticsSessionUsageItem[]
     pageSize?: number
     productName?: string
 }>(), {
     pageSize: 10,
-    productName: 'Codex',
+    productName: 'Product',
 })
 
 const page = shallowRef(1)

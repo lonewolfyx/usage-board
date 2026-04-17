@@ -5,12 +5,12 @@
         <DashboardPanelGrid>
             <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
             <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
-            <CodexTokenHeatmapPanel
+            <UsageAnalyticsTokenHeatmapPanel
                 :items="dailyTokenUsage"
                 :product-name="productName"
                 class="md:col-span-12"
             />
-            <CodexTokenUsageTabsPanel
+            <UsageAnalyticsTokenUsageTabsPanel
                 :daily-items="sessionDailyRows"
                 :monthly-items="monthlyRows"
                 :product-name="productName"
@@ -18,7 +18,7 @@
                 :weekly-items="weeklyRows"
                 class="md:col-span-12"
             />
-            <CodexSessionUsageTable
+            <UsageAnalyticsSessionUsageTable
                 :items="sessionUsage"
                 :product-name="productName"
                 class="md:col-span-12"
@@ -28,30 +28,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
-import CodexSessionUsageTable from '~/components/Codex/SessionUsageTable.vue'
-import CodexTokenHeatmapPanel from '~/components/Codex/TokenHeatmapPanel.vue'
-import CodexTokenUsageTabsPanel from '~/components/Codex/TokenUsageTabsPanel.vue'
-
 defineOptions({
     name: 'DashboardTokenConsumptionDashboard',
 })
 
 const props = defineProps<{
-    dailyRows: CodexTokenUsageRow[]
+    dailyRows: UsageAnalyticsTokenUsageRow[]
     dailyTokenUsage: DailyTokenUsage[]
     monthlyModelUsage: MonthlyModelUsage[]
-    monthlyRows: CodexTokenUsageRow[]
+    monthlyRows: UsageAnalyticsTokenUsageRow[]
     overviewCards: DashboardOverviewCard[]
     productName: string
     projectUsage: ProjectUsageItem[]
-    sessionRows: CodexTokenUsageRow[]
-    sessionUsage: CodexSessionUsageItem[]
-    weeklyRows: CodexTokenUsageRow[]
+    sessionRows: UsageAnalyticsTokenUsageRow[]
+    sessionUsage: UsageAnalyticsSessionUsageItem[]
+    weeklyRows: UsageAnalyticsTokenUsageRow[]
 }>()
 
-const sessionDailyRows = computed<CodexTokenUsageRow[]>(() => {
-    const groups = new Map<string, CodexTokenUsageRow>()
+const sessionDailyRows = computed<UsageAnalyticsTokenUsageRow[]>(() => {
+    const groups = new Map<string, UsageAnalyticsTokenUsageRow>()
 
     for (const session of props.sessionUsage) {
         const id = getDateRowId(session.date)
