@@ -111,7 +111,6 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
 defineOptions({
     name: 'UsageHeatmapPanel',

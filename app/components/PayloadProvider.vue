@@ -3,10 +3,6 @@
 </template>
 
 <script setup lang="ts">
-import type { TokensConsumptionResult } from '#shared/types/usage-dashboard'
-import { readonly } from 'vue'
-import { providePayloadContext } from '~/composables/usePayloadContext'
-
 defineOptions({
     name: 'PayloadProvider',
 })

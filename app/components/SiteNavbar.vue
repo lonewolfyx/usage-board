@@ -29,8 +29,6 @@
 </template>
 
 <script lang="ts" setup>
-import ModeSwitcher from '~/components/ModeSwitcher.vue'
-import SiteLogo from '~/components/SiteLogo.vue'
 import { cn } from '~/lib/utils'
 
 defineOptions({

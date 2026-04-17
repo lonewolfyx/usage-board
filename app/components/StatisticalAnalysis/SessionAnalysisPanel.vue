@@ -69,8 +69,6 @@
 <script setup lang="ts">
 import { VisAxis, VisStackedBar, VisStackedBarSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { computed } from 'vue'
-import { ChartContainer } from '@/components/ui/chart'
-import { formatCompactNumber, formatCurrency } from '~/composables/useUsageDashboard'
 
 defineOptions({
     name: 'StatisticalAnalysisSessionAnalysisPanel',

@@ -25,9 +25,6 @@
 </template>
 
 <script lang="ts" setup>
-import { computed } from 'vue'
-import { formatCompactNumber, formatCurrency, formatPercent, useUsageDashboard } from '~/composables/useUsageDashboard'
-
 const {
     cachedInputTokens,
     costGrowthTrend,

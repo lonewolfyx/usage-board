@@ -61,8 +61,6 @@
 
 <script lang="ts" setup>
 import { formatNumber } from '@lonewolfyx/utils'
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
-import { useUsageDashboard } from '~/composables/useUsageDashboard'
 
 defineOptions({
     name: 'StatisticalAnalysisTokensUsagePanel',

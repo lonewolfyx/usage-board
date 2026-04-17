@@ -44,8 +44,6 @@
 </template>
 
 <script setup lang="ts">
-import { Button } from '~/components/ui/button'
-
 const colorMode = useColorMode({
     selector: 'html',
     attribute: 'class',

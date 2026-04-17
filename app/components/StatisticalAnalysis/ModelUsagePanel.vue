@@ -56,9 +56,6 @@
 
 <script setup lang="ts">
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
-import { computed } from 'vue'
-import { ChartContainer } from '@/components/ui/chart'
-import { formatCompactNumber } from '~/composables/useUsageDashboard'
 
 defineOptions({
     name: 'StatisticalAnalysisModelUsagePanel',

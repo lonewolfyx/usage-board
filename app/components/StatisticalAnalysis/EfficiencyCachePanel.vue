@@ -46,9 +46,6 @@
 
 <script setup lang="ts">
 import { VisDonut, VisDonutSelectors, VisSingleContainer, VisTooltip } from '@unovis/vue'
-import { computed } from 'vue'
-import { ChartContainer } from '@/components/ui/chart'
-import { formatCompactNumber, formatPercent } from '~/composables/useUsageDashboard'
 
 defineOptions({
     name: 'StatisticalAnalysisEfficiencyCachePanel',
