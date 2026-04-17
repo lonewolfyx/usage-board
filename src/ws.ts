@@ -9,8 +9,8 @@ import { resolveWatchedPaths } from '~~/src/paths'
 
 export async function createWebSocketServer(config: IConfig): Promise<CreateWebSocketServerResult> {
     const wsPort = await getPort({
-        host: config.host,
-        port: config.port,
+        port: 7811,
+        random: true,
     })
 
     const wss = new WebSocketServer({
