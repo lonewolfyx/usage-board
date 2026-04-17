@@ -6,7 +6,7 @@
         variant="ghost"
     >
         <NuxtLink
-            to="https://github.com/lonewolfyx/usage-board"
+            :to="app.github.link"
             rel="noreferrer"
             target="_blank"
         >
@@ -26,7 +26,8 @@
 </template>
 
 <script lang="ts" setup>
-const { data, pending } = useLazyFetch('https://ungh.cc/repos/lonewolfyx/usage-board')
+const app = useAppConfig()
+const { data, pending } = useLazyFetch(`https://ungh.cc/repos/${app.github.repo}`)
 
 const stars = computed(() => {
     const count = data.value?.repo?.stars
