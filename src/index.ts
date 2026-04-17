@@ -19,7 +19,7 @@ cli.command('', 'Start tokens usage analysis')
             port: config.port,
         })
 
-        const app = createHostServer({
+        const app = await createHostServer({
             ...config,
             port,
         })

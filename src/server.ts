@@ -5,11 +5,14 @@ import { join } from 'node:path'
 import { H3, serveStatic } from 'h3'
 import { toNodeHandler } from 'h3/node'
 import { distDir } from '~~/src/dirs'
+import { createWebSocketServer } from '~~/src/ws'
 
 type HostServerOptions = IOptions | IConfig
 
-export function createHostServer(_options: HostServerOptions) {
+export async function createHostServer(_options: HostServerOptions) {
     const app = new H3()
+
+    const ws = await createWebSocketServer(<IConfig>_options)
 
     const fileMap = new Map<string, Promise<string | undefined>>()
     const readCachedFile = (id: string) => {
@@ -22,13 +25,9 @@ export function createHostServer(_options: HostServerOptions) {
         return fileMap.get(id)
     }
 
-    app.get('/api/payload.json', () => {
-        return {
-            data: null,
-            meta: {
-                status: 'TODO',
-            },
-        }
+    app.get('/api/payload.json', async (event) => {
+        event.headers.set('content-type', 'application/json')
+        return await ws.getData()
     })
 
     app.get('/**', async (event) => {
