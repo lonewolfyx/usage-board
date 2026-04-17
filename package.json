@@ -65,6 +65,7 @@
         "h3": "2.0.1-rc.20",
         "lint-staged": "^16.4.0",
         "nuxt": "^4.4.2",
+        "open": "^11.0.0",
         "path-type": "^6.0.0",
         "picocolors": "^1.1.1",
         "shadcn-nuxt": "^2.6.2",
