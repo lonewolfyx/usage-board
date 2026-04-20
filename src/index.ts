@@ -45,7 +45,9 @@ cli.command('', 'Start tokens usage analysis')
 
         app.listen(port, option.host, async () => {
             if (option.open) {
-                await open(`http://${option.host}:${port}`)
+                const url = `http://${option.host}:${port}`
+                console.log(`Usage board is running at ${url}`)
+                await open(url)
             }
         })
     })
