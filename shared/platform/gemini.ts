@@ -1,22 +1,19 @@
-import type {
-    LoadUsageResult,
-} from '#shared/types/usage-dashboard'
+import type { IConfig } from '#shared/types/config'
 import type {
     GeminiSessionFile,
     GeminiSessionFileData,
     GeminiSessionMessage,
     GeminiTokenUsageEvent,
-    IConfig,
     ModelPricing,
     SessionUsageSummary,
     TokenUsageDelta,
     UsageSessionMeta,
-} from '~~/src/types'
+} from '#shared/types/platform'
+import type { LoadUsageResult } from '#shared/types/usage-dashboard'
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
-import { glob } from 'glob'
-import { GEMINI_FALLBACK_MODEL, GEMINI_FALLBACK_PRICING_TABLE, GEMINI_MODEL_ALIASES } from '~~/src/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
+import { GEMINI_FALLBACK_MODEL, GEMINI_FALLBACK_PRICING_TABLE, GEMINI_MODEL_ALIASES } from '#shared/platform/constant'
+import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     addUsage,
     buildLoadUsageResult,
@@ -31,12 +28,11 @@ import {
     getRepositoryNameFromProjectRoot,
     getThreadName,
     isZeroUsage,
-    normalizeNumber,
     parseJsonFile,
-    roundCurrency,
     toIsoString,
-    uniqueItems,
-} from '~~/src/platform/utils'
+} from '#shared/utils/platform'
+import { normalizeNumber, roundCurrency, uniqueItems } from '#shared/utils/usage-dashboard'
+import { glob } from 'glob'
 
 /**
  * Loads local Gemini CLI session cache data and converts it into dashboard usage data.

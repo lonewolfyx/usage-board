@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import tailwindcss from '@tailwindcss/vite'
 import { version } from './package.json'
 
@@ -44,28 +45,20 @@ export default defineNuxtConfig({
     runtimeConfig: {
         public: {
             appVersion: version,
+            home: homedir(),
         },
     },
 
     nitro: {
-        preset: 'static',
         output: {
-            dir: './dist',
+            dir: 'dist',
         },
-        routeRules: {
-            '/': {
-                prerender: true,
-            },
-            '/200.html': {
-                prerender: true,
-            },
-            '/404.html': {
-                prerender: true,
-            },
-            '/*': {
-                prerender: false,
-            },
+        preset: 'node',
+        serveStatic: 'node',
+        externals: {
+            external: ['nitropack', 'h3', 'unenv'],
         },
+        noExternals: true,
         sourceMap: false,
     },
 

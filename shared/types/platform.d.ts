@@ -1,35 +1,3 @@
-export type {
-    LoadUsageResult,
-    TrendTone,
-    UsageOverviewCard,
-    UsageTopModel,
-    UsageTopProject,
-} from '#shared/types/usage-dashboard'
-
-export type {
-    UsageOverviewCard as CodexOverviewCard,
-    UsageTopModel as CodexTopModel,
-    UsageTopProject as CodexTopProject,
-    LoadUsageResult as LoadCodexUsageResult,
-} from '#shared/types/usage-dashboard'
-
-export interface IOptions {
-    '--': any
-    'host': string
-    'port': number
-    'open': boolean
-}
-
-export interface IConfig extends IOptions {
-    cwd: string
-    home: string
-    claudeCodePath: string
-    claudeCodePaths: string[]
-    openCodePath: string | null
-    codexPath: string
-    geminiPath: string
-}
-
 export interface TokenUsageSnapshot {
     cache_read_input_tokens?: number
     cached_input_tokens?: number

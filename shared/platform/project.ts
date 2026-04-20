@@ -1,3 +1,13 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type { IConfig } from '#shared/types/config'
+import type {
+    GeminiSessionFile,
+    GeminiTokenSnapshot,
+    ModelPricingResolver,
+    RawUsage,
+    SessionLogLine,
+    UsageAggregateEvent,
+} from '#shared/types/platform'
 import type {
     LoadProjectsUsageResult,
     LoadUsageResult,
@@ -8,18 +18,8 @@ import type {
     ProjectSessionUsageItem,
     ProjectUsageAnalyzing,
 } from '#shared/types/usage-dashboard'
-import type {
-    GeminiSessionFile,
-    GeminiTokenSnapshot,
-    IConfig,
-    ModelPricingResolver,
-    RawUsage,
-    SessionLogLine,
-    UsageAggregateEvent,
-} from '~~/src/types'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { glob } from 'glob'
 import {
     CLAUDE_FALLBACK_MODEL,
     CLAUDE_MODEL_ALIASES,
@@ -28,8 +28,8 @@ import {
     GEMINI_FALLBACK_MODEL,
     GEMINI_FALLBACK_PRICING_TABLE,
     GEMINI_MODEL_ALIASES,
-} from '~~/src/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
+} from '#shared/platform/constant'
+import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     buildDailyRows,
     buildDailyTokenUsage,
@@ -37,23 +37,19 @@ import {
     buildMonthlyModelUsage,
     buildOverviewCards,
     buildPeriodRows,
-    buildProjectUsage,
     convertCodexRawUsage,
     convertGeminiTokenUsage,
     decodeClaudeProjectPath,
     extractClaudeProjectFromPath,
     extractGeminiMessageText,
     extractModelName,
-    formatDateLabelFromDateKey,
     formatDuration,
     getClaudeLookupCandidates,
-    getDateKey,
     getDurationMinutes,
     getGeminiLookupCandidates,
     getGeminiProjectKeyFromPath,
     getGeminiProjectRoot,
     getMonthKey,
-    getPreviousDateKey,
     getProjectName,
     getRepositoryNameFromProjectRoot,
     getTopModelForDate,
@@ -61,17 +57,22 @@ import {
     getWeekLabel,
     isOpenRouterFreeModel,
     isZeroUsage,
-    normalizeNumber,
     normalizeRawUsage,
     normalizeRepositoryUrl,
     parseJsonFile,
     parseJsonlFile,
-    roundCurrency,
     subtractRawUsage,
     toIsoString,
-} from '~~/src/platform/utils'
-
-type ProjectUsagePlatform = 'claudeCode' | 'codex' | 'gemini'
+} from '#shared/utils/platform'
+import {
+    buildProjectUsage,
+    formatDateLabelFromDateKey,
+    getDateKey,
+    getPreviousDateKey,
+    normalizeNumber,
+    roundCurrency,
+} from '#shared/utils/usage-dashboard'
+import { glob } from 'glob'
 
 /**
  * Loads Claude Code, Codex, and Gemini usage, then groups all sessions by project.

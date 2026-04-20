@@ -27,7 +27,7 @@
         "dist"
     ],
     "scripts": {
-        "build": "nuxt build && tsdown",
+        "build": "nuxt build && tsdown && rm ./dist/nitro.json",
         "dev": "nuxt dev",
         "generate": "nuxt generate",
         "preview": "nuxt preview",

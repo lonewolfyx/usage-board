@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadProjectsUsage } from '~~/src/platform'
+import { loadProjectsUsage } from '../shared/platform'
 import { resolveConfig } from '../src/config'
 
 const config = resolveConfig({

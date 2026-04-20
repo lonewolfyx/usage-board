@@ -1,9 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { getClaudeCodePaths, resolveWatchedPaths } from '#shared/utils/paths'
 import { afterEach, describe, expect, it } from 'vitest'
 import { resolveConfig } from '~~/src/config'
-import { getClaudeCodePaths, resolveWatchedPaths } from '../src/paths'
 
 const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
 const tempDirs: string[] = []

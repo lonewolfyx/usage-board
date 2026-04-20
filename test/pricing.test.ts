@@ -1,5 +1,5 @@
+import { calculateUsageCostUSD, createLiteLLMPricingResolver, fetchLiteLLMPricingDataset } from '#shared/platform/pricing'
 import { describe, expect, it, vi } from 'vitest'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver, fetchLiteLLMPricingDataset } from '../src/platform/pricing'
 
 describe('pricing', () => {
     it('falls back to embedded dataset when fetching LiteLLM pricing fails', async () => {

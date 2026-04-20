@@ -1,14 +1,4 @@
 import type {
-    DailyTokenUsage,
-    LoadUsageResult,
-    MonthlyModelUsage,
-    TokenUsageRow,
-    UsageOverviewCard,
-    UsageSessionUsageItem,
-    UsageTopModel,
-    UsageTopProject,
-} from '#shared/types/usage-dashboard'
-import type {
     AggregateOptions,
     DailyUsageSummaryGroup,
     GeminiSessionMessage,
@@ -22,7 +12,17 @@ import type {
     TokenUsageDelta,
     TokenUsageSnapshot,
     UsageAggregateEvent,
-} from '~~/src/types'
+} from '#shared/types/platform'
+import type {
+    DailyTokenUsage,
+    LoadUsageResult,
+    MonthlyModelUsage,
+    TokenUsageRow,
+    UsageOverviewCard,
+    UsageSessionUsageItem,
+    UsageTopModel,
+    UsageTopProject,
+} from '#shared/types/usage-dashboard'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
 import {
@@ -37,18 +37,6 @@ import {
     roundCurrency,
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
-
-export {
-    buildProjectUsage,
-    formatCompactNumber,
-    formatCurrency,
-    formatDateLabelFromDateKey,
-    getDateKey,
-    getPreviousDateKey,
-    normalizeNumber,
-    roundCurrency,
-    uniqueItems,
-}
 
 /**
  * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
@@ -78,7 +66,7 @@ export function parseJsonlFile<T = unknown>(filePath: string) {
             lines.push(JSON.parse(line) as T)
         }
         catch {
-            continue
+
         }
     }
 

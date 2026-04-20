@@ -1,4 +1,4 @@
-import type { ModelPricing } from '~~/src/types'
+import type { ModelPricing } from '#shared/types/platform'
 
 /** Default pricing model used when a Claude Code record has no billable model. */
 export const CLAUDE_FALLBACK_MODEL = 'claude-sonnet-4-5'

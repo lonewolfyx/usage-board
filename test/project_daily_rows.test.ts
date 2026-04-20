@@ -2,8 +2,8 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { loadProjectsUsage } from '../shared/platform'
 import { resolveConfig } from '../src/config'
-import { loadProjectsUsage } from '../src/platform'
 
 const config = resolveConfig({
     'host': '127.0.0.1',
