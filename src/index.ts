@@ -1,7 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { IOptions } from '~~/src/types'
 import { createServer } from 'node:http'
-import { resolve } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import cac from 'cac'
 import { getPort } from 'get-port-please'
 import open from 'open'
@@ -35,8 +36,8 @@ cli.command('', 'Start tokens usage analysis')
             portRange: [7777, 9000],
         })
 
-        const cwd = process.cwd()
-        const outputDir = resolve(cwd, 'dist')
+        const root = dirname(fileURLToPath(import.meta.url))
+        const outputDir = resolve(root, './')
         const lister = await loadNitroListener(outputDir)
 
         const app = createServer(async (req, res) => {
