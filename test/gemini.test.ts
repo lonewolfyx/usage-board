@@ -1,15 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadGeminiUsage } from '#shared/platform'
+import { resolveConfig } from '#shared/utils/configs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { loadGeminiUsage } from '../shared/platform'
-import { resolveConfig } from '../src/config'
+import { version } from '../package.json' with { type: 'josn' }
 
 const config = resolveConfig({
-    'host': '127.0.0.1',
-    'port': 8888,
-    'open': false,
-    '--': '',
+    appVersion: version,
+    home: homedir(),
 })
 
 describe('test gemini', () => {
