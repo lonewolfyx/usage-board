@@ -1,6 +1,4 @@
-import type {
-    LoadUsageResult,
-} from '#shared/types/usage-dashboard'
+import type { IConfig } from '#shared/types/config'
 import type {
     ClaudeAggregateEvent,
     ClaudeModelUsageSummary,
@@ -8,14 +6,13 @@ import type {
     ClaudeTokenTotals,
     ClaudeUsageEntry,
     ClaudeUsageRecord,
-    IConfig,
     ModelPricingResolver,
-} from '~~/src/types'
+} from '#shared/types/platform'
+import type { LoadUsageResult } from '#shared/types/usage-dashboard'
 import { existsSync } from 'node:fs'
 import { basename } from 'node:path'
-import { glob } from 'glob'
-import { CLAUDE_FALLBACK_MODEL, CLAUDE_MODEL_ALIASES } from '~~/src/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '~~/src/platform/pricing'
+import { CLAUDE_FALLBACK_MODEL, CLAUDE_MODEL_ALIASES } from '#shared/platform/constant'
+import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     buildLoadUsageResult,
     decodeClaudeProjectPath,
@@ -23,10 +20,10 @@ import {
     getClaudeLookupCandidates,
     getDurationMinutes,
     getProjectName,
-    normalizeNumber,
     parseJsonlFile,
-    roundCurrency,
-} from '~~/src/platform/utils'
+} from '#shared/utils/platform'
+import { normalizeNumber, roundCurrency } from '#shared/utils/usage-dashboard'
+import { glob } from 'glob'
 
 /**
  * Loads local Claude Code project logs and converts them into dashboard usage data.

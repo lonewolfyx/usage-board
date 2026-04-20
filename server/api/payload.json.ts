@@ -1,15 +1,17 @@
-import { resolveConfig } from '~~/src/config'
-import { createWebSocketServer } from '~~/src/ws'
+import { loadClaudeCodeUsage, loadCodexUsage, loadGeminiUsage } from '#shared/platform'
 
-export default lazyEventHandler(() => {
-    const ws = createWebSocketServer(resolveConfig({
-        'host': '127.0.0.1',
-        'port': 7777,
-        '--': undefined,
-        'open': false,
-    }))
+export default defineEventHandler(async () => {
+    const runtimeConfig = useRuntimeConfig()
+    const config = resolveConfig(runtimeConfig.public)
 
-    return defineEventHandler(async () => {
-        return await (await ws).getData()
-    })
+    const claudeCode = await loadClaudeCodeUsage(config)
+    const codex = await loadCodexUsage(config)
+    const gemini = await loadGeminiUsage(config)
+
+    return {
+        ...config,
+        claudeCode,
+        codex,
+        gemini,
+    }
 })

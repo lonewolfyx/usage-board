@@ -1,15 +1,14 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { loadProjectsUsage } from '#shared/platform/project'
+import { resolveConfig } from '#shared/utils/configs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { resolveConfig } from '../src/config'
-import { loadProjectsUsage } from '../src/platform'
+import { version } from '../package.json' with { type: 'josn' }
 
 const config = resolveConfig({
-    'host': '127.0.0.1',
-    'port': 8888,
-    'open': false,
-    '--': '',
+    appVersion: version,
+    home: homedir(),
 })
 
 describe('project usage scope', () => {

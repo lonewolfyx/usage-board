@@ -7,7 +7,7 @@ import type {
     ModelPricingResolver,
     PricingCacheEntry,
     TokenCostUsage,
-} from '~~/src/types'
+} from '#shared/types/platform'
 
 /** Multiplier used to convert per-token prices into per-million-token prices. */
 const MILLION = 1_000_000

@@ -1,53 +1,51 @@
+import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { IOptions } from '~~/src/types'
+import { createServer } from 'node:http'
+import { resolve } from 'node:path'
 import cac from 'cac'
 import { getPort } from 'get-port-please'
 import open from 'open'
-import { resolveConfig } from '~~/src/config'
-import { createHostServer } from '~~/src/server'
 import { name, version } from '../package.json' with { type: 'json' }
+
+type NodeListener = (
+    req: IncomingMessage,
+    res: ServerResponse,
+) => void | Promise<void>
 
 const cli = cac(name)
 
-function resolveUrl(host: string, port: number) {
-    const urlHost = host === '0.0.0.0' || host === '::'
-        ? 'localhost'
-        : host.includes(':')
-            ? `[${host}]`
-            : host
+async function loadNitroListener(outputDir: string): Promise<NodeListener> {
+    const entryPath = resolve(outputDir, 'server/index.mjs')
 
-    return `http://${urlHost}:${port}`
+    const mod = await import(entryPath)
+    return mod.listener
+        ?? mod.middleware
+        ?? mod.handler
+        ?? mod.default
+        ?? mod
 }
 
 cli.command('', 'Start tokens usage analysis')
     .option('--host <host>', 'Host', { default: '127.0.0.1' })
     .option('--port <port>', 'Port', { default: 7777 })
     .option('--open', 'Open browser', { default: true })
-    .action(async (options: IOptions) => {
-        const config = resolveConfig(options)
+    .action(async (option: IOptions) => {
         const port = await getPort({
-            host: config.host,
-            port: config.port,
+            port: option.port,
             portRange: [7777, 9000],
         })
 
-        const app = await createHostServer({
-            ...config,
-            port,
+        const cwd = process.cwd()
+        const outputDir = resolve(cwd, 'dist')
+        const lister = await loadNitroListener(outputDir)
+
+        const app = createServer(async (req, res) => {
+            await lister(req, res)
         })
 
-        app.listen(port, config.host, async () => {
-            const url = resolveUrl(config.host, port)
-            console.log(`Usage board is running at ${url}`)
-
-            if (config.open) {
-                try {
-                    await open(url)
-                }
-                catch (error) {
-                    const message = error instanceof Error ? error.message : String(error)
-                    console.warn(`Unable to open the browser automatically: ${message}`)
-                    console.warn(`Open ${url} manually.`)
-                }
+        app.listen(port, option.host, async () => {
+            if (option.open) {
+                await open(`http://${option.host}:${port}`)
             }
         })
     })
