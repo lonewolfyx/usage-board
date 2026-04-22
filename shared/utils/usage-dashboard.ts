@@ -37,6 +37,14 @@ const dateLabelFormatter = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
 })
 
+const dateTimeLabelFormatter = new Intl.DateTimeFormat('en-US', {
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    month: 'short',
+    timeZone: 'UTC',
+})
+
 export function normalizeNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
@@ -59,6 +67,37 @@ export function formatCurrency(value: number) {
 
 export function formatPercent(value: number) {
     return percentFormatter.format(normalizeNumber(value))
+}
+
+export function formatDate(value: Date | string) {
+    return dateLabelFormatter.format(new Date(value))
+}
+
+export function formatDateTime(value: Date | string) {
+    return dateTimeLabelFormatter.format(new Date(value))
+}
+
+export function isSameDay(value: string, dateKey: string) {
+    return value.startsWith(dateKey)
+}
+
+export function buildPercentTrend(currentValue: number, previousValue: number): { label: string, tone: TrendTone } {
+    const current = normalizeNumber(currentValue)
+    const previous = normalizeNumber(previousValue)
+
+    if (previous === 0) {
+        return {
+            label: current > 0 ? '+100%' : '0%',
+            tone: current > 0 ? 'up' : 'neutral',
+        }
+    }
+
+    const ratio = (current - previous) / previous
+
+    return {
+        label: formatSignedPercent(ratio),
+        tone: getTrendTone(ratio),
+    }
 }
 
 export function buildGrowthTrend(
