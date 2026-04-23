@@ -62,13 +62,14 @@ defineOptions({
 const {
     error,
     payload,
+    requiresPayload,
     refresh,
     status,
 } = usePayloadContext()
 
 const hasPayload = computed(() => payload.value !== null)
-const shouldShowError = computed(() => status.value === 'error' && !hasPayload.value)
-const shouldShowLoading = computed(() => !hasPayload.value && !shouldShowError.value)
+const shouldShowError = computed(() => requiresPayload.value && status.value === 'error' && !hasPayload.value)
+const shouldShowLoading = computed(() => requiresPayload.value && !hasPayload.value && !shouldShowError.value)
 
 const loadingText = computed(() => {
     if (status.value === 'idle') {

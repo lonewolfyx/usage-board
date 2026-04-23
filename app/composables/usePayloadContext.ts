@@ -7,6 +7,7 @@ export type PayloadData = DeepReadonly<TokensConsumptionResult> | null
 
 export interface PayloadContext {
     payload: Readonly<Ref<PayloadData>>
+    requiresPayload: Readonly<Ref<boolean>>
     status: Readonly<Ref<PayloadRequestStatus>>
     error: Readonly<Ref<unknown>>
     refresh: () => Promise<void>
