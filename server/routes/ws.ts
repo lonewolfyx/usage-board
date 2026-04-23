@@ -5,7 +5,7 @@ import { resolveConfig } from '#shared/utils/configs'
 export default defineWebSocketHandler({
     open(peer) {
         console.log(`[ws] opened: ${peer.id}`)
-        peer.send('欢迎连接到 WebSocket 服务器！')
+        peer.send('Welcome use WebSocket server！')
     },
     async message(peer, message) {
         try {
@@ -25,9 +25,8 @@ export default defineWebSocketHandler({
         }
     },
 
-    // 当连接关闭时触发
     close(peer, details) {
-        console.log(`[ws] 连接关闭: ${peer.id}`, details)
+        console.log(`[ws] close connection: ${peer.id}`, details)
     },
 
     error(peer, error) {
