@@ -52,6 +52,9 @@ export default defineNuxtConfig({
     },
 
     nitro: {
+        experimental: {
+            websocket: true,
+        },
         output: {
             dir: 'dist',
         },
