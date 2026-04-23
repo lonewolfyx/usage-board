@@ -53,8 +53,9 @@ export interface ProjectSessionTableRow {
     outputTokens: string
     platform: ProjectDashboardPlatformKey
     reasoningTokens: string
+    sessionId: string
     startedAt: string
-    title: string
+    threadName: string
     tokens: string
 }
 

@@ -3,7 +3,7 @@
         <Table>
             <TableHeader>
                 <TableRow>
-                    <TableHead>Session</TableHead>
+                    <TableHead>Session ID</TableHead>
                     <TableHead>Tool</TableHead>
                     <TableHead>Model</TableHead>
                     <TableHead>Started</TableHead>
@@ -32,8 +32,12 @@
             </TableHeader>
             <TableBody>
                 <TableRow v-for="item in paginatedItems" :key="item.id">
-                    <TableCell class="max-w-72 truncate font-medium">
-                        {{ item.title }}
+                    <TableCell
+                        class="max-w-72 truncate font-medium font-mono text-xs"
+                        :title="item.threadName ? `${item.sessionId} (${item.threadName})` : item.sessionId"
+                        translate="no"
+                    >
+                        {{ item.sessionId }}
                     </TableCell>
                     <TableCell>
                         <div class="flex items-center gap-2">

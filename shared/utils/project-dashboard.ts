@@ -249,8 +249,9 @@ export function toProjectSessionTableRows(
         outputTokens: formatNumber(session.outputTokens),
         platform,
         reasoningTokens: formatNumber(session.reasoningOutputTokens),
+        sessionId: session.sessionId,
         startedAt: formatSafeProjectDate(session.startedAt),
-        title: session.threadName || session.sessionId,
+        threadName: session.threadName,
         tokens: formatNumber(session.tokenTotal),
     }))
 }
