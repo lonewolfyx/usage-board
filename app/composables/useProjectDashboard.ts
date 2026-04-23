@@ -1,9 +1,7 @@
 import type {
     ProjectDailyTrendModulePayload,
     ProjectDashboardPlatformKey,
-    ProjectDashboardPlatformTab,
     ProjectDashboardScope,
-    ProjectDashboardTab,
     ProjectLineSeries,
     ProjectMetaModule,
     ProjectModelUsageModulePayload,
@@ -28,6 +26,8 @@ import {
     buildProjectOverviewCards,
     buildProjectPlatformOverviewCards,
     buildRecentDateLabels,
+    projectDashboardTabs,
+    projectPlatformTabs,
     summarizeProjectSessions,
     toProjectDisplayDailyUsageRows,
     toProjectSessionTableRows,
@@ -52,14 +52,8 @@ const projectSelectionDebounceMs = 180
 const projectSelectionMaxWaitMs = 600
 const websocketRequestTimeoutMs = 45_000
 
-const tabs: ProjectDashboardTab[] = [
-    { label: 'All', value: 'all' },
-    { aiIcon: 'claude_code', color: '#d97757', label: 'Claude Code', value: 'claudeCode' },
-    { aiIcon: 'codex', color: '#111827', label: 'Codex', value: 'codex' },
-    { aiIcon: 'gemini', color: '#0ea5e9', label: 'Gemini', value: 'gemini' },
-]
-
-const platformTabs = tabs.filter((tab): tab is ProjectDashboardPlatformTab => tab.value !== 'all')
+const tabs = projectDashboardTabs
+const platformTabs = projectPlatformTabs
 
 const emptyDailyTrendPayload: ProjectDailyTrendModulePayload = {
     dailyRows: [],

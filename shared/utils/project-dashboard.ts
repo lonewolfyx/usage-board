@@ -1,6 +1,8 @@
-import type { AiIconName } from '#shared/types/navigation'
 import type {
     ProjectDashboardPlatformKey,
+    ProjectDashboardPlatformMeta,
+    ProjectDashboardPlatformTab,
+    ProjectDashboardTab,
     ProjectLineSeries,
     ProjectSessionListItem,
     ProjectSessionSummary,
@@ -23,29 +25,42 @@ import {
 import { formatNumber } from '@lonewolfyx/utils'
 
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
+const projectPlatformOrder = ['claudeCode', 'codex', 'gemini'] satisfies ProjectDashboardPlatformKey[]
 
-export function getProjectPlatformLabel(platform: ProjectDashboardPlatformKey) {
-    if (platform === 'claudeCode') {
-        return 'Claude Code'
-    }
+const projectPlatformMetaMap = {
+    claudeCode: {
+        aiIcon: 'claude_code',
+        color: '#d97757',
+        label: 'Claude Code',
+    },
+    codex: {
+        aiIcon: 'codex',
+        color: '#111827',
+        label: 'Codex',
+    },
+    gemini: {
+        aiIcon: 'gemini',
+        color: '#0ea5e9',
+        label: 'Gemini',
+    },
+} satisfies Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformMeta>
 
-    if (platform === 'gemini') {
-        return 'Gemini'
-    }
+export const projectPlatformTabs = projectPlatformOrder.map(value => ({
+    ...projectPlatformMetaMap[value],
+    value,
+})) satisfies ProjectDashboardPlatformTab[]
 
-    return 'Codex'
-}
+const projectPlatformTabMap = Object.fromEntries(
+    projectPlatformTabs.map(tab => [tab.value, tab]),
+) as Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformTab>
 
-export function getProjectPlatformIcon(platform: ProjectDashboardPlatformKey): AiIconName {
-    if (platform === 'claudeCode') {
-        return 'claude_code'
-    }
+export const projectDashboardTabs = [
+    { label: 'All', value: 'all' },
+    ...projectPlatformTabs,
+] satisfies ProjectDashboardTab[]
 
-    if (platform === 'gemini') {
-        return 'gemini'
-    }
-
-    return 'codex'
+export function getProjectPlatform(platform: ProjectDashboardPlatformKey): ProjectDashboardPlatformTab {
+    return projectPlatformTabMap[platform]
 }
 
 export function buildRecentDateLabels(days: number) {

@@ -20,6 +20,12 @@ export type ProjectDashboardTableTab = 'day' | 'month' | 'session' | 'week'
 
 export type ProjectUsageCatalogType = ProjectUsagePlatform | 'mixed'
 
+export interface ProjectDashboardPlatformMeta {
+    aiIcon: AiIconName
+    color: string
+    label: string
+}
+
 export interface ProjectDashboardTab {
     aiIcon?: AiIconName
     color?: string
@@ -27,9 +33,7 @@ export interface ProjectDashboardTab {
     value: ProjectDashboardScope
 }
 
-export interface ProjectDashboardPlatformTab extends ProjectDashboardTab {
-    aiIcon: AiIconName
-    color: string
+export interface ProjectDashboardPlatformTab extends Omit<ProjectDashboardTab, 'aiIcon' | 'color' | 'value'>, ProjectDashboardPlatformMeta {
     value: ProjectDashboardPlatformKey
 }
 
