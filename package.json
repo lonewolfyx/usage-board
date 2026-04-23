@@ -41,6 +41,7 @@
     },
     "dependencies": {
         "cac": "^7.0.0",
+        "crossws": "^0.4.5",
         "glob": "^13.0.6"
     },
     "devDependencies": {

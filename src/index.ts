@@ -13,17 +13,39 @@ type NodeListener = (
     res: ServerResponse,
 ) => void | Promise<void>
 
+interface NitroEntrypoint {
+    listener?: unknown
+    middleware?: unknown
+    handler?: unknown
+    default?: unknown
+    websocket?: unknown
+}
+
+interface LoadedNitroEntrypoint {
+    listener: NodeListener
+    websocket?: unknown
+}
+
 const cli = cac(name)
 
-async function loadNitroListener(outputDir: string): Promise<NodeListener> {
+function isNodeListener(value: unknown): value is NodeListener {
+    return typeof value === 'function'
+}
+
+async function loadNitroEntrypoint(outputDir: string): Promise<LoadedNitroEntrypoint> {
     const entryPath = resolve(outputDir, 'server/index.mjs')
 
     const mod = await import(entryPath)
-    return mod.listener
-        ?? mod.middleware
-        ?? mod.handler
-        ?? mod.default
-        ?? mod
+    const listener
+        = mod.listener
+            ?? mod.middleware
+            ?? mod.handler
+            ?? mod.default
+
+    return {
+        listener,
+        websocket: mod.websocket,
+    }
 }
 
 cli.command('', 'Start tokens usage analysis')
@@ -38,11 +60,17 @@ cli.command('', 'Start tokens usage analysis')
 
         const root = dirname(fileURLToPath(import.meta.url))
         const outputDir = resolve(root, './')
-        const lister = await loadNitroListener(outputDir)
+        const nitro = await loadNitroEntrypoint(outputDir)
 
         const app = createServer(async (req, res) => {
-            await lister(req, res)
+            await nitro.listener(req, res)
         })
+
+        if (nitro.websocket) {
+            const { default: wsAdapter } = await import('crossws/adapters/node')
+            const { handleUpgrade } = wsAdapter(nitro.websocket as never)
+            app.on('upgrade', handleUpgrade)
+        }
 
         app.listen(port, option.host, async () => {
             if (option.open) {
