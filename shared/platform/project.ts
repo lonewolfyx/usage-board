@@ -17,9 +17,19 @@ import type {
     ProjectSessionInteractionItem,
     ProjectSessionUsageItem,
     ProjectUsageAnalyzing,
+    ProjectUsageDetail,
 } from '#shared/types/usage-dashboard'
+import type {
+    ProjectUsageCatalogItem,
+    ProjectUsageCatalogType,
+    ProjectUsageDataModule,
+    ProjectUsageDataModuleResponse,
+    ProjectUsageDataModulesResponse,
+    ProjectUsageDataPlatformScope,
+} from '#shared/types/ws'
 import { existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, join, resolve, sep } from 'node:path'
 import {
     CLAUDE_FALLBACK_MODEL,
     CLAUDE_MODEL_ALIASES,
@@ -73,6 +83,22 @@ import {
     roundCurrency,
 } from '#shared/utils/usage-dashboard'
 import { glob } from 'glob'
+
+const EMPTY_USAGE_ROOT = '/__usage-board-empty__'
+
+const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
+
+const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'meta' satisfies ProjectUsageDataModule
+
+const PROJECT_USAGE_DATA_MODULES = [
+    'daily_trend',
+    'meta',
+    'model_usage',
+    'overview_cards',
+    'session_interactions',
+    'session_list',
+    'token_usage',
+] satisfies ProjectUsageDataModule[]
 
 /**
  * Loads Claude Code, Codex, and Gemini usage, then groups all sessions by project.
@@ -149,6 +175,448 @@ export async function loadProjectsUsage(config: IConfig): Promise<LoadProjectsUs
             },
         }
     })
+}
+
+/**
+ * Loads only the projects that have usage data and returns their source roots.
+ *
+ * @example
+ * ```ts
+ * const projects = await loadProjectUsageCatalog(config)
+ * console.log(projects[0]?.path)
+ * ```
+ */
+export async function loadProjectUsageCatalog(config: IConfig): Promise<ProjectUsageCatalogItem[]> {
+    const projects = await loadProjectsUsage(config)
+
+    return projects
+        .map((project) => {
+            const [label, detail] = Object.entries(project)[0] ?? []
+
+            if (!label || !detail) {
+                return null
+            }
+
+            const platforms = getProjectDetailPlatforms(detail)
+
+            return {
+                label,
+                path: uniqueItems(platforms.flatMap(platform => getPlatformUsageRoots(config, platform)))
+                    .map(toHomeRelativePath),
+                type: getProjectCatalogType(platforms),
+            }
+        })
+        .filter((item): item is ProjectUsageCatalogItem => item !== null)
+}
+
+/**
+ * Loads a single project usage detail, optionally scoped to the supplied session roots.
+ *
+ * @example
+ * ```ts
+ * const detail = await loadProjectUsageData(config, { project: 'usage-board', path: ['~/.codex/sessions'] })
+ * ```
+ */
+export async function loadProjectUsageData(
+    config: IConfig,
+    options: {
+        label?: string
+        path?: string[]
+        project?: string
+    },
+): Promise<ProjectUsageDetail | null> {
+    const projectName = (options.project || options.label || '').trim()
+
+    if (!projectName) {
+        throw new Error('Missing project name for project_data request.')
+    }
+
+    const scopedConfig = options.path?.length
+        ? createConfigForUsagePaths(config, options.path)
+        : config
+    const projects = await loadProjectsUsage(scopedConfig)
+
+    return projects.find(project => project[projectName])?.[projectName] ?? null
+}
+
+/**
+ * Loads one or more lightweight project usage modules for websocket consumers.
+ *
+ * @example
+ * ```ts
+ * const data = await loadProjectUsageDataModule(config, { project: 'usage-board', module: 'overview_cards' })
+ * ```
+ */
+export async function loadProjectUsageDataModule(
+    config: IConfig,
+    options: {
+        label?: string
+        module?: ProjectUsageDataModule
+        modules?: ProjectUsageDataModule[]
+        path?: string[]
+        platform?: ProjectUsageDataPlatformScope
+        project?: string
+        sessionId?: string
+    },
+): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
+    const detail = await loadProjectUsageData(config, options)
+
+    if (!detail) {
+        return null
+    }
+
+    const modules = uniqueItems(options.modules?.length
+        ? options.modules
+        : [options.module ?? DEFAULT_PROJECT_USAGE_DATA_MODULE])
+
+    for (const module of modules) {
+        assertProjectUsageDataModule(module)
+    }
+
+    if (options.platform) {
+        assertProjectUsagePlatformScope(options.platform)
+    }
+
+    if (modules.length === 1) {
+        const module = modules[0]!
+
+        return {
+            data: buildProjectUsageDataModule(detail, module, options),
+            label: detail.label,
+            module,
+        }
+    }
+
+    return {
+        label: detail.label,
+        modules: Object.fromEntries(modules.map(module => [
+            module,
+            buildProjectUsageDataModule(detail, module, options),
+        ])),
+    }
+}
+
+function buildProjectUsageDataModule(
+    detail: ProjectUsageDetail,
+    module: ProjectUsageDataModule,
+    options: {
+        platform?: ProjectUsageDataPlatformScope
+        sessionId?: string
+    },
+) {
+    if (module === 'meta') {
+        return buildProjectMetaModule(detail)
+    }
+
+    if (module === 'session_interactions') {
+        return buildProjectSessionInteractionsModule(detail, options)
+    }
+
+    return buildProjectPlatformModule(detail, module, options.platform ?? 'all')
+}
+
+function buildProjectMetaModule(detail: ProjectUsageDetail) {
+    return {
+        createTime: detail.createTime,
+        label: detail.label,
+        models: detail.models,
+        platforms: getProjectDetailPlatforms(detail),
+        sessionCound: detail.sessionCound,
+    }
+}
+
+function buildProjectPlatformModule(
+    detail: ProjectUsageDetail,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions'>,
+    platform: ProjectUsageDataPlatformScope,
+) {
+    if (platform !== 'all') {
+        return buildPlatformModulePayload(detail.analyzing[platform], module)
+    }
+
+    if (module === 'session_list') {
+        const sessions = getProjectDetailSessions(detail)
+        const allUsage = buildProjectLoadUsageResult(sessions, detail.label)
+
+        return {
+            all: {
+                sessionRows: allUsage.sessionRows,
+                sessionUsage: sessions.map(toProjectSessionListItem),
+                sessions: sessions.map(toProjectSessionListItem),
+            },
+            claudeCode: buildPlatformModulePayload(detail.analyzing.claudeCode, module),
+            codex: buildPlatformModulePayload(detail.analyzing.codex, module),
+            gemini: buildPlatformModulePayload(detail.analyzing.gemini, module),
+        }
+    }
+
+    const allUsage = buildProjectLoadUsageResult(getProjectDetailSessions(detail), detail.label)
+
+    return {
+        all: buildLoadUsageModulePayload(allUsage, module),
+        claudeCode: buildPlatformModulePayload(detail.analyzing.claudeCode, module),
+        codex: buildPlatformModulePayload(detail.analyzing.codex, module),
+        gemini: buildPlatformModulePayload(detail.analyzing.gemini, module),
+    }
+}
+
+function buildPlatformModulePayload(
+    usage: ProjectPlatformUsage,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions'>,
+) {
+    if (module === 'session_list') {
+        return {
+            sessionRows: usage.sessionRows,
+            sessionUsage: usage.sessions.map(toProjectSessionListItem),
+            sessions: usage.sessions.map(toProjectSessionListItem),
+        }
+    }
+
+    return buildLoadUsageModulePayload(usage, module)
+}
+
+function buildLoadUsageModulePayload(
+    usage: LoadUsageResult,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions' | 'session_list'>,
+) {
+    if (module === 'overview_cards') {
+        return {
+            overviewCards: usage.overviewCards,
+            todayTopModel: usage.todayTopModel,
+            todayTopProject: usage.todayTopProject,
+            todayTotalCost: usage.todayTotalCost,
+            todayTotalTokens: usage.todayTotalTokens,
+        }
+    }
+
+    if (module === 'daily_trend') {
+        return {
+            dailyRows: usage.dailyRows,
+            dailyTokenUsage: usage.dailyTokenUsage,
+        }
+    }
+
+    if (module === 'model_usage') {
+        return {
+            monthlyModelUsage: usage.monthlyModelUsage,
+        }
+    }
+
+    return {
+        dailyRows: usage.dailyRows,
+        monthlyRows: usage.monthlyRows,
+        sessionRows: usage.sessionRows,
+        weeklyRows: usage.weeklyRows,
+    }
+}
+
+function buildProjectSessionInteractionsModule(
+    detail: ProjectUsageDetail,
+    options: {
+        platform?: ProjectUsageDataPlatformScope
+        sessionId?: string
+    },
+) {
+    const sessionId = options.sessionId?.trim()
+
+    if (!sessionId) {
+        throw new Error('Missing sessionId for session_interactions module.')
+    }
+
+    const sessions = getProjectDetailSessions(detail, options.platform ?? 'all')
+    const session = sessions.find(session => session.sessionId === sessionId)
+
+    if (!session) {
+        return null
+    }
+
+    return {
+        ...toProjectSessionListItem(session),
+        interactions: session.interactions.map(({ raw: _raw, ...interaction }) => interaction),
+    }
+}
+
+function getProjectDetailSessions(
+    detail: ProjectUsageDetail,
+    platform: ProjectUsageDataPlatformScope = 'all',
+) {
+    if (platform !== 'all') {
+        return detail.analyzing[platform].sessions
+    }
+
+    return [
+        ...detail.analyzing.claudeCode.sessions,
+        ...detail.analyzing.codex.sessions,
+        ...detail.analyzing.gemini.sessions,
+    ].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+}
+
+function toProjectSessionListItem(session: ProjectSessionUsageItem) {
+    const { interactions: _interactions, ...item } = session
+
+    return item
+}
+
+function assertProjectUsageDataModule(module: string): asserts module is ProjectUsageDataModule {
+    if (!PROJECT_USAGE_DATA_MODULES.includes(module as ProjectUsageDataModule)) {
+        throw new Error(`Unsupported project data module: ${module}.`)
+    }
+}
+
+function assertProjectUsagePlatformScope(platform: string): asserts platform is ProjectUsageDataPlatformScope {
+    if (platform !== 'all' && !PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform)) {
+        throw new Error(`Unsupported project data platform: ${platform}.`)
+    }
+}
+
+function getProjectDetailPlatforms(detail: ProjectUsageDetail): ProjectUsagePlatform[] {
+    return PROJECT_USAGE_PLATFORMS.filter(platform => detail.analyzing[platform].sessions.length > 0)
+}
+
+function getProjectCatalogType(platforms: ProjectUsagePlatform[]): ProjectUsageCatalogType {
+    return platforms.length === 1 ? platforms[0]! : 'mixed'
+}
+
+function getPlatformUsageRoots(config: IConfig, platform: ProjectUsagePlatform) {
+    if (platform === 'claudeCode') {
+        return config.claudeCodePaths.map(path => join(path, 'projects'))
+    }
+
+    if (platform === 'codex') {
+        return [join(config.codexPath, 'sessions')]
+    }
+
+    return [join(config.geminiPath, 'tmp')]
+}
+
+function createConfigForUsagePaths(config: IConfig, paths: string[]): IConfig {
+    const platformRoots = getScopedPlatformRoots(config, paths)
+
+    return {
+        ...config,
+        claudeCodePath: platformRoots.claudeCode[0] ?? EMPTY_USAGE_ROOT,
+        claudeCodePaths: platformRoots.claudeCode,
+        codexPath: platformRoots.codex[0] ?? EMPTY_USAGE_ROOT,
+        geminiPath: platformRoots.gemini[0] ?? EMPTY_USAGE_ROOT,
+    }
+}
+
+function getScopedPlatformRoots(config: IConfig, paths: string[]) {
+    const roots = {
+        claudeCode: [] as string[],
+        codex: [] as string[],
+        gemini: [] as string[],
+    }
+
+    for (const inputPath of paths) {
+        const normalizedPath = normalizeUsagePath(inputPath)
+        const platform = detectUsagePlatform(config, normalizedPath)
+
+        if (platform === 'claudeCode') {
+            roots.claudeCode.push(getClaudeRootFromUsagePath(normalizedPath))
+        }
+        else if (platform === 'codex') {
+            roots.codex.push(getCodexRootFromUsagePath(normalizedPath))
+        }
+        else if (platform === 'gemini') {
+            roots.gemini.push(getGeminiRootFromUsagePath(normalizedPath))
+        }
+    }
+
+    return {
+        claudeCode: uniqueItems(roots.claudeCode),
+        codex: uniqueItems(roots.codex),
+        gemini: uniqueItems(roots.gemini),
+    }
+}
+
+function detectUsagePlatform(config: IConfig, path: string): ProjectUsagePlatform | null {
+    if (isSameOrChildPath(path, config.codexPath)) {
+        return 'codex'
+    }
+
+    if (isSameOrChildPath(path, config.geminiPath)) {
+        return 'gemini'
+    }
+
+    if (config.claudeCodePaths.some(claudePath => isSameOrChildPath(path, claudePath))) {
+        return 'claudeCode'
+    }
+
+    if (path.includes(`${sep}.codex${sep}`) || path.endsWith(`${sep}.codex`)) {
+        return 'codex'
+    }
+
+    if (path.includes(`${sep}.gemini${sep}`) || path.endsWith(`${sep}.gemini`)) {
+        return 'gemini'
+    }
+
+    if (path.includes(`${sep}.claude${sep}`) || path.endsWith(`${sep}.claude`) || path.includes(`${sep}claude${sep}`)) {
+        return 'claudeCode'
+    }
+
+    return null
+}
+
+function getClaudeRootFromUsagePath(path: string) {
+    const parts = path.split(sep)
+    const projectsIndex = parts.lastIndexOf('projects')
+
+    if (projectsIndex > 0) {
+        return parts.slice(0, projectsIndex).join(sep) || sep
+    }
+
+    return path
+}
+
+function getCodexRootFromUsagePath(path: string) {
+    return basename(path) === 'sessions' ? resolve(path, '..') : path
+}
+
+function getGeminiRootFromUsagePath(path: string) {
+    const parts = path.split(sep)
+    const tmpIndex = parts.lastIndexOf('tmp')
+
+    if (tmpIndex > 0) {
+        return parts.slice(0, tmpIndex).join(sep) || sep
+    }
+
+    return path
+}
+
+function normalizeUsagePath(path: string) {
+    const trimmedPath = path.trim()
+
+    if (trimmedPath === '~') {
+        return homedir()
+    }
+
+    if (trimmedPath.startsWith(`~${sep}`)) {
+        return resolve(homedir(), trimmedPath.slice(2))
+    }
+
+    return resolve(trimmedPath)
+}
+
+function toHomeRelativePath(path: string) {
+    const home = homedir()
+
+    if (path === home) {
+        return '~'
+    }
+
+    if (path.startsWith(`${home}${sep}`)) {
+        return `~${sep}${path.slice(home.length + 1)}`
+    }
+
+    return path
+}
+
+function isSameOrChildPath(path: string, parent: string) {
+    const normalizedPath = resolve(path)
+    const normalizedParent = resolve(parent)
+
+    return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}${sep}`)
 }
 
 function getPlatformProjectNames(detailsBySession: Map<string, ProjectSessionDetail>) {

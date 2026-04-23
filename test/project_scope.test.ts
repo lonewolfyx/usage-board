@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadProjectsUsage } from '#shared/platform/project'
+import { loadProjectsUsage, loadProjectUsageCatalog, loadProjectUsageData, loadProjectUsageDataModule } from '#shared/platform/project'
 import { resolveConfig } from '#shared/utils/configs'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { version } from '../package.json' with { type: 'josn' }
@@ -54,6 +54,98 @@ describe('project usage scope', () => {
             expect(claudeCode?.todayTopProject?.project).toBe('project-a')
             expect(claudeCode?.todayTotalTokens).toBe(110)
             expect(claudeCode?.todayTotalCost).toBe(0.01)
+        }
+        finally {
+            await rm(root, { force: true, recursive: true })
+        }
+    })
+
+    it('loads project catalog and project detail scoped by session roots', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-17T08:00:00.000Z'))
+
+        const root = await mkdtemp(join(tmpdir(), 'usage-board-project-catalog-'))
+        const claudeCodePath = join(root, 'claude')
+        const codexPath = join(root, 'codex')
+        const geminiPath = join(root, 'gemini')
+        const scopedConfig = {
+            ...config,
+            claudeCodePath,
+            claudeCodePaths: [claudeCodePath],
+            codexPath,
+            geminiPath,
+        }
+
+        try {
+            await mkdir(join(codexPath, 'sessions'), { recursive: true })
+            await mkdir(join(geminiPath, 'tmp'), { recursive: true })
+            await writeClaudeFixture(claudeCodePath, 'project-a', 'session-a', 100, 10, 0.01)
+
+            const projectPath = join(claudeCodePath, 'projects')
+            const catalog = await loadProjectUsageCatalog(scopedConfig)
+            const project = await loadProjectUsageData(scopedConfig, {
+                path: [projectPath],
+                project: 'project-a',
+            })
+
+            expect(catalog).toEqual([{
+                label: 'project-a',
+                path: [projectPath],
+                type: 'claudeCode',
+            }])
+            expect(project?.label).toBe('project-a')
+            expect(project?.analyzing.claudeCode.sessions).toHaveLength(1)
+            expect(project?.analyzing.codex.sessions).toHaveLength(0)
+            expect(project?.analyzing.gemini.sessions).toHaveLength(0)
+        }
+        finally {
+            await rm(root, { force: true, recursive: true })
+        }
+    })
+
+    it('returns lightweight project modules without raw interaction payloads', async () => {
+        vi.useFakeTimers()
+        vi.setSystemTime(new Date('2026-04-17T08:00:00.000Z'))
+
+        const root = await mkdtemp(join(tmpdir(), 'usage-board-project-modules-'))
+        const claudeCodePath = join(root, 'claude')
+        const codexPath = join(root, 'codex')
+        const geminiPath = join(root, 'gemini')
+        const scopedConfig = {
+            ...config,
+            claudeCodePath,
+            claudeCodePaths: [claudeCodePath],
+            codexPath,
+            geminiPath,
+        }
+
+        try {
+            await mkdir(join(codexPath, 'sessions'), { recursive: true })
+            await mkdir(join(geminiPath, 'tmp'), { recursive: true })
+            await writeClaudeFixture(claudeCodePath, 'project-a', 'session-a', 100, 10, 0.01)
+
+            const overview = await loadProjectUsageDataModule(scopedConfig, {
+                module: 'overview_cards',
+                project: 'project-a',
+            })
+            const sessionList = await loadProjectUsageDataModule(scopedConfig, {
+                module: 'session_list',
+                project: 'project-a',
+            })
+            const interactions = await loadProjectUsageDataModule(scopedConfig, {
+                module: 'session_interactions',
+                project: 'project-a',
+                sessionId: 'session-a',
+            })
+
+            expect(overview).toMatchObject({
+                label: 'project-a',
+                module: 'overview_cards',
+            })
+            expect(JSON.stringify(overview)).not.toContain('interactions')
+            expect(JSON.stringify(sessionList)).not.toContain('"raw"')
+            expect(JSON.stringify(interactions)).not.toContain('"raw"')
+            expect(JSON.stringify(interactions)).toContain('"interactions"')
         }
         finally {
             await rm(root, { force: true, recursive: true })
