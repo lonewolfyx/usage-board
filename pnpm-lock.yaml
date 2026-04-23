@@ -11,6 +11,9 @@ importers:
       cac:
         specifier: ^7.0.0
         version: 7.0.0
+      crossws:
+        specifier: ^0.4.5
+        version: 0.4.5(srvx@0.11.15)
       glob:
         specifier: ^13.0.6
         version: 13.0.6
@@ -93,9 +96,6 @@ importers:
       get-port-please:
         specifier: ^3.2.0
         version: 3.2.0
-      h3:
-        specifier: 2.0.1-rc.20
-        version: 2.0.1-rc.20(crossws@0.4.5(srvx@0.11.15))
       lint-staged:
         specifier: ^16.4.0
         version: 16.4.0
@@ -4198,16 +4198,6 @@ packages:
 
   h3@1.15.11:
     resolution: {integrity: sha512-L3THSe2MPeBwgIZVSH5zLdBBU90TOxarvhK9d04IDY2AmVS8j2Jz2LIWtwsGOU3lu2I5jCN7FNvVfY2+XyF+mg==}
-
-  h3@2.0.1-rc.20:
-    resolution: {integrity: sha512-28ljodXuUp0fZovdiSRq4G9OgrxCztrJe5VdYzXAB7ueRvI7pIUqLU14Xi3XqdYJ/khXjfpUOOD2EQa6CmBgsg==}
-    engines: {node: '>=20.11.1'}
-    hasBin: true
-    peerDependencies:
-      crossws: ^0.4.1
-    peerDependenciesMeta:
-      crossws:
-        optional: true
 
   has-property-descriptors@1.0.2:
     resolution: {integrity: sha512-55JNKuIW+vq4Ke1BjOTjM2YctQIvCT7GFzHwmfZPGo5wnrgkid0YQtnAleFSqumZm4az3n2BS+erby5ipJdgrg==}
@@ -11139,13 +11129,6 @@ snapshots:
       radix3: 1.1.2
       ufo: 1.6.3
       uncrypto: 0.1.3
-
-  h3@2.0.1-rc.20(crossws@0.4.5(srvx@0.11.15)):
-    dependencies:
-      rou3: 0.8.1
-      srvx: 0.11.15
-    optionalDependencies:
-      crossws: 0.4.5(srvx@0.11.15)
 
   has-property-descriptors@1.0.2:
     dependencies:

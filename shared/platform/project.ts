@@ -8,6 +8,7 @@ import type {
     SessionLogLine,
     UsageAggregateEvent,
 } from '#shared/types/platform'
+import type { ProjectUsageCatalogType } from '#shared/types/project-dashboard'
 import type {
     LoadProjectsUsageResult,
     LoadUsageResult,
@@ -17,9 +18,19 @@ import type {
     ProjectSessionInteractionItem,
     ProjectSessionUsageItem,
     ProjectUsageAnalyzing,
+    ProjectUsageDetail,
 } from '#shared/types/usage-dashboard'
+import type {
+    ProjectUsageCatalogItem,
+    ProjectUsageDataModule,
+    ProjectUsageDataModulePayloadMap,
+    ProjectUsageDataModuleResponse,
+    ProjectUsageDataModulesResponse,
+    ProjectUsageDataPlatformScope,
+} from '#shared/types/ws'
 import { existsSync } from 'node:fs'
-import { basename, join } from 'node:path'
+import { homedir } from 'node:os'
+import { basename, join, resolve, sep } from 'node:path'
 import {
     CLAUDE_FALLBACK_MODEL,
     CLAUDE_MODEL_ALIASES,
@@ -31,12 +42,7 @@ import {
 } from '#shared/platform/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
-    buildDailyRows,
-    buildDailyTokenUsage,
-    buildDailyUsageGroups,
-    buildMonthlyModelUsage,
-    buildOverviewCards,
-    buildPeriodRows,
+    buildLoadUsageResult,
     convertCodexRawUsage,
     convertGeminiTokenUsage,
     decodeClaudeProjectPath,
@@ -52,8 +58,6 @@ import {
     getMonthKey,
     getProjectName,
     getRepositoryNameFromProjectRoot,
-    getTopModelForDate,
-    getTopProjectForDate,
     getWeekLabel,
     isOpenRouterFreeModel,
     isZeroUsage,
@@ -64,15 +68,28 @@ import {
     subtractRawUsage,
     toIsoString,
 } from '#shared/utils/platform'
-import {
-    buildProjectUsage,
-    formatDateLabelFromDateKey,
-    getDateKey,
-    getPreviousDateKey,
-    normalizeNumber,
-    roundCurrency,
-} from '#shared/utils/usage-dashboard'
+import { formatDateLabelFromDateKey, getDateKey, normalizeNumber, roundCurrency } from '#shared/utils/usage-dashboard'
 import { glob } from 'glob'
+
+const EMPTY_USAGE_ROOT = '/__usage-board-empty__'
+
+const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
+
+const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'meta' satisfies ProjectUsageDataModule
+
+const PROJECT_USAGE_DATA_MODULES = [
+    'daily_trend',
+    'meta',
+    'model_usage',
+    'overview_cards',
+    'session_interactions',
+    'session_list',
+    'token_usage',
+] satisfies ProjectUsageDataModule[]
+
+type ProjectLoadUsageResult = Omit<LoadUsageResult, 'sessionUsage'> & {
+    sessionUsage: ProjectSessionUsageItem[]
+}
 
 /**
  * Loads Claude Code, Codex, and Gemini usage, then groups all sessions by project.
@@ -129,9 +146,9 @@ export async function loadProjectsUsage(config: IConfig): Promise<LoadProjectsUs
 
     return projectNames.map((projectName) => {
         const analyzing: ProjectUsageAnalyzing = {
-            claudeCode: buildPlatformProjectUsage(claudeDetails, projectName),
-            codex: buildPlatformProjectUsage(codexDetails, projectName),
-            gemini: buildPlatformProjectUsage(geminiDetails, projectName),
+            claudeCode: buildPlatformProjectUsage(claudeDetails, projectName, 'claudeCode'),
+            codex: buildPlatformProjectUsage(codexDetails, projectName, 'codex'),
+            gemini: buildPlatformProjectUsage(geminiDetails, projectName, 'gemini'),
         }
         const sessions = [
             ...analyzing.claudeCode.sessions,
@@ -151,6 +168,450 @@ export async function loadProjectsUsage(config: IConfig): Promise<LoadProjectsUs
     })
 }
 
+/**
+ * Loads only the projects that have usage data and returns their source roots.
+ *
+ * @example
+ * ```ts
+ * const projects = await loadProjectUsageCatalog(config)
+ * console.log(projects[0]?.path)
+ * ```
+ */
+export async function loadProjectUsageCatalog(config: IConfig): Promise<ProjectUsageCatalogItem[]> {
+    const projects = await loadProjectsUsage(config)
+
+    return projects
+        .map((project) => {
+            const [label, detail] = Object.entries(project)[0] ?? []
+
+            if (!label || !detail) {
+                return null
+            }
+
+            const platforms = getProjectDetailPlatforms(detail)
+
+            return {
+                label,
+                path: uniqueItems(platforms.flatMap(platform => getPlatformUsageRoots(config, platform)))
+                    .map(toHomeRelativePath),
+                type: getProjectCatalogType(platforms),
+            }
+        })
+        .filter((item): item is ProjectUsageCatalogItem => item !== null)
+}
+
+/**
+ * Loads a single project usage detail, optionally scoped to the supplied session roots.
+ *
+ * @example
+ * ```ts
+ * const detail = await loadProjectUsageData(config, { project: 'usage-board', path: ['~/.codex/sessions'] })
+ * ```
+ */
+export async function loadProjectUsageData(
+    config: IConfig,
+    options: {
+        label?: string
+        path?: string[]
+        project?: string
+    },
+): Promise<ProjectUsageDetail | null> {
+    const projectName = (options.project || options.label || '').trim()
+
+    if (!projectName) {
+        throw new Error('Missing project name for project_data request.')
+    }
+
+    const scopedConfig = options.path?.length
+        ? createConfigForUsagePaths(config, options.path)
+        : config
+    const projects = await loadProjectsUsage(scopedConfig)
+
+    return projects.find(project => project[projectName])?.[projectName] ?? null
+}
+
+/**
+ * Loads one or more lightweight project usage modules for websocket consumers.
+ *
+ * @example
+ * ```ts
+ * const data = await loadProjectUsageDataModule(config, { project: 'usage-board', module: 'overview_cards' })
+ * ```
+ */
+export async function loadProjectUsageDataModule(
+    config: IConfig,
+    options: {
+        label?: string
+        module?: ProjectUsageDataModule
+        modules?: ProjectUsageDataModule[]
+        path?: string[]
+        platform?: ProjectUsageDataPlatformScope
+        project?: string
+        sessionId?: string
+    },
+): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
+    const detail = await loadProjectUsageData(config, options)
+
+    if (!detail) {
+        return null
+    }
+
+    const modules = uniqueItems(options.modules?.length
+        ? options.modules
+        : [options.module ?? DEFAULT_PROJECT_USAGE_DATA_MODULE])
+
+    for (const module of modules) {
+        assertProjectUsageDataModule(module)
+    }
+
+    if (options.platform) {
+        assertProjectUsagePlatformScope(options.platform)
+    }
+
+    if (modules.length === 1) {
+        const module = modules[0]!
+        const data = buildProjectUsageDataModule(detail, module, options) as ProjectUsageDataModulePayloadMap[typeof module]
+
+        return {
+            data,
+            label: detail.label,
+            module,
+        } as ProjectUsageDataModuleResponse
+    }
+
+    return {
+        label: detail.label,
+        modules: Object.fromEntries(modules.map(module => [
+            module,
+            buildProjectUsageDataModule(detail, module, options),
+        ])),
+    }
+}
+
+function buildProjectUsageDataModule(
+    detail: ProjectUsageDetail,
+    module: ProjectUsageDataModule,
+    options: {
+        platform?: ProjectUsageDataPlatformScope
+        sessionId?: string
+    },
+) {
+    if (module === 'meta') {
+        return buildProjectMetaModule(detail)
+    }
+
+    if (module === 'session_interactions') {
+        return buildProjectSessionInteractionsModule(detail, options)
+    }
+
+    return buildProjectPlatformModule(detail, module, options.platform ?? 'all')
+}
+
+function buildProjectMetaModule(detail: ProjectUsageDetail) {
+    return {
+        createTime: detail.createTime,
+        label: detail.label,
+        models: detail.models,
+        platforms: getProjectDetailPlatforms(detail),
+        sessionCound: detail.sessionCound,
+    }
+}
+
+function buildProjectPlatformModule(
+    detail: ProjectUsageDetail,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions'>,
+    platform: ProjectUsageDataPlatformScope,
+) {
+    if (platform !== 'all') {
+        return buildPlatformModulePayload(detail.analyzing[platform], module)
+    }
+
+    if (module === 'session_list') {
+        const sessions = getProjectDetailSessions(detail)
+        const allUsage = buildProjectLoadUsageResult(sessions)
+
+        return {
+            all: {
+                sessionRows: allUsage.sessionRows,
+                sessionUsage: sessions.map(toProjectSessionListItem),
+                sessions: sessions.map(toProjectSessionListItem),
+            },
+            claudeCode: buildPlatformModulePayload(detail.analyzing.claudeCode, module),
+            codex: buildPlatformModulePayload(detail.analyzing.codex, module),
+            gemini: buildPlatformModulePayload(detail.analyzing.gemini, module),
+        }
+    }
+
+    const allUsage = buildProjectLoadUsageResult(getProjectDetailSessions(detail))
+
+    return {
+        all: buildLoadUsageModulePayload(allUsage, module),
+        claudeCode: buildPlatformModulePayload(detail.analyzing.claudeCode, module),
+        codex: buildPlatformModulePayload(detail.analyzing.codex, module),
+        gemini: buildPlatformModulePayload(detail.analyzing.gemini, module),
+    }
+}
+
+function buildPlatformModulePayload(
+    usage: ProjectPlatformUsage,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions'>,
+) {
+    if (module === 'session_list') {
+        return {
+            sessionRows: usage.sessionRows,
+            sessionUsage: usage.sessions.map(toProjectSessionListItem),
+            sessions: usage.sessions.map(toProjectSessionListItem),
+        }
+    }
+
+    return buildLoadUsageModulePayload(usage, module)
+}
+
+function buildLoadUsageModulePayload(
+    usage: LoadUsageResult,
+    module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions' | 'session_list'>,
+) {
+    if (module === 'overview_cards') {
+        return {
+            overviewCards: usage.overviewCards,
+            todayTopModel: usage.todayTopModel,
+            todayTopProject: usage.todayTopProject,
+            todayTotalCost: usage.todayTotalCost,
+            todayTotalTokens: usage.todayTotalTokens,
+        }
+    }
+
+    if (module === 'daily_trend') {
+        return {
+            dailyRows: usage.dailyRows,
+            dailyTokenUsage: usage.dailyTokenUsage,
+        }
+    }
+
+    if (module === 'model_usage') {
+        return {
+            dailyTokenUsage: usage.dailyTokenUsage,
+            monthlyModelUsage: usage.monthlyModelUsage,
+        }
+    }
+
+    return {
+        dailyRows: usage.dailyRows,
+        monthlyRows: usage.monthlyRows,
+        sessionRows: usage.sessionRows,
+        weeklyRows: usage.weeklyRows,
+    }
+}
+
+function buildProjectSessionInteractionsModule(
+    detail: ProjectUsageDetail,
+    options: {
+        platform?: ProjectUsageDataPlatformScope
+        sessionId?: string
+    },
+) {
+    const sessionId = options.sessionId?.trim()
+
+    if (!sessionId) {
+        throw new Error('Missing sessionId for session_interactions module.')
+    }
+
+    const sessions = getProjectDetailSessions(detail, options.platform ?? 'all')
+    const session = sessions.find(session => session.sessionId === sessionId)
+
+    if (!session) {
+        return null
+    }
+
+    return {
+        ...toProjectSessionListItem(session),
+        interactions: session.interactions.map(({ raw: _raw, ...interaction }) => interaction),
+    }
+}
+
+function getProjectDetailSessions(
+    detail: ProjectUsageDetail,
+    platform: ProjectUsageDataPlatformScope = 'all',
+) {
+    if (platform !== 'all') {
+        return detail.analyzing[platform].sessions
+    }
+
+    return [
+        ...detail.analyzing.claudeCode.sessions,
+        ...detail.analyzing.codex.sessions,
+        ...detail.analyzing.gemini.sessions,
+    ].sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+}
+
+function toProjectSessionListItem(session: ProjectSessionUsageItem) {
+    const { interactions: _interactions, ...item } = session
+
+    return item
+}
+
+function assertProjectUsageDataModule(module: string): asserts module is ProjectUsageDataModule {
+    if (!PROJECT_USAGE_DATA_MODULES.includes(module as ProjectUsageDataModule)) {
+        throw new Error(`Unsupported project data module: ${module}.`)
+    }
+}
+
+function assertProjectUsagePlatformScope(platform: string): asserts platform is ProjectUsageDataPlatformScope {
+    if (platform !== 'all' && !PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform)) {
+        throw new Error(`Unsupported project data platform: ${platform}.`)
+    }
+}
+
+function getProjectDetailPlatforms(detail: ProjectUsageDetail): ProjectUsagePlatform[] {
+    return PROJECT_USAGE_PLATFORMS.filter(platform => detail.analyzing[platform].sessions.length > 0)
+}
+
+function getProjectCatalogType(platforms: ProjectUsagePlatform[]): ProjectUsageCatalogType {
+    return platforms.length === 1 ? platforms[0]! : 'mixed'
+}
+
+function getPlatformUsageRoots(config: IConfig, platform: ProjectUsagePlatform) {
+    if (platform === 'claudeCode') {
+        return config.claudeCodePaths.map(path => join(path, 'projects'))
+    }
+
+    if (platform === 'codex') {
+        return [join(config.codexPath, 'sessions')]
+    }
+
+    return [join(config.geminiPath, 'tmp')]
+}
+
+function createConfigForUsagePaths(config: IConfig, paths: string[]): IConfig {
+    const platformRoots = getScopedPlatformRoots(config, paths)
+
+    return {
+        ...config,
+        claudeCodePath: platformRoots.claudeCode[0] ?? EMPTY_USAGE_ROOT,
+        claudeCodePaths: platformRoots.claudeCode,
+        codexPath: platformRoots.codex[0] ?? EMPTY_USAGE_ROOT,
+        geminiPath: platformRoots.gemini[0] ?? EMPTY_USAGE_ROOT,
+    }
+}
+
+function getScopedPlatformRoots(config: IConfig, paths: string[]) {
+    const roots = {
+        claudeCode: [] as string[],
+        codex: [] as string[],
+        gemini: [] as string[],
+    }
+
+    for (const inputPath of paths) {
+        const normalizedPath = normalizeUsagePath(inputPath)
+        const platform = detectUsagePlatform(config, normalizedPath)
+
+        if (platform === 'claudeCode') {
+            roots.claudeCode.push(getClaudeRootFromUsagePath(normalizedPath))
+        }
+        else if (platform === 'codex') {
+            roots.codex.push(getCodexRootFromUsagePath(normalizedPath))
+        }
+        else if (platform === 'gemini') {
+            roots.gemini.push(getGeminiRootFromUsagePath(normalizedPath))
+        }
+    }
+
+    return {
+        claudeCode: uniqueItems(roots.claudeCode),
+        codex: uniqueItems(roots.codex),
+        gemini: uniqueItems(roots.gemini),
+    }
+}
+
+function detectUsagePlatform(config: IConfig, path: string): ProjectUsagePlatform | null {
+    if (isSameOrChildPath(path, config.codexPath)) {
+        return 'codex'
+    }
+
+    if (isSameOrChildPath(path, config.geminiPath)) {
+        return 'gemini'
+    }
+
+    if (config.claudeCodePaths.some(claudePath => isSameOrChildPath(path, claudePath))) {
+        return 'claudeCode'
+    }
+
+    if (path.includes(`${sep}.codex${sep}`) || path.endsWith(`${sep}.codex`)) {
+        return 'codex'
+    }
+
+    if (path.includes(`${sep}.gemini${sep}`) || path.endsWith(`${sep}.gemini`)) {
+        return 'gemini'
+    }
+
+    if (path.includes(`${sep}.claude${sep}`) || path.endsWith(`${sep}.claude`) || path.includes(`${sep}claude${sep}`)) {
+        return 'claudeCode'
+    }
+
+    return null
+}
+
+function getClaudeRootFromUsagePath(path: string) {
+    const parts = path.split(sep)
+    const projectsIndex = parts.lastIndexOf('projects')
+
+    if (projectsIndex > 0) {
+        return parts.slice(0, projectsIndex).join(sep) || sep
+    }
+
+    return path
+}
+
+function getCodexRootFromUsagePath(path: string) {
+    return basename(path) === 'sessions' ? resolve(path, '..') : path
+}
+
+function getGeminiRootFromUsagePath(path: string) {
+    const parts = path.split(sep)
+    const tmpIndex = parts.lastIndexOf('tmp')
+
+    if (tmpIndex > 0) {
+        return parts.slice(0, tmpIndex).join(sep) || sep
+    }
+
+    return path
+}
+
+function normalizeUsagePath(path: string) {
+    const trimmedPath = path.trim()
+
+    if (trimmedPath === '~') {
+        return homedir()
+    }
+
+    if (trimmedPath.startsWith(`~${sep}`)) {
+        return resolve(homedir(), trimmedPath.slice(2))
+    }
+
+    return resolve(trimmedPath)
+}
+
+function toHomeRelativePath(path: string) {
+    const home = homedir()
+
+    if (path === home) {
+        return '~'
+    }
+
+    if (path.startsWith(`${home}${sep}`)) {
+        return `~${sep}${path.slice(home.length + 1)}`
+    }
+
+    return path
+}
+
+function isSameOrChildPath(path: string, parent: string) {
+    const normalizedPath = resolve(path)
+    const normalizedParent = resolve(parent)
+
+    return normalizedPath === normalizedParent || normalizedPath.startsWith(`${normalizedParent}${sep}`)
+}
+
 function getPlatformProjectNames(detailsBySession: Map<string, ProjectSessionDetail>) {
     return uniqueItems(Array.from(detailsBySession.values()).map(detail => detail.project))
         .sort((a, b) => a.localeCompare(b))
@@ -159,11 +620,12 @@ function getPlatformProjectNames(detailsBySession: Map<string, ProjectSessionDet
 function buildPlatformProjectUsage(
     detailsBySession: Map<string, ProjectSessionDetail>,
     projectName: string,
+    platform: ProjectUsagePlatform,
 ): ProjectPlatformUsage {
     const sessions = getProjectSessions(detailsBySession, projectName)
 
     return {
-        ...buildProjectLoadUsageResult(sessions, projectName),
+        ...buildProjectLoadUsageResult(sessions, platform),
         sessions,
     }
 }
@@ -178,43 +640,19 @@ function getProjectSessions(
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
 
-function buildProjectLoadUsageResult(sessions: ProjectSessionUsageItem[], projectName: string): LoadUsageResult {
-    const events = getProjectAggregateEvents(sessions, projectName)
-    const dailyGroups = buildDailyUsageGroups(events)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
-    const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayDailyGroups = todayDailyGroup
-        ? new Map([[todayDateKey, todayDailyGroup]])
-        : new Map()
-    const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
-    const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
-    const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
-    const todayTopProject = getTopProjectForDate(todayEvents)
-    const todayTopModel = getTopModelForDate(todayEvents)
+function buildProjectLoadUsageResult(
+    sessions: ProjectSessionUsageItem[],
+    platform: ProjectUsagePlatform | 'all' = 'all',
+): ProjectLoadUsageResult {
+    const usage = buildLoadUsageResult(getProjectAggregateEvents(sessions), sessions, {
+        aggregateOptions: {
+            includeModel: event => platform !== 'claudeCode' || event.model !== '<synthetic>',
+        },
+    })
 
     return {
-        dailyRows: buildDailyRows(todayDailyGroups),
-        dailyTokenUsage: buildDailyTokenUsage(dailyGroups),
-        monthlyModelUsage: buildMonthlyModelUsage(events),
-        monthlyRows: buildPeriodRows(events, 'month'),
-        overviewCards: buildOverviewCards({
-            previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
-            previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
-            todayTopModel,
-            todayTopProject,
-            todayTotalCost,
-            todayTotalTokens,
-        }),
-        projectUsage: buildProjectUsage(sessions),
-        sessionRows: buildProjectSessionRows(sessions, projectName),
+        ...usage,
         sessionUsage: sessions,
-        todayTopModel,
-        todayTopProject: todayTopProject?.project === projectName ? todayTopProject : null,
-        todayTotalCost,
-        todayTotalTokens,
-        weeklyRows: buildPeriodRows(events, 'week'),
     }
 }
 
@@ -222,7 +660,7 @@ interface ProjectAggregateEvent extends UsageAggregateEvent {
     costUSD: number
 }
 
-function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[], projectName: string): ProjectAggregateEvent[] {
+function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[]): ProjectAggregateEvent[] {
     return sessions
         .flatMap(session => session.interactions
             .filter(interaction => interaction.usage && interaction.timestamp && hasBillableUsage(interaction.usage))
@@ -233,7 +671,7 @@ function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[], projectN
                 isFallbackModel: interaction.usage!.isFallbackModel ?? false,
                 model: interaction.model ?? session.model,
                 outputTokens: interaction.usage!.outputTokens,
-                project: projectName,
+                project: session.project,
                 reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
                 repository: session.repository,
                 sessionId: session.sessionId,
@@ -247,39 +685,24 @@ function hasBillableUsage(usage: ProjectInteractionUsage) {
     return usage.totalTokens > 0 || usage.costUSD > 0
 }
 
-function buildProjectSessionRows(sessions: ProjectSessionUsageItem[], projectName: string) {
-    return sessions
-        .map(session => ({
-            cachedInputTokens: session.cachedInputTokens,
-            costUSD: session.costUSD,
-            id: session.sessionId,
-            inputTokens: session.inputTokens,
-            label: session.sessionId,
-            models: session.models,
-            outputTokens: session.outputTokens,
-            period: getSessionDateLabel(session.startedAt),
-            projects: [projectName],
-            reasoningOutputTokens: session.reasoningOutputTokens,
-            sessionCount: 1,
-            totalTokens: session.tokenTotal,
-        }))
-}
-
 interface ProjectSessionDetail {
+    cachedInputTokens: number
+    costUSD: number
+    durationEndAt: string
     durationMinutes: number
     inputTokens: number
-    cachedInputTokens: number
-    outputTokens: number
-    reasoningOutputTokens: number
-    tokenTotal: number
-    costUSD: number
     interactions: ProjectSessionInteractionItem[]
     lastActivity: string
+    modelTotals: Map<string, number>
     models: string[]
+    outputTokens: number
     project: string
+    reasoningOutputTokens: number
     repository: string
     sessionId: string
     startedAt: string
+    tokenTotal: number
+    topModel: string
     threadName: string
 }
 
@@ -431,7 +854,11 @@ async function loadCodexSessionDetails(config: IConfig, resolvePricing: ModelPri
             })
         }
 
-        details.set(getSessionLookupKey(project, sessionId), finalizeSessionDetail(detail))
+        const finalized = finalizeSessionDetail(detail)
+
+        if (hasBillableSessionDetail(finalized)) {
+            details.set(getSessionLookupKey(project, sessionId), finalized)
+        }
     }
 
     return details
@@ -461,6 +888,9 @@ async function loadGeminiSessionDetails(config: IConfig, resolvePricing: ModelPr
         const startedAt = toIsoString(data.startTime)
             ?? data.messages.map(message => toIsoString(message.timestamp)).find(Boolean)
             ?? null
+        const lastTimestamp = toIsoString(data.lastUpdated)
+            ?? [...data.messages].reverse().map(message => toIsoString(message.timestamp)).find(Boolean)
+            ?? null
         const projectRoot = getGeminiProjectRoot(filePath)
         const project = getProjectName(projectRoot, '') || getGeminiProjectKeyFromPath(filePath)
         const repository = getRepositoryNameFromProjectRoot(projectRoot) || `local/${project}`
@@ -472,6 +902,7 @@ async function loadGeminiSessionDetails(config: IConfig, resolvePricing: ModelPr
             startedAt,
             threadName: getGeminiThreadName(data, project),
         })
+        detail.durationEndAt = lastTimestamp ?? ''
 
         for (let index = 0; index < data.messages.length; index += 1) {
             const message = data.messages[index]!
@@ -494,7 +925,11 @@ async function loadGeminiSessionDetails(config: IConfig, resolvePricing: ModelPr
             })
         }
 
-        details.set(getSessionLookupKey(project, sessionId), finalizeSessionDetail(detail))
+        const finalized = finalizeSessionDetail(detail)
+
+        if (hasBillableSessionDetail(finalized)) {
+            details.set(getSessionLookupKey(project, sessionId), finalized)
+        }
     }
 
     return details
@@ -525,7 +960,7 @@ function getClaudeInteractionUsage(
         cacheCreationTokens,
         cacheReadTokens,
         cachedInputTokens: cacheCreationTokens + cacheReadTokens,
-        costUSD: roundCurrency(costUSD),
+        costUSD,
         inputTokens,
         outputTokens,
         reasoningOutputTokens: 0,
@@ -558,7 +993,7 @@ function getCodexInteractionUsage(
 
     return {
         ...usage,
-        costUSD: roundCurrency(calculateUsageCostUSD(usage, resolvePricing(model))),
+        costUSD: calculateUsageCostUSD(usage, resolvePricing(model)),
     }
 }
 
@@ -582,7 +1017,7 @@ function getGeminiInteractionUsage(
 
     return {
         ...usage,
-        costUSD: roundCurrency(costUSD),
+        costUSD,
         toolTokens,
     }
 }
@@ -597,10 +1032,12 @@ function createSessionDetail(options: {
     return {
         cachedInputTokens: 0,
         costUSD: 0,
+        durationEndAt: '',
         durationMinutes: 0,
         inputTokens: 0,
         interactions: [],
         lastActivity: options.startedAt ?? '',
+        modelTotals: new Map<string, number>(),
         models: [],
         outputTokens: 0,
         project: options.project,
@@ -608,6 +1045,7 @@ function createSessionDetail(options: {
         repository: options.repository,
         sessionId: options.sessionId,
         startedAt: options.startedAt ?? '',
+        topModel: 'unknown',
         threadName: options.threadName,
         tokenTotal: 0,
     }
@@ -639,12 +1077,23 @@ function addInteraction(detail: ProjectSessionDetail, interaction: ProjectSessio
 
     if (interaction.model) {
         detail.models = uniqueItems([...detail.models, interaction.model])
+        detail.modelTotals.set(
+            interaction.model,
+            (detail.modelTotals.get(interaction.model) ?? 0) + interaction.usage.totalTokens,
+        )
     }
 }
 
 function finalizeSessionDetails(details: Map<string, ProjectSessionDetail>) {
     for (const [key, detail] of details) {
-        details.set(key, finalizeSessionDetail(detail))
+        const finalized = finalizeSessionDetail(detail)
+
+        if (hasBillableSessionDetail(finalized)) {
+            details.set(key, finalized)
+            continue
+        }
+
+        details.delete(key)
     }
 
     return details
@@ -652,7 +1101,7 @@ function finalizeSessionDetails(details: Map<string, ProjectSessionDetail>) {
 
 function finalizeSessionDetail(detail: ProjectSessionDetail) {
     detail.costUSD = roundCurrency(detail.costUSD)
-    detail.durationMinutes = getDurationMinutes(detail.startedAt, detail.lastActivity)
+    detail.durationMinutes = getDurationMinutes(detail.startedAt, detail.durationEndAt || detail.lastActivity)
     detail.interactions = detail.interactions.sort((a, b) => {
         if (a.timestamp && b.timestamp) {
             return Date.parse(a.timestamp) - Date.parse(b.timestamp) || a.index - b.index
@@ -660,13 +1109,21 @@ function finalizeSessionDetail(detail: ProjectSessionDetail) {
 
         return a.index - b.index
     })
+    detail.topModel = Array.from(detail.modelTotals.entries())
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))[0]?.[0] ?? 'unknown'
     detail.models = detail.models.sort((a, b) => a.localeCompare(b))
 
     return detail
 }
 
+function hasBillableSessionDetail(detail: ProjectSessionDetail) {
+    return detail.tokenTotal > 0 || detail.costUSD > 0
+}
+
 function createSessionFromDetail(detail: ProjectSessionDetail): ProjectSessionUsageItem {
-    const startedAtDate = new Date(detail.startedAt)
+    const startedAt = getValidTimestamp(detail.startedAt) ?? getValidTimestamp(detail.lastActivity) ?? new Date(0).toISOString()
+    const lastActivity = getValidTimestamp(detail.lastActivity) ?? startedAt
+    const startedAtDate = new Date(startedAt)
     const dateKey = Number.isFinite(startedAtDate.getTime()) ? getDateKey(startedAtDate) : ''
 
     return {
@@ -678,7 +1135,8 @@ function createSessionFromDetail(detail: ProjectSessionDetail): ProjectSessionUs
         id: detail.sessionId,
         inputTokens: detail.inputTokens,
         interactions: detail.interactions,
-        model: detail.models[0] ?? 'unknown',
+        lastActivity,
+        model: detail.topModel,
         models: detail.models,
         month: Number.isFinite(startedAtDate.getTime()) ? getMonthKey(startedAtDate) : '',
         outputTokens: detail.outputTokens,
@@ -686,11 +1144,16 @@ function createSessionFromDetail(detail: ProjectSessionDetail): ProjectSessionUs
         reasoningOutputTokens: detail.reasoningOutputTokens,
         repository: detail.repository,
         sessionId: detail.sessionId,
-        startedAt: detail.startedAt,
+        startedAt,
+        topModel: detail.topModel,
         threadName: detail.threadName,
         tokenTotal: detail.tokenTotal,
         week: Number.isFinite(startedAtDate.getTime()) ? getWeekLabel(startedAtDate) : '',
     }
+}
+
+function getValidTimestamp(value: string) {
+    return Number.isFinite(Date.parse(value)) ? value : null
 }
 
 function getSessionDateLabel(startedAt: string) {

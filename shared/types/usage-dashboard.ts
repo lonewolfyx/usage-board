@@ -114,10 +114,13 @@ export interface ProjectSessionInteractionItem {
 
 export interface ProjectSessionUsageItem extends UsageSessionUsageItem {
     interactions: ProjectSessionInteractionItem[]
+    lastActivity: string
     models: string[]
+    topModel: string
 }
 
 export interface ProjectPlatformUsage extends LoadUsageResult {
+    sessionUsage: ProjectSessionUsageItem[]
     sessions: ProjectSessionUsageItem[]
 }
 

@@ -2,10 +2,13 @@
     <slot />
 </template>
 
-<script setup lang="ts">
+<script lang="ts" setup>
 defineOptions({
     name: 'PayloadProvider',
 })
+
+const route = useRoute()
+const requiresPayload = computed(() => route.path !== '/project')
 
 const {
     clear,
@@ -16,7 +19,16 @@ const {
     status,
 } = useLazyFetch<TokensConsumptionResult | null>('/api/payload.json', {
     default: () => null,
+    immediate: requiresPayload.value,
     key: 'payload',
+})
+
+watch(requiresPayload, (shouldFetchPayload) => {
+    if (!shouldFetchPayload || payload.value !== null || status.value === 'pending') {
+        return
+    }
+
+    void execute()
 })
 
 providePayloadContext({
@@ -24,6 +36,7 @@ providePayloadContext({
     error: readonly(error),
     execute,
     payload: readonly(payload),
+    requiresPayload: readonly(requiresPayload),
     refresh,
     status: readonly(status),
 })
