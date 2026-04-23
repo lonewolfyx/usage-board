@@ -8,6 +8,7 @@ import type {
     SessionLogLine,
     UsageAggregateEvent,
 } from '#shared/types/platform'
+import type { ProjectUsageCatalogType } from '#shared/types/project-dashboard'
 import type {
     LoadProjectsUsageResult,
     LoadUsageResult,
@@ -21,8 +22,8 @@ import type {
 } from '#shared/types/usage-dashboard'
 import type {
     ProjectUsageCatalogItem,
-    ProjectUsageCatalogType,
     ProjectUsageDataModule,
+    ProjectUsageDataModulePayloadMap,
     ProjectUsageDataModuleResponse,
     ProjectUsageDataModulesResponse,
     ProjectUsageDataPlatformScope,
@@ -269,12 +270,13 @@ export async function loadProjectUsageDataModule(
 
     if (modules.length === 1) {
         const module = modules[0]!
+        const data = buildProjectUsageDataModule(detail, module, options) as ProjectUsageDataModulePayloadMap[typeof module]
 
         return {
-            data: buildProjectUsageDataModule(detail, module, options),
+            data,
             label: detail.label,
             module,
-        }
+        } as ProjectUsageDataModuleResponse
     }
 
     return {

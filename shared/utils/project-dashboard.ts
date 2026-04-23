@@ -1,125 +1,319 @@
+import type { AiIconName } from '#shared/types/navigation'
 import type {
-    DailySessionGroup,
-    LineSeries,
-    MockSession,
-    PeriodSessionGroup,
-    SessionTableRow,
-    TokenUsageRow,
-    UsageSummary,
-    UsageSummarySource,
-} from '#shared/typed/project-dashboard'
+    ProjectDashboardPlatformKey,
+    ProjectLineSeries,
+    ProjectSessionListItem,
+    ProjectSessionSummary,
+    ProjectSessionTableRow,
+    ProjectTokenUsageRow,
+    ProjectUsageSummary,
+} from '#shared/types/project-dashboard'
+import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import {
+    buildGrowthTrend,
+    buildPercentTrend,
     formatCompactNumber,
     formatCurrency,
     formatDate,
-    formatDateTime,
+    formatDateLabelFromDateKey,
+    formatPercent,
+    getDateKey,
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
+import { formatNumber } from '@lonewolfyx/utils'
 
-export function summarizeSessions<TSession extends UsageSummarySource>(items: TSession[]): UsageSummary {
-    const tokens = items.reduce((sum, session) => sum + session.tokens, 0)
-    const cacheTokens = items.reduce((sum, session) => sum + session.cacheTokens, 0)
+const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
 
-    return {
-        cacheRate: tokens > 0 ? cacheTokens / tokens : 0,
-        cacheTokens,
-        cost: items.reduce((sum, session) => sum + session.cost, 0),
-        inputTokens: items.reduce((sum, session) => sum + session.inputTokens, 0),
-        outputTokens: items.reduce((sum, session) => sum + session.outputTokens, 0),
-        reasoningTokens: items.reduce((sum, session) => sum + session.reasoningTokens, 0),
-        sessions: items.length,
-        tokens,
+export function getProjectPlatformLabel(platform: ProjectDashboardPlatformKey) {
+    if (platform === 'claudeCode') {
+        return 'Claude Code'
     }
-}
 
-export function toTokenUsageRow(label: string, items: MockSession[]): TokenUsageRow {
-    const summary = summarizeSessions(items)
-
-    return {
-        cacheTokens: formatCompactNumber(summary.cacheTokens),
-        cost: formatCurrency(summary.cost),
-        inputTokens: formatCompactNumber(summary.inputTokens),
-        label,
-        models: uniqueItems(items.map(session => session.model)).join(', ') || '-',
-        outputTokens: formatCompactNumber(summary.outputTokens),
-        reasoningTokens: formatCompactNumber(summary.reasoningTokens),
-        sessions: String(summary.sessions),
-        tokens: formatCompactNumber(summary.tokens),
+    if (platform === 'gemini') {
+        return 'Gemini'
     }
+
+    return 'Codex'
 }
 
-export function toSessionRows(items: MockSession[]): SessionTableRow[] {
-    return items
-        .slice()
-        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
-        .map(session => ({
-            cacheTokens: formatCompactNumber(session.cacheTokens),
-            cost: formatCurrency(session.cost),
-            duration: session.duration,
-            id: session.id,
-            inputTokens: formatCompactNumber(session.inputTokens),
-            model: session.model,
-            outputTokens: formatCompactNumber(session.outputTokens),
-            platform: session.platform,
-            reasoningTokens: formatCompactNumber(session.reasoningTokens),
-            startedAt: formatDateTime(session.startedAt),
-            title: session.title,
-            tokens: formatCompactNumber(session.tokens),
-        }))
+export function getProjectPlatformIcon(platform: ProjectDashboardPlatformKey): AiIconName {
+    if (platform === 'claudeCode') {
+        return 'claude_code'
+    }
+
+    if (platform === 'gemini') {
+        return 'gemini'
+    }
+
+    return 'codex'
 }
 
-export function buildProjectDailyRows(items: MockSession[]): DailySessionGroup[] {
-    return Array.from({ length: 30 }, (_, index) => {
-        const date = new Date(Date.UTC(2026, 3, 22 - (29 - index)))
-        const key = date.toISOString().slice(0, 10)
+export function buildRecentDateLabels(days: number) {
+    const today = new Date()
 
-        return {
-            items: items.filter(session => session.startedAt.startsWith(key)),
-            key,
-            label: formatDate(date),
-            shortLabel: new Intl.DateTimeFormat('en-US', { day: '2-digit', timeZone: 'UTC' }).format(date),
-        }
+    return Array.from({ length: days }, (_, index) => {
+        const date = new Date(today)
+        date.setHours(0, 0, 0, 0)
+        date.setDate(today.getDate() - (days - 1 - index))
+
+        return formatDateLabelFromDateKey(getDateKey(date))
     })
 }
 
-export function buildProjectDailyModelSeries(items: MockSession[], rows: DailySessionGroup[]): LineSeries[] {
-    const models = uniqueItems(items.map(session => session.model))
-    const colors = ['#2563eb', '#f97316', '#0891b2', '#8b5cf6', '#059669', '#f43f5e']
+export function buildMonthlyTickIndexes(labels: string[]) {
+    return labels
+        .map((label, index) => ({ date: new Date(label), index }))
+        .filter(({ date, index }) => {
+            if (index === 0 || index === labels.length - 1) {
+                return true
+            }
 
-    return models.map((model, index) => ({
-        color: colors[index % colors.length] ?? '#2563eb',
-        label: model,
-        points: rows.map(row => summarizeSessions(row.items.filter(session => session.model === model)).tokens),
-    }))
+            return Number.isFinite(date.getTime()) && date.getUTCDate() === 1
+        })
+        .map(({ index }) => index)
 }
 
-export function buildProjectWeekRows(items: MockSession[]): PeriodSessionGroup[] {
+export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): UsageOverviewCard[] {
+    const summary = summarizeProjectUsage(sessions)
+
     return [
         {
-            items: items.filter(session => Date.parse(session.startedAt) >= Date.parse('2026-04-16T00:00:00.000Z')),
-            label: 'Current Period',
+            icon: 'solar:cpu-line-duotone',
+            name: 'Total Tokens',
+            trend: 'project total',
+            trendTone: 'neutral',
+            value: formatCompactNumber(summary.totalTokens),
         },
         {
-            items: items.filter(session => Date.parse(session.startedAt) < Date.parse('2026-04-16T00:00:00.000Z')),
-            label: 'Previous Period',
+            icon: 'lucide:wallet',
+            name: 'Total Spend',
+            trend: 'all time',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.costUSD),
+        },
+        {
+            icon: 'lucide:messages-square',
+            name: 'Sessions',
+            trend: 'all tools',
+            trendTone: 'neutral',
+            value: String(summary.sessions),
+        },
+        {
+            icon: 'lucide:database-zap',
+            name: 'Cache Hit Rate',
+            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
+            trendTone: 'neutral',
+            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
+        },
+        {
+            icon: 'lucide:circle-dollar-sign',
+            name: 'Avg Session Cost',
+            trend: 'per session',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
         },
     ]
 }
 
-export function buildProjectMonthRows(items: MockSession[]): PeriodSessionGroup[] {
-    const groups = new Map<string, MockSession[]>()
+export function buildProjectPlatformOverviewCards(
+    sessions: ProjectSessionListItem[],
+    dailyItems: DailyTokenUsage[],
+): UsageOverviewCard[] {
+    const summary = summarizeProjectUsage(sessions)
+    const [todayLabel = '', yesterdayLabel = ''] = buildRecentDateLabels(2).slice().reverse()
+    const todayUsage = dailyItems.find(item => item.date === todayLabel)
+    const yesterdayUsage = dailyItems.find(item => item.date === yesterdayLabel)
+    const todaySessions = countSessionsByDate(sessions, todayLabel)
+    const yesterdaySessions = countSessionsByDate(sessions, yesterdayLabel)
+    const tokenTrend = buildGrowthTrend(todayUsage?.totalTokens ?? 0, yesterdayUsage?.totalTokens ?? 0, formatCompactNumber)
+    const costTrend = buildGrowthTrend(todayUsage?.costUSD ?? 0, yesterdayUsage?.costUSD ?? 0, formatCurrency)
+    const sessionTrend = buildPercentTrend(todaySessions, yesterdaySessions)
 
-    for (const session of items) {
-        const label = new Intl.DateTimeFormat('en-US', {
-            month: 'short',
-            timeZone: 'UTC',
-            year: 'numeric',
-        }).format(new Date(session.startedAt))
-        groups.set(label, [...(groups.get(label) ?? []), session])
+    return [
+        {
+            icon: 'solar:cpu-line-duotone',
+            name: 'Today Tokens',
+            trend: tokenTrend.trend,
+            trendTone: tokenTrend.trendTone,
+            value: formatCompactNumber(todayUsage?.totalTokens ?? 0),
+        },
+        {
+            icon: 'lucide:wallet',
+            name: 'Today Spend',
+            trend: costTrend.trend,
+            trendTone: costTrend.trendTone,
+            value: formatCurrency(todayUsage?.costUSD ?? 0),
+        },
+        {
+            icon: 'lucide:messages-square',
+            name: 'Today Sessions',
+            trend: sessionTrend.label,
+            trendTone: sessionTrend.tone,
+            value: String(todaySessions),
+        },
+        {
+            icon: 'lucide:receipt-text',
+            name: 'Total Spend',
+            trend: 'all time',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.costUSD),
+        },
+        {
+            icon: 'lucide:list-checks',
+            name: 'Sessions',
+            trend: 'project total',
+            trendTone: 'neutral',
+            value: String(summary.sessions),
+        },
+        {
+            icon: 'lucide:database-zap',
+            name: 'Cache Hit Rate',
+            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
+            trendTone: 'neutral',
+            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
+        },
+        {
+            icon: 'lucide:circle-dollar-sign',
+            name: 'Avg Session Cost',
+            trend: 'per session',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
+        },
+    ]
+}
+
+export function buildProjectDailyModelUsageChart(items: DailyTokenUsage[], labels: string[]) {
+    const labelSet = new Set(labels)
+    const visibleItems = items.filter(item => labelSet.has(item.date))
+    const models = uniqueItems(visibleItems.flatMap(item => Object.keys(item.models)))
+        .map(model => ({
+            model,
+            totalTokens: visibleItems.reduce((sum, item) => sum + (item.models[model]?.totalTokens ?? 0), 0),
+        }))
+        .sort((a, b) => b.totalTokens - a.totalTokens || a.model.localeCompare(b.model))
+        .map(item => item.model)
+    const series = models.map((model, index): ProjectLineSeries => ({
+        color: modelSeriesColors[index % modelSeriesColors.length]!,
+        label: model,
+        points: labels.map(label => items.find(item => item.date === label)?.models[model]?.totalTokens ?? 0),
+    }))
+
+    return { labels, series }
+}
+
+export function toProjectDisplayDailyUsageRows(
+    items: DailyTokenUsage[],
+    sessions: ProjectSessionListItem[],
+): ProjectTokenUsageRow[] {
+    const sessionCountByDate = buildSessionCountByDate(sessions)
+
+    return items.map(item => ({
+        cacheTokens: formatNumber(item.cachedInputTokens),
+        cost: formatCurrency(item.costUSD),
+        inputTokens: formatNumber(item.inputTokens),
+        label: item.date,
+        models: Object.keys(item.models).sort((a, b) => a.localeCompare(b)).join(', ') || '-',
+        outputTokens: formatNumber(item.outputTokens),
+        reasoningTokens: formatNumber(item.reasoningOutputTokens),
+        sessions: String(sessionCountByDate.get(item.date) ?? 0),
+        tokens: formatNumber(item.totalTokens),
+    }))
+}
+
+export function toProjectSessionTableRows(
+    sessions: ProjectSessionListItem[],
+    platform: ProjectDashboardPlatformKey,
+): ProjectSessionTableRow[] {
+    return sessions.map(session => ({
+        cacheTokens: formatNumber(session.cachedInputTokens),
+        cost: formatCurrency(session.costUSD),
+        duration: session.duration || '-',
+        id: `${platform}:${session.sessionId}`,
+        inputTokens: formatNumber(session.inputTokens),
+        model: session.models?.join(', ') || session.model || 'unknown',
+        outputTokens: formatNumber(session.outputTokens),
+        platform,
+        reasoningTokens: formatNumber(session.reasoningOutputTokens),
+        startedAt: formatSafeProjectDate(session.startedAt),
+        title: session.threadName || session.sessionId,
+        tokens: formatNumber(session.tokenTotal),
+    }))
+}
+
+export function summarizeProjectUsage(sessions: ProjectSessionListItem[]): ProjectUsageSummary {
+    return sessions.reduce((summary, session) => ({
+        cachedInputTokens: summary.cachedInputTokens + session.cachedInputTokens,
+        costUSD: summary.costUSD + session.costUSD,
+        inputTokens: summary.inputTokens + session.inputTokens,
+        outputTokens: summary.outputTokens + session.outputTokens,
+        reasoningOutputTokens: summary.reasoningOutputTokens + session.reasoningOutputTokens,
+        sessions: summary.sessions + 1,
+        totalTokens: summary.totalTokens + session.tokenTotal,
+    }), {
+        cachedInputTokens: 0,
+        costUSD: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        sessions: 0,
+        totalTokens: 0,
+    })
+}
+
+export function summarizeProjectSessions(sessions: ProjectSessionListItem[]): ProjectSessionSummary {
+    return sessions.reduce((summary, session) => ({
+        costUSD: summary.costUSD + session.costUSD,
+        sessions: summary.sessions + 1,
+        totalTokens: summary.totalTokens + session.tokenTotal,
+    }), {
+        costUSD: 0,
+        sessions: 0,
+        totalTokens: 0,
+    })
+}
+
+export function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
+    return sessions.reduce((counts, session) => {
+        const dateLabel = getProjectSessionDateLabel(session.startedAt)
+
+        if (!dateLabel) {
+            return counts
+        }
+
+        counts.set(dateLabel, (counts.get(dateLabel) ?? 0) + 1)
+
+        return counts
+    }, new Map<string, number>())
+}
+
+export function getProjectSessionDateLabel(value: string) {
+    if (!value) {
+        return ''
     }
 
-    return Array.from(groups.entries()).map(([label, grouped]) => ({
-        items: grouped,
-        label,
-    }))
+    const date = new Date(value)
+
+    if (!Number.isFinite(date.getTime())) {
+        return ''
+    }
+
+    return formatDateLabelFromDateKey(getDateKey(date))
+}
+
+export function formatSafeProjectDate(value: string) {
+    if (!value) {
+        return '-'
+    }
+
+    const date = new Date(value)
+
+    if (!Number.isFinite(date.getTime())) {
+        return '-'
+    }
+
+    return formatDate(date)
+}
+
+function countSessionsByDate(sessions: ProjectSessionListItem[], dateLabel: string) {
+    return sessions.filter(session => getProjectSessionDateLabel(session.startedAt) === dateLabel).length
 }

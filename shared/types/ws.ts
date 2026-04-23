@@ -1,4 +1,15 @@
-import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type {
+    ProjectDailyTrendModulePayload,
+    ProjectDashboardScope,
+    ProjectMetaModule,
+    ProjectModelUsageModulePayload,
+    ProjectOverviewCardsModulePayload,
+    ProjectPlatformModulePayload,
+    ProjectSessionInteractionsModulePayload,
+    ProjectSessionListModulePayload,
+    ProjectTokenUsageModulePayload,
+    ProjectUsageCatalogType,
+} from '#shared/types/project-dashboard'
 import type { TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { FSWatcher } from 'chokidar'
 import type { WebSocketServer } from 'ws'
@@ -9,8 +20,6 @@ export interface CreateWebSocketServerResult {
     watcher: FSWatcher
     wss: WebSocketServer
 }
-
-export type ProjectUsageCatalogType = ProjectUsagePlatform | 'mixed'
 
 export interface ProjectUsageCatalogItem {
     label: string
@@ -27,17 +36,29 @@ export type ProjectUsageDataModule
         | 'session_list'
         | 'token_usage'
 
-export type ProjectUsageDataPlatformScope = ProjectUsagePlatform | 'all'
+export type ProjectUsageDataPlatformScope = ProjectDashboardScope
 
-export interface ProjectUsageDataModuleResponse {
-    data: unknown
-    label: string
-    module: ProjectUsageDataModule
+export interface ProjectUsageDataModulePayloadMap {
+    daily_trend: ProjectPlatformModulePayload<ProjectDailyTrendModulePayload>
+    meta: ProjectMetaModule
+    model_usage: ProjectPlatformModulePayload<ProjectModelUsageModulePayload>
+    overview_cards: ProjectPlatformModulePayload<ProjectOverviewCardsModulePayload>
+    session_interactions: ProjectSessionInteractionsModulePayload | null
+    session_list: ProjectPlatformModulePayload<ProjectSessionListModulePayload>
+    token_usage: ProjectPlatformModulePayload<ProjectTokenUsageModulePayload>
 }
+
+export type ProjectUsageDataModuleResponse<T extends ProjectUsageDataModule = ProjectUsageDataModule>
+    = T extends ProjectUsageDataModule ? {
+        data: ProjectUsageDataModulePayloadMap[T]
+        label: string
+        module: T
+    }
+        : never
 
 export interface ProjectUsageDataModulesResponse {
     label: string
-    modules: Partial<Record<ProjectUsageDataModule, unknown>>
+    modules: Partial<ProjectUsageDataModulePayloadMap>
 }
 
 export interface ProjectWebSocketResponse<T = unknown> {

@@ -37,8 +37,8 @@
                     </TableCell>
                     <TableCell>
                         <div class="flex items-center gap-2">
-                            <IconAi :name="getPlatformIcon(item.platform)" />
-                            <span>{{ getPlatformLabel(item.platform) }}</span>
+                            <IconAi :name="getProjectPlatformIcon(item.platform)" />
+                            <span>{{ getProjectPlatformLabel(item.platform) }}</span>
                         </div>
                     </TableCell>
                     <TableCell class="max-w-56 truncate" translate="no">
@@ -86,25 +86,11 @@
 </template>
 
 <script setup lang="ts">
-import type { AiIconName } from '#shared/types/navigation'
-
-type ProductPlatformKey = 'claudeCode' | 'codex' | 'gemini'
+import type { ProjectSessionTableRow } from '#shared/types/project-dashboard'
+import { getProjectPlatformIcon, getProjectPlatformLabel } from '#shared/utils/project-dashboard'
 
 const props = withDefaults(defineProps<{
-    items: Array<{
-        cacheTokens: string
-        cost: string
-        duration: string
-        id: string
-        inputTokens: string
-        model: string
-        outputTokens: string
-        platform: ProductPlatformKey
-        reasoningTokens: string
-        startedAt: string
-        title: string
-        tokens: string
-    }>
+    items: ProjectSessionTableRow[]
     pageSize?: number
 }>(), {
     pageSize: 10,
@@ -122,28 +108,4 @@ const paginatedItems = computed(() => {
 watch(() => props.items, () => {
     page.value = 1
 })
-
-function getPlatformLabel(platform: ProductPlatformKey) {
-    if (platform === 'claudeCode') {
-        return 'ClaudeCode'
-    }
-
-    if (platform === 'gemini') {
-        return 'Gemini'
-    }
-
-    return 'Codex'
-}
-
-function getPlatformIcon(platform: ProductPlatformKey): AiIconName {
-    if (platform === 'claudeCode') {
-        return 'claude_code'
-    }
-
-    if (platform === 'gemini') {
-        return 'gemini'
-    }
-
-    return 'codex'
-}
 </script>

@@ -75,18 +75,10 @@
 </template>
 
 <script setup lang="ts">
+import type { ProjectTokenUsageRow } from '#shared/types/project-dashboard'
+
 const props = withDefaults(defineProps<{
-    items: Array<{
-        cacheTokens: string
-        cost: string
-        inputTokens: string
-        label: string
-        models: string
-        outputTokens: string
-        reasoningTokens: string
-        sessions: string
-        tokens: string
-    }>
+    items: ProjectTokenUsageRow[]
     pageSize?: number
 }>(), {
     pageSize: 10,

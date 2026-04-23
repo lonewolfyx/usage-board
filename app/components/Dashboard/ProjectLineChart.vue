@@ -103,7 +103,7 @@
 </template>
 
 <script setup lang="ts">
-import type { LineSeries } from '#shared/typed/project-dashboard'
+import type { ProjectLineSeries } from '#shared/types/project-dashboard'
 import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
@@ -121,7 +121,7 @@ interface HoverGuideState {
 }
 
 const props = defineProps<{
-    series: LineSeries[]
+    series: ProjectLineSeries[]
     tooltipLabels?: string[]
     tickIndexes?: number[]
     xLabels: string[]
