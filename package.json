@@ -39,6 +39,10 @@
         "prepare": "nuxt prepare && simple-git-hooks",
         "prepublishOnly": "pnpm build"
     },
+    "publishConfig": {
+        "registry": "https://registry.npmjs.org",
+        "access": "public"
+    },
     "dependencies": {
         "cac": "^7.0.0",
         "crossws": "^0.4.5",
