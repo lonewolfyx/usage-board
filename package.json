@@ -70,7 +70,6 @@
         "embla-carousel-vue": "^8.6.0",
         "eslint": "^10.2.0",
         "get-port-please": "^3.2.0",
-        "h3": "2.0.1-rc.20",
         "lint-staged": "^16.4.0",
         "lucide-vue-next": "^0.545.0",
         "nuxt": "^4.4.2",
