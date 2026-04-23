@@ -3,7 +3,7 @@ import type { TrendTone } from '#shared/types/usage-dashboard'
 
 export type PlatformKey = 'all' | 'claudeCode' | 'codex' | 'gemini'
 export type ProductPlatformKey = Exclude<PlatformKey, 'all'>
-export type TableTab = 'month' | 'session' | 'today' | 'week'
+export type TableTab = 'day' | 'month' | 'session' | 'week'
 
 export interface MockProject {
     id: string
@@ -123,7 +123,7 @@ export interface PlatformView {
     overviewCards: OverviewCard[]
     sessionRows: TokenUsageRow[]
     sessionTableRows: SessionTableRow[]
-    todayRows: TokenUsageRow[]
+    dayRows: TokenUsageRow[]
     weekRows: TokenUsageRow[]
     yearSeries: LineSeries[]
 }

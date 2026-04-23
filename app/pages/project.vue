@@ -102,7 +102,7 @@
             <TabsContent class="m-0" value="all">
                 <DashboardPanelGrid>
                     <DashboardOverviewCards
-                        v-if="isModuleLoaded('overview_cards')"
+                        v-if="isModuleLoaded('session_list')"
                         :cards="allOverviewCards"
                         class="md:col-span-12 lg:grid-cols-5"
                     />
@@ -117,7 +117,7 @@
                         title="Daily Token Trend"
                     >
                         <DashboardProjectLineChart
-                            v-if="isModuleLoaded('daily_trend')"
+                            v-if="isModuleLoaded('model_usage')"
                             :series="dailySeries"
                             :tooltip-labels="dailyTooltipLabels"
                             :x-labels="dailyTrendLabels"
@@ -170,7 +170,7 @@
             >
                 <DashboardPanelGrid>
                     <div class="md:col-span-12">
-                        <div v-if="isModuleLoaded('overview_cards')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                        <div v-if="isModuleLoaded('daily_trend') && isModuleLoaded('session_list')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                             <StatisticalAnalysisTotalCard
                                 v-for="card in platformViews[tab.value].overviewCards"
                                 :key="card.name"
@@ -195,6 +195,7 @@
                         <DashboardProjectLineChart
                             v-if="isModuleLoaded('daily_trend')"
                             :series="platformViews[tab.value].trendSeries"
+                            :tick-indexes="platformViews[tab.value].trendTickIndexes"
                             :tooltip-labels="platformViews[tab.value].trendTooltipLabels"
                             :x-labels="platformViews[tab.value].trendLabels"
                         />
@@ -208,52 +209,25 @@
                         title="Model Usage Trend"
                     >
                         <DashboardProjectLineChart
-                            v-if="isModuleLoaded('model_usage')"
+                            v-if="isModuleLoaded('daily_trend')"
                             :series="platformViews[tab.value].modelSeries"
+                            :tick-indexes="platformViews[tab.value].modelTickIndexes"
                             :tooltip-labels="platformViews[tab.value].modelLabels"
                             :x-labels="platformViews[tab.value].modelLabels"
                         />
                         <Skeleton v-else class="h-80 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
-                    <StatisticalAnalysisPanel
+                    <UsageAnalyticsTokenUsageTabsPanel
+                        v-if="isModuleLoaded('token_usage') && isModuleLoaded('session_list')"
                         class="md:col-span-12"
-                        description="Browse token usage by today, week, month, or session"
-                        icon="lucide:table-2"
-                        title="Token Usage"
-                    >
-                        <Tabs v-model="activeTableTab">
-                            <TabsList class="grid w-full grid-cols-4 sm:w-fit">
-                                <TabsTrigger value="today">
-                                    Today
-                                </TabsTrigger>
-                                <TabsTrigger value="week">
-                                    Period
-                                </TabsTrigger>
-                                <TabsTrigger value="month">
-                                    Month
-                                </TabsTrigger>
-                                <TabsTrigger value="session">
-                                    Session
-                                </TabsTrigger>
-                            </TabsList>
-                            <template v-if="isModuleLoaded('token_usage')">
-                                <TabsContent class="mt-4" value="today">
-                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].todayRows" />
-                                </TabsContent>
-                                <TabsContent class="mt-4" value="week">
-                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].weekRows" />
-                                </TabsContent>
-                                <TabsContent class="mt-4" value="month">
-                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].monthRows" />
-                                </TabsContent>
-                                <TabsContent class="mt-4" value="session">
-                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].sessionRows" />
-                                </TabsContent>
-                            </template>
-                            <Skeleton v-else class="mt-4 h-72 w-full rounded-md" />
-                        </Tabs>
-                    </StatisticalAnalysisPanel>
+                        :daily-items="platformViews[tab.value].dayRows"
+                        :monthly-items="platformViews[tab.value].monthRows"
+                        :product-name="tab.label"
+                        :session-items="platformViews[tab.value].sessionRows"
+                        :weekly-items="platformViews[tab.value].weekRows"
+                    />
+                    <Skeleton v-else class="h-72 rounded-md md:col-span-12" />
 
                     <StatisticalAnalysisPanel
                         :description="`${tab.label} sessions in the current project`"
@@ -279,7 +253,6 @@ import type {
     ProjectDashboardTab,
     TokenUsageRow as ProjectTokenUsageRow,
     SessionTableRow,
-    TableTab,
     TabSummary,
 } from '#shared/typed/project-dashboard'
 import type {
@@ -288,8 +261,6 @@ import type {
     ProjectSessionUsageItem,
     TokenUsageRow,
     UsageOverviewCard,
-    UsageTopModel,
-    UsageTopProject,
 } from '#shared/types/usage-dashboard'
 import type {
     ProjectUsageCatalogItem,
@@ -299,10 +270,17 @@ import type {
     ProjectWebSocketResponse,
 } from '#shared/types/ws'
 import {
+    buildGrowthTrend,
+    buildPercentTrend,
+    buildSessionDailyRows,
     formatCompactNumber,
     formatCurrency,
     formatDate,
+    formatDateLabelFromDateKey,
+    formatPercent,
+    getDateKey,
 } from '#shared/utils/usage-dashboard'
+import { formatNumber } from '@lonewolfyx/utils'
 import { cn } from '~/lib/utils'
 
 type ProjectSessionListItem = Omit<ProjectSessionUsageItem, 'interactions'>
@@ -322,20 +300,13 @@ interface ProjectMetaModule {
     sessionCound: number
 }
 
-interface OverviewModulePayload {
-    overviewCards: UsageOverviewCard[]
-    todayTopModel: UsageTopModel | null
-    todayTopProject: UsageTopProject | null
-    todayTotalCost: number
-    todayTotalTokens: number
-}
-
 interface DailyTrendModulePayload {
     dailyRows: TokenUsageRow[]
     dailyTokenUsage: DailyTokenUsage[]
 }
 
 interface ModelUsageModulePayload {
+    dailyTokenUsage: DailyTokenUsage[]
     monthlyModelUsage: MonthlyModelUsage[]
 }
 
@@ -355,17 +326,19 @@ interface SessionListModulePayload {
 type PlatformModulePayload<T> = Record<PlatformKey, T>
 
 interface ProjectPlatformView {
+    dayRows: TokenUsageRow[]
     modelLabels: string[]
     modelSeries: LineSeries[]
-    monthRows: ProjectTokenUsageRow[]
+    modelTickIndexes: number[]
+    monthRows: TokenUsageRow[]
     overviewCards: UsageOverviewCard[]
-    sessionRows: ProjectTokenUsageRow[]
+    sessionRows: TokenUsageRow[]
     sessionTableRows: SessionTableRow[]
-    todayRows: ProjectTokenUsageRow[]
     trendLabels: string[]
     trendSeries: LineSeries[]
+    trendTickIndexes: number[]
     trendTooltipLabels: string[]
-    weekRows: ProjectTokenUsageRow[]
+    weekRows: TokenUsageRow[]
 }
 
 interface PendingWebSocketRequest<T = unknown> {
@@ -376,12 +349,10 @@ interface PendingWebSocketRequest<T = unknown> {
 
 const selectedProjectId = shallowRef('')
 const activeTab = shallowRef<PlatformKey>('all')
-const activeTableTab = shallowRef<TableTab>('today')
 const catalogLoading = shallowRef(false)
 const projectCatalog = shallowRef<ProjectUsageCatalogItem[]>([])
 const websocketError = shallowRef('')
 const metaModule = shallowRef<ProjectMetaModule | null>(null)
-const overviewModule = shallowRef<PlatformModulePayload<OverviewModulePayload> | null>(null)
 const dailyTrendModule = shallowRef<PlatformModulePayload<DailyTrendModulePayload> | null>(null)
 const modelUsageModule = shallowRef<PlatformModulePayload<ModelUsageModulePayload> | null>(null)
 const tokenUsageModule = shallowRef<PlatformModulePayload<TokenUsageModulePayload> | null>(null)
@@ -410,28 +381,23 @@ const tabs: ProjectDashboardTab[] = [
 const platformTabs = tabs.filter((tab): tab is ProjectDashboardPlatformTab => tab.value !== 'all')
 const projectModuleLoadOrder = [
     'meta',
-    'overview_cards',
     'daily_trend',
     'model_usage',
     'token_usage',
     'session_list',
 ] satisfies ProjectUsageDataModule[]
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
+const recentProjectDays = 30
+const yearlyProjectDays = 365
 const projectSelectionDebounceMs = 180
 const projectSelectionMaxWaitMs = 600
 const websocketRequestTimeoutMs = 45_000
-const emptyOverviewPayload: OverviewModulePayload = {
-    overviewCards: [],
-    todayTopModel: null,
-    todayTopProject: null,
-    todayTotalCost: 0,
-    todayTotalTokens: 0,
-}
 const emptyDailyTrendPayload: DailyTrendModulePayload = {
     dailyRows: [],
     dailyTokenUsage: [],
 }
 const emptyModelUsagePayload: ModelUsageModulePayload = {
+    dailyTokenUsage: [],
     monthlyModelUsage: [],
 }
 const emptyTokenUsagePayload: TokenUsageModulePayload = {
@@ -481,7 +447,6 @@ const projects = computed<ProjectSelectItem[]>(() => projectCatalog.value.map(pr
     path: project.path,
     type: project.type,
 })))
-const selectedProject = computed(() => projects.value.find(project => project.id === selectedProjectId.value) ?? null)
 const isScopeReady = computed(() => isModuleLoaded('session_list'))
 const tabSummaries = computed<Record<PlatformKey, TabSummary>>(() => Object.fromEntries(tabs.map((tab) => {
     const summary = summarizeSessions(getSessionPayload(tab.value).sessions)
@@ -508,37 +473,48 @@ const activeScopeItems = computed(() => [
         value: activeTabSummary.value.sessions,
     },
 ])
-const allOverviewCards = computed(() => getOverviewPayload('all').overviewCards)
-const allDailyUsageRows = computed(() => toDisplayDailyUsageRows(getDailyTrendPayload('all').dailyTokenUsage))
+const recentDayLabels = computed(() => buildRecentDateLabels(recentProjectDays))
+const yearlyDayLabels = computed(() => buildRecentDateLabels(yearlyProjectDays))
+const yearlyTickIndexes = computed(() => buildMonthlyTickIndexes(yearlyDayLabels.value))
+const allOverviewCards = computed(() => buildAllOverviewCards(getSessionPayload('all').sessions))
+const allDailyUsageRows = computed(() => toDisplayDailyUsageRows(
+    getDailyTrendPayload('all').dailyTokenUsage,
+    getSessionPayload('all').sessions,
+))
 const allSessionRows = computed(() => platformTabs.flatMap(tab => toSessionTableRows(getSessionPayload(tab.value).sessions, tab.value)))
-const dailyTrendLabels = computed(() => getDailyTrendPayload('all').dailyTokenUsage.map(item => item.date))
+const dailyTrendLabels = computed(() => recentDayLabels.value)
 const dailyTooltipLabels = computed(() => dailyTrendLabels.value)
 const dailySeries = computed<LineSeries[]>(() => platformTabs.map(tab => ({
     color: tab.color,
     label: tab.label,
     points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
 })))
-const allModelChart = computed(() => buildModelUsageChart(getModelUsagePayload('all').monthlyModelUsage))
+const allModelChart = computed(() => buildDailyModelUsageChart(getModelUsagePayload('all').dailyTokenUsage, recentDayLabels.value))
 const platformViews = computed<Record<ProductPlatformKey, ProjectPlatformView>>(() => Object.fromEntries(platformTabs.map((tab) => {
-    const trendLabels = getDailyTrendPayload(tab.value).dailyTokenUsage.map(item => item.date)
-    const modelChart = buildModelUsageChart(getModelUsagePayload(tab.value).monthlyModelUsage)
+    const trendLabels = yearlyDayLabels.value
+    const modelChart = buildDailyModelUsageChart(getModelUsagePayload(tab.value).dailyTokenUsage, trendLabels)
 
     return [tab.value, {
         modelLabels: modelChart.labels,
         modelSeries: modelChart.series,
-        monthRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).monthlyRows),
-        overviewCards: getOverviewPayload(tab.value).overviewCards,
-        sessionRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).sessionRows),
+        modelTickIndexes: yearlyTickIndexes.value,
+        dayRows: buildSessionDailyRows(getSessionPayload(tab.value).sessions),
+        monthRows: getTokenUsagePayload(tab.value).monthlyRows,
+        overviewCards: buildPlatformOverviewCards(
+            getSessionPayload(tab.value).sessions,
+            getDailyTrendPayload(tab.value).dailyTokenUsage,
+        ),
+        sessionRows: getTokenUsagePayload(tab.value).sessionRows,
         sessionTableRows: toSessionTableRows(getSessionPayload(tab.value).sessions, tab.value),
-        todayRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).dailyRows),
         trendLabels,
         trendSeries: [{
             color: tab.color,
             label: tab.label,
             points: getDailySeriesPoints(tab.value, trendLabels),
         }],
+        trendTickIndexes: yearlyTickIndexes.value,
         trendTooltipLabels: trendLabels,
-        weekRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).weeklyRows),
+        weekRows: getTokenUsagePayload(tab.value).weeklyRows,
     }]
 })) as Record<ProductPlatformKey, ProjectPlatformView>)
 
@@ -766,7 +742,6 @@ function isProjectWebSocketResponse(value: unknown): value is ProjectWebSocketRe
 
 function resetProjectModules() {
     metaModule.value = null
-    overviewModule.value = null
     dailyTrendModule.value = null
     modelUsageModule.value = null
     tokenUsageModule.value = null
@@ -780,9 +755,6 @@ function resetProjectModules() {
 function setProjectModuleData(module: ProjectUsageDataModule, data: unknown) {
     if (module === 'meta') {
         metaModule.value = data as ProjectMetaModule
-    }
-    else if (module === 'overview_cards') {
-        overviewModule.value = data as PlatformModulePayload<OverviewModulePayload>
     }
     else if (module === 'daily_trend') {
         dailyTrendModule.value = data as PlatformModulePayload<DailyTrendModulePayload>
@@ -803,10 +775,6 @@ function isModuleLoaded(module: ProjectUsageDataModule) {
         return metaModule.value !== null
     }
 
-    if (module === 'overview_cards') {
-        return overviewModule.value !== null
-    }
-
     if (module === 'daily_trend') {
         return dailyTrendModule.value !== null
     }
@@ -824,10 +792,6 @@ function isModuleLoaded(module: ProjectUsageDataModule) {
     }
 
     return false
-}
-
-function getOverviewPayload(platform: PlatformKey) {
-    return overviewModule.value?.[platform] ?? emptyOverviewPayload
 }
 
 function getDailyTrendPayload(platform: PlatformKey) {
@@ -852,53 +816,176 @@ function getDailySeriesPoints(platform: ProductPlatformKey, labels: string[]) {
     return labels.map(label => usageByDate.get(label) ?? 0)
 }
 
-function buildModelUsageChart(items: MonthlyModelUsage[]) {
-    const labels = uniqueItems(items.map(item => item.month)).sort((a, b) => a.localeCompare(b))
-    const models = uniqueItems(items.map(item => item.model))
+function buildAllOverviewCards(sessions: ProjectSessionListItem[]): UsageOverviewCard[] {
+    const summary = summarizeUsage(sessions)
+
+    return [
+        {
+            icon: 'solar:cpu-line-duotone',
+            name: 'Total Tokens',
+            trend: 'project total',
+            trendTone: 'neutral',
+            value: formatCompactNumber(summary.totalTokens),
+        },
+        {
+            icon: 'lucide:wallet',
+            name: 'Total Spend',
+            trend: 'all time',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.costUSD),
+        },
+        {
+            icon: 'lucide:messages-square',
+            name: 'Sessions',
+            trend: 'all tools',
+            trendTone: 'neutral',
+            value: String(summary.sessions),
+        },
+        {
+            icon: 'lucide:database-zap',
+            name: 'Cache Hit Rate',
+            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
+            trendTone: 'neutral',
+            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
+        },
+        {
+            icon: 'lucide:circle-dollar-sign',
+            name: 'Avg Session Cost',
+            trend: 'per session',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
+        },
+    ]
+}
+
+function buildPlatformOverviewCards(
+    sessions: ProjectSessionListItem[],
+    dailyItems: DailyTokenUsage[],
+): UsageOverviewCard[] {
+    const summary = summarizeUsage(sessions)
+    const todayLabel = buildRecentDateLabels(1)[0] ?? ''
+    const yesterdayLabel = buildRecentDateLabels(2)[0] ?? ''
+    const todayUsage = dailyItems.find(item => item.date === todayLabel)
+    const yesterdayUsage = dailyItems.find(item => item.date === yesterdayLabel)
+    const todaySessions = countSessionsByDate(sessions, todayLabel)
+    const yesterdaySessions = countSessionsByDate(sessions, yesterdayLabel)
+    const tokenTrend = buildGrowthTrend(todayUsage?.totalTokens ?? 0, yesterdayUsage?.totalTokens ?? 0, formatCompactNumber)
+    const costTrend = buildGrowthTrend(todayUsage?.costUSD ?? 0, yesterdayUsage?.costUSD ?? 0, formatCurrency)
+    const sessionTrend = buildPercentTrend(todaySessions, yesterdaySessions)
+
+    return [
+        {
+            icon: 'solar:cpu-line-duotone',
+            name: 'Today Tokens',
+            trend: tokenTrend.trend,
+            trendTone: tokenTrend.trendTone,
+            value: formatCompactNumber(todayUsage?.totalTokens ?? 0),
+        },
+        {
+            icon: 'lucide:wallet',
+            name: 'Today Spend',
+            trend: costTrend.trend,
+            trendTone: costTrend.trendTone,
+            value: formatCurrency(todayUsage?.costUSD ?? 0),
+        },
+        {
+            icon: 'lucide:messages-square',
+            name: 'Today Sessions',
+            trend: sessionTrend.label,
+            trendTone: sessionTrend.tone,
+            value: String(todaySessions),
+        },
+        {
+            icon: 'lucide:receipt-text',
+            name: 'Total Spend',
+            trend: 'all time',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.costUSD),
+        },
+        {
+            icon: 'lucide:list-checks',
+            name: 'Sessions',
+            trend: 'project total',
+            trendTone: 'neutral',
+            value: String(summary.sessions),
+        },
+        {
+            icon: 'lucide:database-zap',
+            name: 'Cache Hit Rate',
+            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
+            trendTone: 'neutral',
+            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
+        },
+        {
+            icon: 'lucide:circle-dollar-sign',
+            name: 'Avg Session Cost',
+            trend: 'per session',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
+        },
+    ]
+}
+
+function buildDailyModelUsageChart(items: DailyTokenUsage[], labels: string[]) {
+    const labelSet = new Set(labels)
+    const visibleItems = items.filter(item => labelSet.has(item.date))
+    const models = uniqueItems(visibleItems.flatMap(item => Object.keys(item.models)))
         .map(model => ({
             model,
-            totalTokens: items
-                .filter(item => item.model === model)
-                .reduce((sum, item) => sum + item.tokenTotal, 0),
+            totalTokens: visibleItems.reduce((sum, item) => sum + (item.models[model]?.totalTokens ?? 0), 0),
         }))
         .sort((a, b) => b.totalTokens - a.totalTokens || a.model.localeCompare(b.model))
         .map(item => item.model)
     const series = models.map((model, index): LineSeries => ({
         color: modelSeriesColors[index % modelSeriesColors.length]!,
         label: model,
-        points: labels.map(label => items
-            .filter(item => item.model === model && item.month === label)
-            .reduce((sum, item) => sum + item.tokenTotal, 0)),
+        points: labels.map(label => items.find(item => item.date === label)?.models[model]?.totalTokens ?? 0),
     }))
 
     return { labels, series }
 }
 
-function toDisplayDailyUsageRows(items: DailyTokenUsage[]): ProjectTokenUsageRow[] {
-    return items.map(item => ({
-        cacheTokens: formatCompactNumber(item.cachedInputTokens),
-        cost: formatCurrency(item.costUSD),
-        inputTokens: formatCompactNumber(item.inputTokens),
-        label: item.date,
-        models: Object.keys(item.models).sort((a, b) => a.localeCompare(b)).join(', ') || '-',
-        outputTokens: formatCompactNumber(item.outputTokens),
-        reasoningTokens: formatCompactNumber(item.reasoningOutputTokens),
-        sessions: '-',
-        tokens: formatCompactNumber(item.totalTokens),
-    }))
+function buildRecentDateLabels(days: number) {
+    const today = new Date()
+
+    return Array.from({ length: days }, (_, index) => {
+        const date = new Date(today)
+        date.setHours(0, 0, 0, 0)
+        date.setDate(today.getDate() - (days - 1 - index))
+
+        return formatDateLabelFromDateKey(getDateKey(date))
+    })
 }
 
-function toDisplayTokenRows(rows: TokenUsageRow[]): ProjectTokenUsageRow[] {
-    return rows.map(row => ({
-        cacheTokens: formatCompactNumber(row.cachedInputTokens),
-        cost: formatCurrency(row.costUSD),
-        inputTokens: formatCompactNumber(row.inputTokens),
-        label: row.label || row.period || row.id,
-        models: row.models.join(', ') || '-',
-        outputTokens: formatCompactNumber(row.outputTokens),
-        reasoningTokens: formatCompactNumber(row.reasoningOutputTokens),
-        sessions: String(row.sessionCount),
-        tokens: formatCompactNumber(row.totalTokens),
+function buildMonthlyTickIndexes(labels: string[]) {
+    return labels
+        .map((label, index) => ({ date: new Date(label), index }))
+        .filter(({ date, index }) => {
+            if (index === 0 || index === labels.length - 1) {
+                return true
+            }
+
+            return Number.isFinite(date.getTime()) && date.getUTCDate() === 1
+        })
+        .map(({ index }) => index)
+}
+
+function toDisplayDailyUsageRows(
+    items: DailyTokenUsage[],
+    sessions: ProjectSessionListItem[],
+): ProjectTokenUsageRow[] {
+    const sessionCountByDate = buildSessionCountByDate(sessions)
+
+    return items.map(item => ({
+        cacheTokens: formatNumber(item.cachedInputTokens),
+        cost: formatCurrency(item.costUSD),
+        inputTokens: formatNumber(item.inputTokens),
+        label: item.date,
+        models: Object.keys(item.models).sort((a, b) => a.localeCompare(b)).join(', ') || '-',
+        outputTokens: formatNumber(item.outputTokens),
+        reasoningTokens: formatNumber(item.reasoningOutputTokens),
+        sessions: String(sessionCountByDate.get(item.date) ?? 0),
+        tokens: formatNumber(item.totalTokens),
     }))
 }
 
@@ -907,18 +994,18 @@ function toSessionTableRows(
     platform: ProductPlatformKey,
 ): SessionTableRow[] {
     return sessions.map(session => ({
-        cacheTokens: formatCompactNumber(session.cachedInputTokens),
+        cacheTokens: formatNumber(session.cachedInputTokens),
         cost: formatCurrency(session.costUSD),
         duration: session.duration || '-',
         id: `${platform}:${session.sessionId}`,
-        inputTokens: formatCompactNumber(session.inputTokens),
+        inputTokens: formatNumber(session.inputTokens),
         model: session.models?.join(', ') || session.model || 'unknown',
-        outputTokens: formatCompactNumber(session.outputTokens),
+        outputTokens: formatNumber(session.outputTokens),
         platform,
-        reasoningTokens: formatCompactNumber(session.reasoningOutputTokens),
+        reasoningTokens: formatNumber(session.reasoningOutputTokens),
         startedAt: formatSafeDate(session.startedAt),
         title: session.threadName || session.sessionId,
-        tokens: formatCompactNumber(session.tokenTotal),
+        tokens: formatNumber(session.tokenTotal),
     }))
 }
 
@@ -934,6 +1021,58 @@ function formatSafeDate(value: string) {
     }
 
     return formatDate(date)
+}
+
+function countSessionsByDate(sessions: ProjectSessionListItem[], dateLabel: string) {
+    return sessions.filter(session => getSessionDateLabel(session.startedAt) === dateLabel).length
+}
+
+function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
+    return sessions.reduce((counts, session) => {
+        const dateLabel = getSessionDateLabel(session.startedAt)
+
+        if (!dateLabel) {
+            return counts
+        }
+
+        counts.set(dateLabel, (counts.get(dateLabel) ?? 0) + 1)
+
+        return counts
+    }, new Map<string, number>())
+}
+
+function getSessionDateLabel(value: string) {
+    if (!value) {
+        return ''
+    }
+
+    const date = new Date(value)
+
+    if (!Number.isFinite(date.getTime())) {
+        return ''
+    }
+
+    return formatDateLabelFromDateKey(getDateKey(date))
+}
+
+function summarizeUsage(sessions: ProjectSessionListItem[]) {
+    return sessions.reduce((summary, session) => ({
+        cachedInputTokens: summary.cachedInputTokens + session.cachedInputTokens,
+        costUSD: summary.costUSD + session.costUSD,
+        inputTokens: summary.inputTokens + session.inputTokens,
+        outputTokens: summary.outputTokens + session.outputTokens,
+        reasoningOutputTokens: summary.reasoningOutputTokens + session.reasoningOutputTokens,
+        sessions: summary.sessions + 1,
+        totalTokens: summary.totalTokens + session.tokenTotal,
+    }), {
+        cachedInputTokens: 0,
+        costUSD: 0,
+        inputTokens: 0,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        sessions: 0,
+        totalTokens: 0,
+    })
 }
 
 function summarizeSessions(sessions: ProjectSessionListItem[]) {

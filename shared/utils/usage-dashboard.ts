@@ -229,7 +229,9 @@ export function buildSessionDailyRows(sessionUsage: UsageSessionUsageItem[]): To
         group.cachedInputTokens += session.cachedInputTokens
         group.costUSD += session.costUSD
         group.inputTokens += session.inputTokens
-        group.models = uniqueItems([...group.models, session.model])
+        if (session.model && session.model !== 'unknown') {
+            group.models = uniqueItems([...group.models, session.model])
+        }
         group.outputTokens += session.outputTokens
         group.projects = uniqueItems([...group.projects, session.project])
         group.reasoningOutputTokens += session.reasoningOutputTokens
