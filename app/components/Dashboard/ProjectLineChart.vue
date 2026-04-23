@@ -31,8 +31,9 @@
                     :tick-format="formatYAxis"
                     type="y"
                 />
-                <VisTooltip />
+                <VisTooltip v-if="hasChartData" />
                 <VisCrosshair
+                    v-if="hasChartData"
                     :color="getCrosshairColor"
                     :template="formatTooltip"
                     :x="getPointIndex"
@@ -109,6 +110,7 @@ const gradientSvgDefs = computed(() => orderedSeries.value.map(series => `
         <stop offset="100%" stop-color="${series.color}" stop-opacity="0.07" />
     </linearGradient>
 `).join(''))
+const hasChartData = computed(() => chartData.value.length > 0 && orderedSeries.value.length > 0)
 const xDomain = computed<[number, number]>(() => [0, Math.max(props.xLabels.length - 1, 0)])
 const visibleXTicks = computed(() => {
     if (props.tickIndexes && props.tickIndexes.length > 0) {
@@ -123,8 +125,8 @@ const visibleXTicks = computed(() => {
         .filter(index => index === 0 || index === count - 1 || index % step === 0)
 })
 
-function getPointIndex(point: ChartPoint) {
-    return point.index
+function getPointIndex(point: ChartPoint | undefined) {
+    return point?.index ?? 0
 }
 
 function getAreaColor(_: ChartPoint[], index: number) {
@@ -137,7 +139,7 @@ function getLineColor(_: ChartPoint[], index: number) {
     return orderedSeries.value[index]?.color ?? '#2563eb'
 }
 
-function getCrosshairColor(_: ChartPoint, index: number) {
+function getCrosshairColor(_: ChartPoint | undefined, index: number) {
     return orderedSeries.value[index]?.color ?? '#2563eb'
 }
 
@@ -157,7 +159,11 @@ function formatYAxis(tick: number | Date) {
     return formatCompactNumber(tick)
 }
 
-function formatTooltip(point: ChartPoint) {
+function formatTooltip(point: ChartPoint | undefined) {
+    if (!point) {
+        return ''
+    }
+
     const rows = orderedSeries.value
         .map(series => ({
             ...series,

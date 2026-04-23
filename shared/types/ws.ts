@@ -40,8 +40,14 @@ export interface ProjectUsageDataModulesResponse {
     modules: Partial<Record<ProjectUsageDataModule, unknown>>
 }
 
+export interface ProjectWebSocketResponse<T = unknown> {
+    data: T
+    requestId: string
+}
+
 export type ProjectWebSocketRequest
     = | {
+        requestId?: string
         type: 'project'
     }
     | {
@@ -51,6 +57,7 @@ export type ProjectWebSocketRequest
         modules?: ProjectUsageDataModule[]
         path?: string[]
         project?: string
+        requestId?: string
         sessionId?: string
         platform?: ProjectUsageDataPlatformScope
     }

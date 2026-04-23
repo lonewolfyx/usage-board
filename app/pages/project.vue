@@ -11,7 +11,7 @@
                             'before:bg-amber-500',
                         )"
                     >
-                        <Select v-model="selectedProjectId">
+                        <Select v-model="selectedProjectId" :disabled="catalogLoading || projects.length === 0">
                             <SelectTrigger
                                 aria-label="Select Project"
                                 :class="cn(
@@ -47,7 +47,6 @@
                             :value="tab.value"
                             class="flex justify-start gap-3 shadow-none"
                             :class="cn(
-                                // 'data-[state=active]:shadow-none',
                                 'data-[state=active]:border',
                                 'data-[state=active]:border-dashed',
                                 'data-[state=active]:border-amber-500',
@@ -67,11 +66,9 @@
                                 <div class="flex flex-col items-start gap-1.5">
                                     <div class="w-full flex justify-between items-center">
                                         <span class="truncate text-sm font-medium">{{ tab.label }}</span>
-                                        <!--                                        <Badge variant="secondary"> -->
-                                        <!--                                            {{ tabSummaries[tab.value].sessions }} -->
-                                        <!--                                        </Badge> -->
                                     </div>
-                                    <span class="block truncate text-xs text-muted-foreground tabular-nums">
+                                    <Skeleton v-if="!isScopeReady" class="h-3 w-20" />
+                                    <span v-else class="block truncate text-xs text-muted-foreground tabular-nums">
                                         {{ tabSummaries[tab.value].tokens }} tokens
                                     </span>
                                 </div>
@@ -84,7 +81,8 @@
                             :key="item.label"
                             class="flex flex-col items-start gap-3 rounded-md border border-dotted px-3 py-2"
                         >
-                            <p class="truncate text-sm font-semibold tabular-nums">
+                            <Skeleton v-if="!isScopeReady" class="h-5 w-16" />
+                            <p v-else class="truncate text-sm font-semibold tabular-nums">
                                 {{ item.value }}
                             </p>
                             <p class="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -93,47 +91,63 @@
                         </div>
                     </div>
                 </div>
+
+                <p v-if="websocketError" class="text-xs text-destructive">
+                    {{ websocketError }}
+                </p>
             </div>
         </div>
 
         <DashboardPage>
             <TabsContent class="m-0" value="all">
                 <DashboardPanelGrid>
-                    <DashboardOverviewCards :cards="allOverviewCards" class="md:col-span-12 lg:grid-cols-5" />
+                    <DashboardOverviewCards
+                        v-if="isModuleLoaded('overview_cards')"
+                        :cards="allOverviewCards"
+                        class="md:col-span-12 lg:grid-cols-5"
+                    />
+                    <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 md:col-span-12">
+                        <Skeleton v-for="index in 5" :key="index" class="h-28 rounded-md" />
+                    </div>
 
                     <StatisticalAnalysisPanel
                         class="md:col-span-12"
-                        description="Recent 30 days by provider"
+                        description="Recent usage by provider"
                         icon="lucide:activity"
                         title="Daily Token Trend"
                     >
                         <DashboardProjectLineChart
+                            v-if="isModuleLoaded('daily_trend')"
                             :series="dailySeries"
                             :tooltip-labels="dailyTooltipLabels"
                             :x-labels="dailyTrendLabels"
                         />
+                        <Skeleton v-else class="h-80 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
                     <StatisticalAnalysisPanel
                         class="md:col-span-12"
-                        description="Recent 30 days by model"
+                        description="Usage by model"
                         icon="solar:cpu-line-duotone"
                         title="Model Usage"
                     >
                         <DashboardProjectLineChart
-                            :series="allModelSeries"
-                            :tooltip-labels="dailyTooltipLabels"
-                            :x-labels="dailyTrendLabels"
+                            v-if="isModuleLoaded('model_usage')"
+                            :series="allModelChart.series"
+                            :tooltip-labels="allModelChart.labels"
+                            :x-labels="allModelChart.labels"
                         />
+                        <Skeleton v-else class="h-80 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
                     <StatisticalAnalysisPanel
                         class="md:col-span-12"
-                        description="All mock sessions in this project"
+                        description="Sessions in this project"
                         icon="lucide:messages-square"
                         title="Session Statistics"
                     >
-                        <DashboardProjectSessionTable :items="allSessionRows" />
+                        <DashboardProjectSessionTable v-if="isModuleLoaded('session_list')" :items="allSessionRows" />
+                        <Skeleton v-else class="h-72 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
                     <StatisticalAnalysisPanel
@@ -142,7 +156,8 @@
                         icon="lucide:calendar-days"
                         title="Daily Token Usage"
                     >
-                        <DashboardProjectTokenUsageTable :items="allDailyRows" />
+                        <DashboardProjectTokenUsageTable v-if="isModuleLoaded('daily_trend')" :items="allDailyUsageRows" />
+                        <Skeleton v-else class="h-72 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
                 </DashboardPanelGrid>
             </TabsContent>
@@ -155,7 +170,7 @@
             >
                 <DashboardPanelGrid>
                     <div class="md:col-span-12">
-                        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                        <div v-if="isModuleLoaded('overview_cards')" class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
                             <StatisticalAnalysisTotalCard
                                 v-for="card in platformViews[tab.value].overviewCards"
                                 :key="card.name"
@@ -166,34 +181,39 @@
                                 :value="card.value"
                             />
                         </div>
+                        <div v-else class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
+                            <Skeleton v-for="index in 7" :key="index" class="h-28 rounded-md" />
+                        </div>
                     </div>
 
                     <StatisticalAnalysisPanel
-                        :description="`${tab.label} token usage within the current project this year`"
+                        :description="`${tab.label} token usage within the current project`"
                         class="md:col-span-12"
                         icon="lucide:chart-area"
-                        title="Yearly Token Trend"
+                        title="Token Trend"
                     >
                         <DashboardProjectLineChart
-                            :series="platformViews[tab.value].yearSeries"
-                            :tick-indexes="yearDayTickIndexes"
-                            :tooltip-labels="yearDayTooltipLabels"
-                            :x-labels="yearDayLabels"
+                            v-if="isModuleLoaded('daily_trend')"
+                            :series="platformViews[tab.value].trendSeries"
+                            :tooltip-labels="platformViews[tab.value].trendTooltipLabels"
+                            :x-labels="platformViews[tab.value].trendLabels"
                         />
+                        <Skeleton v-else class="h-80 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
                     <StatisticalAnalysisPanel
-                        :description="`${tab.label} model trend within the current project this year`"
+                        :description="`${tab.label} model trend within the current project`"
                         class="md:col-span-12"
                         icon="solar:cpu-line-duotone"
                         title="Model Usage Trend"
                     >
                         <DashboardProjectLineChart
+                            v-if="isModuleLoaded('model_usage')"
                             :series="platformViews[tab.value].modelSeries"
-                            :tick-indexes="yearDayTickIndexes"
-                            :tooltip-labels="yearDayTooltipLabels"
-                            :x-labels="yearDayLabels"
+                            :tooltip-labels="platformViews[tab.value].modelLabels"
+                            :x-labels="platformViews[tab.value].modelLabels"
                         />
+                        <Skeleton v-else class="h-80 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
 
                     <StatisticalAnalysisPanel
@@ -217,18 +237,21 @@
                                     Session
                                 </TabsTrigger>
                             </TabsList>
-                            <TabsContent class="mt-4" value="today">
-                                <DashboardProjectTokenUsageTable :items="platformViews[tab.value].todayRows" />
-                            </TabsContent>
-                            <TabsContent class="mt-4" value="week">
-                                <DashboardProjectTokenUsageTable :items="platformViews[tab.value].weekRows" />
-                            </TabsContent>
-                            <TabsContent class="mt-4" value="month">
-                                <DashboardProjectTokenUsageTable :items="platformViews[tab.value].monthRows" />
-                            </TabsContent>
-                            <TabsContent class="mt-4" value="session">
-                                <DashboardProjectTokenUsageTable :items="platformViews[tab.value].sessionRows" />
-                            </TabsContent>
+                            <template v-if="isModuleLoaded('token_usage')">
+                                <TabsContent class="mt-4" value="today">
+                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].todayRows" />
+                                </TabsContent>
+                                <TabsContent class="mt-4" value="week">
+                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].weekRows" />
+                                </TabsContent>
+                                <TabsContent class="mt-4" value="month">
+                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].monthRows" />
+                                </TabsContent>
+                                <TabsContent class="mt-4" value="session">
+                                    <DashboardProjectTokenUsageTable :items="platformViews[tab.value].sessionRows" />
+                                </TabsContent>
+                            </template>
+                            <Skeleton v-else class="mt-4 h-72 w-full rounded-md" />
                         </Tabs>
                     </StatisticalAnalysisPanel>
 
@@ -238,78 +261,145 @@
                         icon="lucide:list-tree"
                         title="Session List"
                     >
-                        <DashboardProjectSessionTable :items="platformViews[tab.value].sessionTableRows" />
+                        <DashboardProjectSessionTable v-if="isModuleLoaded('session_list')" :items="platformViews[tab.value].sessionTableRows" />
+                        <Skeleton v-else class="h-72 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
                 </DashboardPanelGrid>
             </TabsContent>
         </DashboardPage>
-    </tabs>
+    </Tabs>
 </template>
 
 <script lang="ts" setup>
 import type {
     LineSeries,
-    MockProject,
-    MockSession,
-    OverviewCard,
     PlatformKey,
-    PlatformView,
     ProductPlatformKey,
     ProjectDashboardPlatformTab,
     ProjectDashboardTab,
+    TokenUsageRow as ProjectTokenUsageRow,
+    SessionTableRow,
     TableTab,
     TabSummary,
-    UsageSummary,
 } from '#shared/typed/project-dashboard'
+import type {
+    DailyTokenUsage,
+    MonthlyModelUsage,
+    ProjectSessionUsageItem,
+    TokenUsageRow,
+    UsageOverviewCard,
+    UsageTopModel,
+    UsageTopProject,
+} from '#shared/types/usage-dashboard'
+import type {
+    ProjectUsageCatalogItem,
+    ProjectUsageDataModule,
+    ProjectUsageDataModuleResponse,
+    ProjectWebSocketRequest,
+    ProjectWebSocketResponse,
+} from '#shared/types/ws'
 import {
-    buildProjectDailyModelSeries,
-    buildProjectDailyRows,
-    buildProjectMonthRows,
-    buildProjectWeekRows,
-    summarizeSessions,
-    toSessionRows,
-    toTokenUsageRow,
-} from '#shared/utils/project-dashboard'
-import {
-    buildPercentTrend,
     formatCompactNumber,
     formatCurrency,
     formatDate,
-    formatPercent,
-    isSameDay,
 } from '#shared/utils/usage-dashboard'
 import { cn } from '~/lib/utils'
 
-const selectedProjectId = shallowRef('usage-board')
+type ProjectSessionListItem = Omit<ProjectSessionUsageItem, 'interactions'>
+
+interface ProjectSelectItem {
+    id: string
+    name: string
+    path: string[]
+    type: ProjectUsageCatalogItem['type']
+}
+
+interface ProjectMetaModule {
+    createTime: string | null
+    label: string
+    models: string[]
+    platforms: ProductPlatformKey[]
+    sessionCound: number
+}
+
+interface OverviewModulePayload {
+    overviewCards: UsageOverviewCard[]
+    todayTopModel: UsageTopModel | null
+    todayTopProject: UsageTopProject | null
+    todayTotalCost: number
+    todayTotalTokens: number
+}
+
+interface DailyTrendModulePayload {
+    dailyRows: TokenUsageRow[]
+    dailyTokenUsage: DailyTokenUsage[]
+}
+
+interface ModelUsageModulePayload {
+    monthlyModelUsage: MonthlyModelUsage[]
+}
+
+interface TokenUsageModulePayload {
+    dailyRows: TokenUsageRow[]
+    monthlyRows: TokenUsageRow[]
+    sessionRows: TokenUsageRow[]
+    weeklyRows: TokenUsageRow[]
+}
+
+interface SessionListModulePayload {
+    sessionRows: TokenUsageRow[]
+    sessionUsage: ProjectSessionListItem[]
+    sessions: ProjectSessionListItem[]
+}
+
+type PlatformModulePayload<T> = Record<PlatformKey, T>
+
+interface ProjectPlatformView {
+    modelLabels: string[]
+    modelSeries: LineSeries[]
+    monthRows: ProjectTokenUsageRow[]
+    overviewCards: UsageOverviewCard[]
+    sessionRows: ProjectTokenUsageRow[]
+    sessionTableRows: SessionTableRow[]
+    todayRows: ProjectTokenUsageRow[]
+    trendLabels: string[]
+    trendSeries: LineSeries[]
+    trendTooltipLabels: string[]
+    weekRows: ProjectTokenUsageRow[]
+}
+
+interface PendingWebSocketRequest<T = unknown> {
+    reject: (error: Error) => void
+    requestId: string
+    resolve: (value: T) => void
+}
+
+const selectedProjectId = shallowRef('')
 const activeTab = shallowRef<PlatformKey>('all')
 const activeTableTab = shallowRef<TableTab>('today')
+const catalogLoading = shallowRef(false)
+const projectCatalog = shallowRef<ProjectUsageCatalogItem[]>([])
+const websocketError = shallowRef('')
+const metaModule = shallowRef<ProjectMetaModule | null>(null)
+const overviewModule = shallowRef<PlatformModulePayload<OverviewModulePayload> | null>(null)
+const dailyTrendModule = shallowRef<PlatformModulePayload<DailyTrendModulePayload> | null>(null)
+const modelUsageModule = shallowRef<PlatformModulePayload<ModelUsageModulePayload> | null>(null)
+const tokenUsageModule = shallowRef<PlatformModulePayload<TokenUsageModulePayload> | null>(null)
+const sessionListModule = shallowRef<PlatformModulePayload<SessionListModulePayload> | null>(null)
+const loadingModules = reactive<Record<ProjectUsageDataModule, boolean>>({
+    daily_trend: false,
+    meta: false,
+    model_usage: false,
+    overview_cards: false,
+    session_interactions: false,
+    session_list: false,
+    token_usage: false,
+})
 
-const projects: MockProject[] = [
-    {
-        id: 'usage-board',
-        name: 'Usage Board',
-        owner: 'lonewolfyx',
-        repository: 'github.com/lonewolfyx/usage-board',
-        since: '2026-03-18T08:00:00.000Z',
-        status: 'Active',
-    },
-    {
-        id: 'design-lab',
-        name: 'Design Lab',
-        owner: 'studio',
-        repository: 'github.com/studio/design-lab',
-        since: '2026-02-04T08:00:00.000Z',
-        status: 'Review',
-    },
-    {
-        id: 'agent-console',
-        name: 'Agent Console',
-        owner: 'platform',
-        repository: 'github.com/platform/agent-console',
-        since: '2026-01-12T08:00:00.000Z',
-        status: 'Active',
-    },
-]
+let moduleLoadRunId = 0
+let requestIdCounter = 0
+let requestChain: Promise<unknown> = Promise.resolve()
+const pendingWebSocketRequests = new Map<string, PendingWebSocketRequest>()
 
 const tabs: ProjectDashboardTab[] = [
     { label: 'All', value: 'all' },
@@ -317,24 +407,90 @@ const tabs: ProjectDashboardTab[] = [
     { aiIcon: 'codex', color: '#111827', label: 'Codex', value: 'codex' },
     { aiIcon: 'gemini', color: '#0ea5e9', label: 'Gemini', value: 'gemini' },
 ]
-
 const platformTabs = tabs.filter((tab): tab is ProjectDashboardPlatformTab => tab.value !== 'all')
+const projectModuleLoadOrder = [
+    'meta',
+    'overview_cards',
+    'daily_trend',
+    'model_usage',
+    'token_usage',
+    'session_list',
+] satisfies ProjectUsageDataModule[]
+const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
+const projectSelectionDebounceMs = 180
+const projectSelectionMaxWaitMs = 600
+const websocketRequestTimeoutMs = 45_000
+const emptyOverviewPayload: OverviewModulePayload = {
+    overviewCards: [],
+    todayTopModel: null,
+    todayTopProject: null,
+    todayTotalCost: 0,
+    todayTotalTokens: 0,
+}
+const emptyDailyTrendPayload: DailyTrendModulePayload = {
+    dailyRows: [],
+    dailyTokenUsage: [],
+}
+const emptyModelUsagePayload: ModelUsageModulePayload = {
+    monthlyModelUsage: [],
+}
+const emptyTokenUsagePayload: TokenUsageModulePayload = {
+    dailyRows: [],
+    monthlyRows: [],
+    sessionRows: [],
+    weeklyRows: [],
+}
+const emptySessionListPayload: SessionListModulePayload = {
+    sessionRows: [],
+    sessionUsage: [],
+    sessions: [],
+}
 
-const sessions: MockSession[] = buildMockSessions()
-const fallbackProject = projects[0]!
-const selectedProject = computed<MockProject>(() => projects.find(project => project.id === selectedProjectId.value) ?? fallbackProject)
-const projectSessions = computed(() => sessions.filter(session => session.projectId === selectedProject.value.id))
+const wsUrl = computed(() => {
+    if (!import.meta.client) {
+        return ''
+    }
+
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+
+    return `${protocol}//${window.location.host}/ws`
+})
+const { open, send, status } = useWebSocket(wsUrl, {
+    immediate: false,
+    autoReconnect: {
+        delay: 1000,
+        retries: 3,
+    },
+    onConnected() {
+        void loadProjectCatalog()
+    },
+    onDisconnected() {
+        rejectPendingRequests(new Error('WebSocket connection closed.'))
+    },
+    onError() {
+        websocketError.value = 'WebSocket connection error.'
+    },
+    onMessage(_ws, event) {
+        handleWebSocketMessage(event.data)
+    },
+})
+
+const projects = computed<ProjectSelectItem[]>(() => projectCatalog.value.map(project => ({
+    id: project.label,
+    name: project.label,
+    path: project.path,
+    type: project.type,
+})))
+const selectedProject = computed(() => projects.value.find(project => project.id === selectedProjectId.value) ?? null)
+const isScopeReady = computed(() => isModuleLoaded('session_list'))
 const tabSummaries = computed<Record<PlatformKey, TabSummary>>(() => Object.fromEntries(tabs.map((tab) => {
-    const tabSessions = tab.value === 'all'
-        ? projectSessions.value
-        : projectSessions.value.filter(session => session.platform === tab.value)
-    const summary = summarizeSessions(tabSessions)
+    const summary = summarizeSessions(getSessionPayload(tab.value).sessions)
 
     return [tab.value, {
-        cost: formatCurrency(summary.cost),
+        cost: formatCurrency(summary.costUSD),
         label: tab.label,
         sessions: String(summary.sessions),
-        tokens: formatCompactNumber(summary.tokens),
+        tokens: formatCompactNumber(summary.totalTokens),
     }]
 })) as Record<PlatformKey, TabSummary>)
 const activeTabSummary = computed(() => tabSummaries.value[activeTab.value])
@@ -352,238 +508,447 @@ const activeScopeItems = computed(() => [
         value: activeTabSummary.value.sessions,
     },
 ])
-const allSummary = computed(() => summarizeSessions(projectSessions.value))
-const allDailyRowsRaw = computed(() => buildProjectDailyRows(projectSessions.value))
-const allDailyRows = computed(() => allDailyRowsRaw.value.map(row => toTokenUsageRow(row.label, row.items)))
-const allSessionRows = computed(() => toSessionRows(projectSessions.value))
-const allModelSeries = computed(() => buildProjectDailyModelSeries(projectSessions.value, allDailyRowsRaw.value))
-const dailyTrendLabels = computed(() => allDailyRowsRaw.value.map(row => row.shortLabel))
-const dailyTooltipLabels = computed(() => allDailyRowsRaw.value.map(row => row.label))
+const allOverviewCards = computed(() => getOverviewPayload('all').overviewCards)
+const allDailyUsageRows = computed(() => toDisplayDailyUsageRows(getDailyTrendPayload('all').dailyTokenUsage))
+const allSessionRows = computed(() => platformTabs.flatMap(tab => toSessionTableRows(getSessionPayload(tab.value).sessions, tab.value)))
+const dailyTrendLabels = computed(() => getDailyTrendPayload('all').dailyTokenUsage.map(item => item.date))
+const dailyTooltipLabels = computed(() => dailyTrendLabels.value)
 const dailySeries = computed<LineSeries[]>(() => platformTabs.map(tab => ({
     color: tab.color,
     label: tab.label,
-    points: allDailyRowsRaw.value.map(row => summarizeSessions(row.items.filter(session => session.platform === tab.value)).tokens),
+    points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
 })))
-const yearDays = Array.from({ length: 365 }, (_, index) => new Date(Date.UTC(2025, 3, 23 + index)))
-const yearDayLabels = yearDays.map((date, index) => {
-    if (index === 0 || date.getUTCDate() === 1) {
-        return new Intl.DateTimeFormat('en-US', {
-            month: 'short',
-            timeZone: 'UTC',
-        }).format(date)
-    }
-
-    return ''
-})
-const yearDayTickIndexes = yearDays
-    .map((date, index) => ({ date, index }))
-    .filter(({ date, index }) => index === 0 || date.getUTCDate() === 1 || index === yearDays.length - 1)
-    .map(({ index }) => index)
-const yearDayTooltipLabels = yearDays.map(date => formatDate(date.toISOString()))
-
-const allOverviewCards = computed<OverviewCard[]>(() => [
-    {
-        icon: 'solar:cpu-line-duotone',
-        name: 'Total Tokens',
-        trend: 'project total',
-        trendTone: 'neutral',
-        value: formatCompactNumber(allSummary.value.tokens),
-    },
-    {
-        icon: 'lucide:wallet',
-        name: 'Total Spend',
-        trend: 'mock billing',
-        trendTone: 'neutral',
-        value: formatCurrency(allSummary.value.cost),
-    },
-    {
-        icon: 'lucide:messages-square',
-        name: 'Sessions',
-        trend: 'all tools',
-        trendTone: 'neutral',
-        value: String(allSummary.value.sessions),
-    },
-    {
-        icon: 'lucide:database-zap',
-        name: 'Cache Hit Rate',
-        trend: `${formatCompactNumber(allSummary.value.cacheTokens)} cached`,
-        trendTone: 'neutral',
-        value: formatPercent(allSummary.value.cacheRate),
-    },
-    {
-        icon: 'lucide:circle-dollar-sign',
-        name: 'Avg Session Cost',
-        trend: 'per session',
-        trendTone: 'neutral',
-        value: formatCurrency(allSummary.value.sessions > 0 ? allSummary.value.cost / allSummary.value.sessions : 0),
-    },
-])
-
-const platformViews = computed(() => Object.fromEntries(platformTabs.map((tab) => {
-    const platformSessions = projectSessions.value.filter(session => session.platform === tab.value)
-    const summary = summarizeSessions(platformSessions)
-    const todaySessions = platformSessions.filter(session => isSameDay(session.startedAt, '2026-04-22'))
-    const yesterdaySessions = platformSessions.filter(session => isSameDay(session.startedAt, '2026-04-21'))
-    const todaySummary = summarizeSessions(todaySessions)
-    const yesterdaySummary = summarizeSessions(yesterdaySessions)
+const allModelChart = computed(() => buildModelUsageChart(getModelUsagePayload('all').monthlyModelUsage))
+const platformViews = computed<Record<ProductPlatformKey, ProjectPlatformView>>(() => Object.fromEntries(platformTabs.map((tab) => {
+    const trendLabels = getDailyTrendPayload(tab.value).dailyTokenUsage.map(item => item.date)
+    const modelChart = buildModelUsageChart(getModelUsagePayload(tab.value).monthlyModelUsage)
 
     return [tab.value, {
-        modelSeries: buildModelYearSeries(tab.value, selectedProject.value.id),
-        monthRows: buildProjectMonthRows(platformSessions).map(row => toTokenUsageRow(row.label, row.items)),
-        overviewCards: buildPlatformOverviewCards(summary, todaySummary, yesterdaySummary),
-        sessionRows: platformSessions.map(session => toTokenUsageRow(session.title, [session])),
-        sessionTableRows: toSessionRows(platformSessions),
-        todayRows: [toTokenUsageRow('Today', todaySessions)],
-        weekRows: buildProjectWeekRows(platformSessions).map(row => toTokenUsageRow(row.label, row.items)),
-        yearSeries: [{
+        modelLabels: modelChart.labels,
+        modelSeries: modelChart.series,
+        monthRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).monthlyRows),
+        overviewCards: getOverviewPayload(tab.value).overviewCards,
+        sessionRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).sessionRows),
+        sessionTableRows: toSessionTableRows(getSessionPayload(tab.value).sessions, tab.value),
+        todayRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).dailyRows),
+        trendLabels,
+        trendSeries: [{
             color: tab.color,
             label: tab.label,
-            points: buildYearPoints(tab.value, selectedProject.value.id),
+            points: getDailySeriesPoints(tab.value, trendLabels),
         }],
+        trendTooltipLabels: trendLabels,
+        weekRows: toDisplayTokenRows(getTokenUsagePayload(tab.value).weeklyRows),
     }]
-})) as Record<ProductPlatformKey, PlatformView>)
+})) as Record<ProductPlatformKey, ProjectPlatformView>)
 
-function buildPlatformOverviewCards(
-    summary: UsageSummary,
-    today: UsageSummary,
-    yesterday: UsageSummary,
-): OverviewCard[] {
-    const tokenTrend = buildPercentTrend(today.tokens, yesterday.tokens)
-    const costTrend = buildPercentTrend(today.cost, yesterday.cost)
-    const sessionTrend = buildPercentTrend(today.sessions, yesterday.sessions)
+onMounted(() => {
+    open()
+})
 
-    return [
-        {
-            icon: 'solar:cpu-line-duotone',
-            name: 'Today Tokens',
-            trend: tokenTrend.label,
-            trendTone: tokenTrend.tone,
-            value: formatCompactNumber(today.tokens),
-        },
-        {
-            icon: 'lucide:wallet',
-            name: 'Today Spend',
-            trend: costTrend.label,
-            trendTone: costTrend.tone,
-            value: formatCurrency(today.cost),
-        },
-        {
-            icon: 'lucide:messages-square',
-            name: 'Today Sessions',
-            trend: sessionTrend.label,
-            trendTone: sessionTrend.tone,
-            value: String(today.sessions),
-        },
-        {
-            icon: 'lucide:receipt-text',
-            name: 'Total Spend',
-            trend: 'all time',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.cost),
-        },
-        {
-            icon: 'lucide:list-checks',
-            name: 'Sessions',
-            trend: 'project total',
-            trendTone: 'neutral',
-            value: String(summary.sessions),
-        },
-        {
-            icon: 'lucide:database-zap',
-            name: 'Cache Hit Rate',
-            trend: `${formatCompactNumber(summary.cacheTokens)} cached`,
-            trendTone: 'neutral',
-            value: formatPercent(summary.cacheRate),
-        },
-        {
-            icon: 'lucide:circle-dollar-sign',
-            name: 'Avg Session Cost',
-            trend: 'per session',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.sessions > 0 ? summary.cost / summary.sessions : 0),
-        },
-    ]
+watch(selectedProjectId, (projectId) => {
+    invalidateProjectModuleLoad()
+
+    if (!projectId) {
+        resetProjectModules()
+    }
+})
+
+watchDebounced(selectedProjectId, (projectId) => {
+    if (!projectId) {
+        return
+    }
+
+    void loadProjectModules(projectId)
+}, {
+    debounce: projectSelectionDebounceMs,
+    maxWait: projectSelectionMaxWaitMs,
+})
+
+function invalidateProjectModuleLoad() {
+    moduleLoadRunId += 1
+    resetProjectModules()
+    websocketError.value = ''
 }
 
-function buildYearPoints(platform: ProductPlatformKey, projectId: string) {
-    const seed = platform === 'claudeCode' ? 81000 : platform === 'codex' ? 64000 : 42000
-    const projectBoost = projectId === 'agent-console' ? 1.24 : projectId === 'design-lab' ? 0.78 : 1
+async function loadProjectCatalog() {
+    catalogLoading.value = true
+    websocketError.value = ''
 
-    return yearDays.map((_, index) => {
-        const weeklyWave = Math.sin((index / 7) * Math.PI * 2) * 0.12
-        const monthlyWave = Math.cos((index / 31) * Math.PI * 2) * 0.18
-        const growth = 1 + (index / yearDays.length) * 0.42
-        const pulse = index % 29 === 0 ? 0.34 : 0
+    return runQueuedRequest<ProjectUsageCatalogItem[]>({ type: 'project' })
+        .then((catalog) => {
+            projectCatalog.value = catalog
+            const existingProject = catalog.find(project => project.label === selectedProjectId.value)
+            selectedProjectId.value = existingProject?.label ?? catalog[0]?.label ?? ''
+        })
+        .catch((error) => {
+            websocketError.value = error.message
+        })
+        .finally(() => {
+            catalogLoading.value = false
+        })
+}
 
-        return Math.round(seed * projectBoost * growth * (1 + weeklyWave + monthlyWave + pulse))
+async function loadProjectModules(projectId: string) {
+    const project = projects.value.find(project => project.id === projectId)
+
+    if (!project) {
+        resetProjectModules()
+        return
+    }
+
+    const runId = moduleLoadRunId + 1
+    moduleLoadRunId = runId
+    resetProjectModules()
+    await loadProjectModulesRecursively(project, projectModuleLoadOrder, 0, runId)
+}
+
+async function loadProjectModulesRecursively(
+    project: ProjectSelectItem,
+    modules: readonly ProjectUsageDataModule[],
+    index: number,
+    runId: number,
+): Promise<void> {
+    if (index >= modules.length || runId !== moduleLoadRunId) {
+        return
+    }
+
+    const module = modules[index]!
+    loadingModules[module] = true
+
+    try {
+        const response = await runQueuedRequest<ProjectUsageDataModuleResponse>({
+            module,
+            path: project.path,
+            project: project.id,
+            type: 'project_data',
+        })
+
+        if (runId !== moduleLoadRunId || response.label !== project.id) {
+            return
+        }
+
+        setProjectModuleData(module, response.data)
+    }
+    catch (error) {
+        if (runId !== moduleLoadRunId) {
+            return
+        }
+
+        websocketError.value = error instanceof Error ? error.message : 'Failed to load project module.'
+    }
+    finally {
+        if (runId === moduleLoadRunId) {
+            loadingModules[module] = false
+        }
+    }
+
+    await loadProjectModulesRecursively(project, modules, index + 1, runId)
+}
+
+function runQueuedRequest<T>(payload: ProjectWebSocketRequest): Promise<T> {
+    const task = requestChain.then(() => sendWebSocketRequest<T>(payload))
+    requestChain = task.catch(() => undefined)
+
+    return task
+}
+
+function sendWebSocketRequest<T>(payload: ProjectWebSocketRequest): Promise<T> {
+    if (status.value !== 'OPEN') {
+        return Promise.reject(new Error('WebSocket is not connected.'))
+    }
+
+    const requestId = createRequestId()
+
+    return new Promise<T>((resolve, reject) => {
+        const timeout = window.setTimeout(() => {
+            pendingWebSocketRequests.delete(requestId)
+            reject(new Error('WebSocket request timed out.'))
+        }, websocketRequestTimeoutMs)
+
+        pendingWebSocketRequests.set(requestId, {
+            reject: (error) => {
+                window.clearTimeout(timeout)
+                reject(error)
+            },
+            requestId,
+            resolve: (value) => {
+                window.clearTimeout(timeout)
+                resolve(value as T)
+            },
+        })
+
+        const sent = send(JSON.stringify({
+            ...payload,
+            requestId,
+        }))
+
+        if (!sent) {
+            window.clearTimeout(timeout)
+            pendingWebSocketRequests.delete(requestId)
+            reject(new Error('Failed to send WebSocket request.'))
+        }
     })
 }
 
-function buildModelYearSeries(platform: ProductPlatformKey, projectId: string): LineSeries[] {
-    const models = {
-        claudeCode: ['claude-sonnet-4.5', 'claude-opus-4.1'],
-        codex: ['gpt-5.4-codex', 'gpt-5.2-codex'],
-        gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-    } satisfies Record<ProductPlatformKey, string[]>
-    const colors = ['#2563eb', '#f97316', '#0891b2']
-    const basePoints = buildYearPoints(platform, projectId)
+function handleWebSocketMessage(rawData: unknown) {
+    if (typeof rawData !== 'string') {
+        return
+    }
 
-    return models[platform].map((model, index) => ({
-        color: colors[index] ?? '#2563eb',
+    const parsed = parseWebSocketData(rawData)
+
+    if (!parsed) {
+        return
+    }
+
+    if (isWebSocketError(parsed)) {
+        rejectPendingRequests(new Error(parsed.message))
+        return
+    }
+
+    if (!isProjectWebSocketResponse(parsed)) {
+        return
+    }
+
+    const pendingRequest = pendingWebSocketRequests.get(parsed.requestId)
+
+    if (!pendingRequest) {
+        return
+    }
+
+    pendingWebSocketRequests.delete(parsed.requestId)
+    pendingRequest.resolve(parsed.data)
+}
+
+function parseWebSocketData(data: string) {
+    try {
+        return JSON.parse(data) as unknown
+    }
+    catch {
+        return null
+    }
+}
+
+function createRequestId() {
+    requestIdCounter += 1
+
+    return `${Date.now()}-${requestIdCounter}`
+}
+
+function rejectPendingRequests(error: Error) {
+    for (const pendingRequest of pendingWebSocketRequests.values()) {
+        pendingRequest.reject(error)
+    }
+
+    pendingWebSocketRequests.clear()
+}
+
+function isWebSocketError(value: unknown): value is { message: string, type: 'error' } {
+    if (!value || typeof value !== 'object') {
+        return false
+    }
+
+    const record = value as Record<string, unknown>
+
+    return record.type === 'error' && typeof record.message === 'string'
+}
+
+function isProjectWebSocketResponse(value: unknown): value is ProjectWebSocketResponse {
+    if (!value || typeof value !== 'object') {
+        return false
+    }
+
+    const record = value as Record<string, unknown>
+
+    return typeof record.requestId === 'string' && 'data' in record
+}
+
+function resetProjectModules() {
+    metaModule.value = null
+    overviewModule.value = null
+    dailyTrendModule.value = null
+    modelUsageModule.value = null
+    tokenUsageModule.value = null
+    sessionListModule.value = null
+
+    for (const module of projectModuleLoadOrder) {
+        loadingModules[module] = false
+    }
+}
+
+function setProjectModuleData(module: ProjectUsageDataModule, data: unknown) {
+    if (module === 'meta') {
+        metaModule.value = data as ProjectMetaModule
+    }
+    else if (module === 'overview_cards') {
+        overviewModule.value = data as PlatformModulePayload<OverviewModulePayload>
+    }
+    else if (module === 'daily_trend') {
+        dailyTrendModule.value = data as PlatformModulePayload<DailyTrendModulePayload>
+    }
+    else if (module === 'model_usage') {
+        modelUsageModule.value = data as PlatformModulePayload<ModelUsageModulePayload>
+    }
+    else if (module === 'token_usage') {
+        tokenUsageModule.value = data as PlatformModulePayload<TokenUsageModulePayload>
+    }
+    else if (module === 'session_list') {
+        sessionListModule.value = data as PlatformModulePayload<SessionListModulePayload>
+    }
+}
+
+function isModuleLoaded(module: ProjectUsageDataModule) {
+    if (module === 'meta') {
+        return metaModule.value !== null
+    }
+
+    if (module === 'overview_cards') {
+        return overviewModule.value !== null
+    }
+
+    if (module === 'daily_trend') {
+        return dailyTrendModule.value !== null
+    }
+
+    if (module === 'model_usage') {
+        return modelUsageModule.value !== null
+    }
+
+    if (module === 'token_usage') {
+        return tokenUsageModule.value !== null
+    }
+
+    if (module === 'session_list') {
+        return sessionListModule.value !== null
+    }
+
+    return false
+}
+
+function getOverviewPayload(platform: PlatformKey) {
+    return overviewModule.value?.[platform] ?? emptyOverviewPayload
+}
+
+function getDailyTrendPayload(platform: PlatformKey) {
+    return dailyTrendModule.value?.[platform] ?? emptyDailyTrendPayload
+}
+
+function getModelUsagePayload(platform: PlatformKey) {
+    return modelUsageModule.value?.[platform] ?? emptyModelUsagePayload
+}
+
+function getTokenUsagePayload(platform: PlatformKey) {
+    return tokenUsageModule.value?.[platform] ?? emptyTokenUsagePayload
+}
+
+function getSessionPayload(platform: PlatformKey) {
+    return sessionListModule.value?.[platform] ?? emptySessionListPayload
+}
+
+function getDailySeriesPoints(platform: ProductPlatformKey, labels: string[]) {
+    const usageByDate = new Map(getDailyTrendPayload(platform).dailyTokenUsage.map(item => [item.date, item.totalTokens]))
+
+    return labels.map(label => usageByDate.get(label) ?? 0)
+}
+
+function buildModelUsageChart(items: MonthlyModelUsage[]) {
+    const labels = uniqueItems(items.map(item => item.month)).sort((a, b) => a.localeCompare(b))
+    const models = uniqueItems(items.map(item => item.model))
+        .map(model => ({
+            model,
+            totalTokens: items
+                .filter(item => item.model === model)
+                .reduce((sum, item) => sum + item.tokenTotal, 0),
+        }))
+        .sort((a, b) => b.totalTokens - a.totalTokens || a.model.localeCompare(b.model))
+        .map(item => item.model)
+    const series = models.map((model, index): LineSeries => ({
+        color: modelSeriesColors[index % modelSeriesColors.length]!,
         label: model,
-        points: basePoints.map((point, monthIndex) => Math.round(point * (index === 0 ? 0.62 : 0.38) * (1 + ((monthIndex % 2) * 0.08)))),
+        points: labels.map(label => items
+            .filter(item => item.model === model && item.month === label)
+            .reduce((sum, item) => sum + item.tokenTotal, 0)),
+    }))
+
+    return { labels, series }
+}
+
+function toDisplayDailyUsageRows(items: DailyTokenUsage[]): ProjectTokenUsageRow[] {
+    return items.map(item => ({
+        cacheTokens: formatCompactNumber(item.cachedInputTokens),
+        cost: formatCurrency(item.costUSD),
+        inputTokens: formatCompactNumber(item.inputTokens),
+        label: item.date,
+        models: Object.keys(item.models).sort((a, b) => a.localeCompare(b)).join(', ') || '-',
+        outputTokens: formatCompactNumber(item.outputTokens),
+        reasoningTokens: formatCompactNumber(item.reasoningOutputTokens),
+        sessions: '-',
+        tokens: formatCompactNumber(item.totalTokens),
     }))
 }
 
-function buildMockSessions(): MockSession[] {
-    const projectIds = ['usage-board', 'design-lab', 'agent-console']
-    const platforms: ProductPlatformKey[] = ['claudeCode', 'codex', 'gemini']
-    const models = {
-        claudeCode: ['claude-sonnet-4.5', 'claude-opus-4.1'],
-        codex: ['gpt-5.4-codex', 'gpt-5.2-codex'],
-        gemini: ['gemini-2.5-pro', 'gemini-2.5-flash'],
-    } satisfies Record<ProductPlatformKey, string[]>
+function toDisplayTokenRows(rows: TokenUsageRow[]): ProjectTokenUsageRow[] {
+    return rows.map(row => ({
+        cacheTokens: formatCompactNumber(row.cachedInputTokens),
+        cost: formatCurrency(row.costUSD),
+        inputTokens: formatCompactNumber(row.inputTokens),
+        label: row.label || row.period || row.id,
+        models: row.models.join(', ') || '-',
+        outputTokens: formatCompactNumber(row.outputTokens),
+        reasoningTokens: formatCompactNumber(row.reasoningOutputTokens),
+        sessions: String(row.sessionCount),
+        tokens: formatCompactNumber(row.totalTokens),
+    }))
+}
 
-    return projectIds.flatMap((projectId, projectIndex) => Array.from({ length: 30 }, (_, dayIndex) => {
-        const day = 22 - dayIndex
-        const date = new Date(Date.UTC(2026, 3, day, 8 + (dayIndex % 8), 20, 0))
+function toSessionTableRows(
+    sessions: ProjectSessionListItem[],
+    platform: ProductPlatformKey,
+): SessionTableRow[] {
+    return sessions.map(session => ({
+        cacheTokens: formatCompactNumber(session.cachedInputTokens),
+        cost: formatCurrency(session.costUSD),
+        duration: session.duration || '-',
+        id: `${platform}:${session.sessionId}`,
+        inputTokens: formatCompactNumber(session.inputTokens),
+        model: session.models?.join(', ') || session.model || 'unknown',
+        outputTokens: formatCompactNumber(session.outputTokens),
+        platform,
+        reasoningTokens: formatCompactNumber(session.reasoningOutputTokens),
+        startedAt: formatSafeDate(session.startedAt),
+        title: session.threadName || session.sessionId,
+        tokens: formatCompactNumber(session.tokenTotal),
+    }))
+}
 
-        return platforms.map((platform, platformIndex): MockSession => {
-            const tokens = 36000
-                + ((30 - dayIndex) * 3200)
-                + (projectIndex * 9000)
-                + (platformIndex * 14500)
-                + ((dayIndex % 5) * 11800)
-                + (platform === 'claudeCode' ? 28000 : platform === 'codex' ? 17000 : 8000)
-            const inputTokens = Math.round(tokens * 0.46)
-            const outputTokens = Math.round(tokens * 0.28)
-            const reasoningTokens = Math.round(tokens * 0.16)
-            const cacheTokens = Math.round(tokens * (0.3 + (((dayIndex + platformIndex) % 5) * 0.055)))
-            const titleIndex = (dayIndex + platformIndex) % 6
+function formatSafeDate(value: string) {
+    if (!value) {
+        return '-'
+    }
 
-            return {
-                cacheTokens,
-                cost: Math.round((tokens / 38000) * (platform === 'gemini' ? 0.52 : platform === 'codex' ? 0.78 : 1.08) * 100) / 100,
-                duration: `${18 + ((dayIndex + platformIndex) * 3) % 44}m`,
-                id: `${projectId}-${platform}-${dayIndex}`,
-                inputTokens,
-                model: models[platform][(dayIndex + platformIndex) % 2]!,
-                outputTokens,
-                platform,
-                projectId,
-                reasoningTokens,
-                startedAt: date.toISOString(),
-                title: [
-                    'Project dashboard refinement',
-                    'Token analytics review',
-                    'Session trace cleanup',
-                    'Model usage comparison',
-                    'Interaction detail mapping',
-                    'Navigation polish',
-                ][titleIndex]!,
-                tokens,
-            }
-        })
-    }).flat())
+    const date = new Date(value)
+
+    if (!Number.isFinite(date.getTime())) {
+        return '-'
+    }
+
+    return formatDate(date)
+}
+
+function summarizeSessions(sessions: ProjectSessionListItem[]) {
+    return sessions.reduce((summary, session) => ({
+        costUSD: summary.costUSD + session.costUSD,
+        sessions: summary.sessions + 1,
+        totalTokens: summary.totalTokens + session.tokenTotal,
+    }), {
+        costUSD: 0,
+        sessions: 0,
+        totalTokens: 0,
+    })
+}
+
+function uniqueItems<T>(items: T[]) {
+    return Array.from(new Set(items))
 }
 </script>

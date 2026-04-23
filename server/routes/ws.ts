@@ -14,10 +14,10 @@ export default defineWebSocketHandler({
             const config = resolveConfig(runtimeConfig.public)
 
             if (request.type === 'project') {
-                peer.send(JSON.stringify(await loadProjectUsageCatalog(config)))
+                sendData(peer, request, await loadProjectUsageCatalog(config))
             }
             else if (request.type === 'project_data') {
-                peer.send(JSON.stringify(await loadProjectUsageDataModule(config, request)))
+                sendData(peer, request, await loadProjectUsageDataModule(config, request))
             }
         }
         catch (error) {
@@ -72,6 +72,7 @@ function parseTextRequest(text: string): unknown {
         path: params.getAll('path').flatMap(splitPathList),
         platform: params.get('platform') ?? undefined,
         project: params.get('project') ?? undefined,
+        requestId: params.get('requestId') ?? undefined,
         sessionId: params.get('sessionId') ?? undefined,
         type,
     }
@@ -90,7 +91,10 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
     const type = getString(record.type)
 
     if (type === 'project') {
-        return { type }
+        return {
+            requestId: getString(record.requestId) || undefined,
+            type,
+        }
     }
 
     if (type === 'project_data') {
@@ -101,6 +105,7 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
             path: normalizePathList(record.path),
             platform: normalizePlatform(record.platform),
             project: getString(record.project) || undefined,
+            requestId: getString(record.requestId) || undefined,
             sessionId: getString(record.sessionId) || undefined,
             type,
         }
@@ -157,4 +162,20 @@ function splitValueList(value: string) {
 
 function getString(value: unknown) {
     return typeof value === 'string' ? value.trim() : ''
+}
+
+function sendData(
+    peer: { send: (data: string) => void },
+    request: ProjectWebSocketRequest,
+    data: unknown,
+) {
+    if (!request.requestId) {
+        peer.send(JSON.stringify(data))
+        return
+    }
+
+    peer.send(JSON.stringify({
+        data,
+        requestId: request.requestId,
+    }))
 }
