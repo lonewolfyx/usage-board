@@ -4,45 +4,92 @@
         icon="solar:cpu-line-duotone"
         title="Model Usage"
     >
-        <ChartContainer class="h-72 w-full" :config="chartConfig">
-            <VisXYContainer
-                :auto-margin="false"
-                :data="chartData"
-                :height="288"
-                :margin="chartMargin"
-                :svg-defs="gradientSvgDefs"
-                :x-domain="xDomain"
-                :y-domain="yDomain"
-            >
-                <VisArea
-                    :color="getAreaColor"
-                    :line="true"
-                    :line-color="getLineColor"
-                    :line-width="2.5"
-                    :opacity="0.82"
-                    :x="getMonthIndex"
-                    :y="modelTokenAccessors"
+        <div
+            ref="chartRoot"
+            class="relative"
+            @pointerleave="clearHoverGuide"
+            @pointermove="handlePointerMove"
+        >
+            <ChartContainer class="h-72 w-full" :config="chartConfig">
+                <VisXYContainer
+                    :auto-margin="false"
+                    :data="chartData"
+                    :height="288"
+                    :margin="chartMargin"
+                    :svg-defs="gradientSvgDefs"
+                    :x-domain="xDomain"
+                    :y-domain="yDomain"
+                >
+                    <VisArea
+                        :color="getAreaColor"
+                        :line="true"
+                        :line-color="getLineColor"
+                        :line-width="2.5"
+                        :opacity="0.82"
+                        :x="getMonthIndex"
+                        :y="modelTokenAccessors"
+                    />
+                    <VisAxis
+                        :grid-line="false"
+                        :tick-format="formatMonthAxis"
+                        :tick-values="monthTicks"
+                        type="x"
+                    />
+                    <VisAxis
+                        :num-ticks="4"
+                        :tick-format="formatTokenAxis"
+                        type="y"
+                    />
+                    <VisTooltip v-if="hasChartData" />
+                    <VisCrosshair
+                        v-if="hasChartData"
+                        :color="getCrosshairColor"
+                        :template="formatTooltip"
+                        :x="getMonthIndex"
+                        :y-stacked="modelTokenAccessors"
+                    />
+                </VisXYContainer>
+            </ChartContainer>
+
+            <div v-if="hoverGuide" class="pointer-events-none absolute inset-0 z-10">
+                <div
+                    class="absolute border-l border-dashed border-border/80"
+                    :style="{
+                        height: `${plotHeight}px`,
+                        left: `${hoverGuide.x}px`,
+                        top: `${plotTop}px`,
+                    }"
                 />
-                <VisAxis
-                    :grid-line="false"
-                    :tick-format="formatMonthAxis"
-                    :tick-values="monthTicks"
-                    type="x"
+                <div
+                    class="absolute border-t border-dashed border-border/80"
+                    :style="{
+                        left: `${plotLeft}px`,
+                        top: `${hoverGuide.y}px`,
+                        width: `${plotWidth}px`,
+                    }"
                 />
-                <VisAxis
-                    :num-ticks="4"
-                    :tick-format="formatTokenAxis"
-                    type="y"
-                />
-                <VisTooltip />
-                <VisCrosshair
-                    :color="getCrosshairColor"
-                    :template="formatTooltip"
-                    :x="getMonthIndex"
-                    :y-stacked="modelTokenAccessors"
-                />
-            </VisXYContainer>
-        </ChartContainer>
+                <div
+                    class="absolute rounded-sm bg-foreground px-2 py-1 text-[11px] font-medium text-background shadow-sm"
+                    :style="{
+                        left: `${hoverGuide.x}px`,
+                        top: `${plotBottom + 6}px`,
+                        transform: 'translateX(-50%)',
+                    }"
+                >
+                    {{ hoverGuide.xLabel }}
+                </div>
+                <div
+                    class="absolute rounded-sm bg-foreground px-2 py-1 text-[11px] font-medium text-background shadow-sm"
+                    :style="{
+                        left: `${Math.max(plotLeft - 8, 0)}px`,
+                        top: `${hoverGuide.y}px`,
+                        transform: 'translate(-100%, -50%)',
+                    }"
+                >
+                    {{ hoverGuide.yLabel }}
+                </div>
+            </div>
+        </div>
 
         <div class="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs text-muted-foreground">
             <div v-for="series in modelSeries" :key="series.model" class="flex items-center gap-2">
@@ -56,6 +103,8 @@
 
 <script setup lang="ts">
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
+import { useElementSize } from '@vueuse/core'
+import { useTemplateRef } from 'vue'
 
 defineOptions({
     name: 'StatisticalAnalysisModelUsagePanel',
@@ -74,8 +123,13 @@ const chartMargin = {
     right: 12,
     top: 8,
 }
+const chartHeight = 288
 
 const yDomain = [0, undefined] satisfies [number, undefined]
+const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
+const { width: chartWidth } = useElementSize(chartRoot)
+const hoverDatumIndex = shallowRef<number | null>(null)
+const hoverPointerY = shallowRef<number | null>(null)
 
 const selectedYear = computed(() => props.year ?? getLatestUsageYear(props.monthlyItems) ?? new Date().getFullYear())
 
@@ -140,6 +194,36 @@ const gradientSvgDefs = computed(() => modelSeries.value.map(series => `
         <stop offset="100%" stop-color="${series.color}" stop-opacity="0.08" />
     </linearGradient>
 `).join(''))
+const hasChartData = computed(() => chartData.value.length > 0 && modelSeries.value.length > 0)
+const plotLeft = computed(() => chartMargin.left)
+const plotTop = computed(() => chartMargin.top)
+const plotWidth = computed(() => Math.max(chartWidth.value - chartMargin.left - chartMargin.right, 0))
+const plotHeight = computed(() => Math.max(chartHeight - chartMargin.top - chartMargin.bottom, 0))
+const plotBottom = computed(() => plotTop.value + plotHeight.value)
+const maxTotalTokens = computed(() => Math.max(...chartData.value.map(item => item.totalTokens), 0))
+const hoverGuide = computed(() => {
+    if (hoverDatumIndex.value === null || hoverPointerY.value === null) {
+        return null
+    }
+
+    const point = chartData.value[hoverDatumIndex.value]
+    if (!point || plotWidth.value <= 0 || plotHeight.value <= 0) {
+        return null
+    }
+
+    const xRatio = months.value.length <= 1 ? 0 : hoverDatumIndex.value / (months.value.length - 1)
+    const x = plotLeft.value + (xRatio * plotWidth.value)
+    const y = clampValue(hoverPointerY.value, plotTop.value, plotBottom.value)
+    const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
+    const yValue = yRatio * maxTotalTokens.value
+
+    return {
+        x,
+        xLabel: formatTooltipMonth(point.month),
+        y,
+        yLabel: formatCompactNumber(yValue),
+    }
+})
 
 function getMonthIndex(item: ModelSeriesDatum) {
     return item.monthIndex
@@ -217,6 +301,46 @@ function formatMonthLabel(month: string) {
     return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(date)
 }
 
+function formatTooltipMonth(month: string) {
+    return `${formatMonthLabel(month)} ${month.slice(0, 4)}`
+}
+
+function handlePointerMove(event: PointerEvent) {
+    const rect = chartRoot.value?.getBoundingClientRect()
+
+    if (!rect) {
+        return
+    }
+
+    const pointerX = event.clientX - rect.left
+    const pointerY = event.clientY - rect.top
+    const plotRight = plotLeft.value + plotWidth.value
+
+    if (
+        pointerX < plotLeft.value
+        || pointerX > plotRight
+        || pointerY < plotTop.value
+        || pointerY > plotBottom.value
+        || plotWidth.value <= 0
+        || !hasChartData.value
+        || months.value.length === 0
+    ) {
+        clearHoverGuide()
+        return
+    }
+
+    const relativeX = clampValue((pointerX - plotLeft.value) / Math.max(plotWidth.value, 1), 0, 1)
+    hoverDatumIndex.value = months.value.length <= 1
+        ? 0
+        : Math.round(relativeX * (months.value.length - 1))
+    hoverPointerY.value = pointerY
+}
+
+function clearHoverGuide() {
+    hoverDatumIndex.value = null
+    hoverPointerY.value = null
+}
+
 function getLatestUsageYear(items: MonthlyModelUsage[]) {
     const latestMonth = [...items].sort((a, b) => b.month.localeCompare(a.month))[0]?.month
     const year = latestMonth?.split('-')[0]
@@ -230,6 +354,10 @@ function getGradientId(model: string) {
 
 function getModelColor(index: number) {
     return modelColors[index % modelColors.length] ?? '#2563eb'
+}
+
+function clampValue(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max)
 }
 
 function escapeHtml(value: string) {
