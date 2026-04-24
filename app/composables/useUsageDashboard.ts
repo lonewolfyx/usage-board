@@ -210,7 +210,7 @@ function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
     }
 
     return Array.from(groups.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]))
+        .sort((a, b) => b[0].localeCompare(a[0]))
         .map(([, group]) => ({
             cachedInputTokens: group.cachedInputTokens,
             costUSD: roundCurrency(group.costUSD),

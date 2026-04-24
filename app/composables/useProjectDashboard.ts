@@ -30,6 +30,7 @@ import {
     projectPlatformTabs,
     summarizeProjectSessions,
     toProjectDisplayDailyUsageRows,
+    toProjectSessionTableRow,
     toProjectSessionTableRows,
 } from '#shared/utils/project-dashboard'
 import {
@@ -178,7 +179,13 @@ export function useProjectDashboard() {
         getDailyTrendPayload('all').dailyTokenUsage,
         getSessionPayload('all').sessions,
     ))
-    const allSessionRows = computed(() => platformTabs.flatMap(tab => toProjectSessionTableRows(getSessionPayload(tab.value).sessions, tab.value)))
+    const allSessionRows = computed(() => platformTabs
+        .flatMap(tab => getSessionPayload(tab.value).sessions.map(session => ({
+            platform: tab.value,
+            session,
+        })))
+        .sort((a, b) => Date.parse(b.session.startedAt) - Date.parse(a.session.startedAt))
+        .map(({ platform, session }) => toProjectSessionTableRow(session, platform)))
     const dailyTrendLabels = computed(() => recentDayLabels.value)
     const dailyTooltipLabels = computed(() => dailyTrendLabels.value)
     const dailySeries = computed<ProjectLineSeries[]>(() => platformTabs.map(tab => ({
