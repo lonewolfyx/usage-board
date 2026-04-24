@@ -2,9 +2,11 @@
     <PayloadProvider>
         <SiteBody>
             <PayloadStatusBoundary>
-                <NuxtLayout>
-                    <NuxtPage />
-                </NuxtLayout>
+                <TooltipProvider>
+                    <NuxtLayout>
+                        <NuxtPage />
+                    </NuxtLayout>
+                </TooltipProvider>
             </PayloadStatusBoundary>
         </SiteBody>
     </PayloadProvider>

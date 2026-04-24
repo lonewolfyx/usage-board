@@ -179,6 +179,7 @@
                             <StatisticalAnalysisTotalCard
                                 v-for="card in platformViews[tab.value].overviewCards"
                                 :key="card.name"
+                                :detail="card.detail"
                                 :icon="card.icon"
                                 :name="card.name"
                                 :trend="card.trend"

@@ -10,6 +10,7 @@ export interface ModelTokenUsage {
 export type TrendTone = 'down' | 'neutral' | 'up'
 
 export interface UsageOverviewCard {
+    detail?: string
     icon: string
     name: string
     trend: string

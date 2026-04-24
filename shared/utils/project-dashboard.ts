@@ -93,6 +93,7 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
 
     return [
         {
+            detail: `${formatNumber(summary.totalTokens)} total tokens in this project`,
             icon: 'solar:cpu-line-duotone',
             name: 'Total Tokens',
             trend: 'project total',
@@ -100,6 +101,7 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
             value: formatCompactNumber(summary.totalTokens),
         },
         {
+            detail: `${formatCurrency(summary.costUSD)} total project spend`,
             icon: 'lucide:wallet',
             name: 'Total Spend',
             trend: 'all time',
@@ -107,6 +109,7 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
             value: formatCurrency(summary.costUSD),
         },
         {
+            detail: `${formatNumber(summary.sessions)} sessions across all tools`,
             icon: 'lucide:messages-square',
             name: 'Sessions',
             trend: 'all tools',
@@ -114,6 +117,7 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
             value: String(summary.sessions),
         },
         {
+            detail: `${formatNumber(summary.cachedInputTokens)} of ${formatNumber(summary.inputTokens)} input tokens were served from cache`,
             icon: 'lucide:database-zap',
             name: 'Cache Hit Rate',
             trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
@@ -121,6 +125,7 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
             value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
         },
         {
+            detail: `${formatCurrency(summary.costUSD)} across ${formatNumber(summary.sessions)} sessions`,
             icon: 'lucide:circle-dollar-sign',
             name: 'Avg Session Cost',
             trend: 'per session',
@@ -146,6 +151,7 @@ export function buildProjectPlatformOverviewCards(
 
     return [
         {
+            detail: `${formatNumber(todayUsage?.totalTokens ?? 0)} tokens used today`,
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
             trend: tokenTrend.trend,
@@ -153,6 +159,7 @@ export function buildProjectPlatformOverviewCards(
             value: formatCompactNumber(todayUsage?.totalTokens ?? 0),
         },
         {
+            detail: `${formatCurrency(todayUsage?.costUSD ?? 0)} spent today`,
             icon: 'lucide:wallet',
             name: 'Today Spend',
             trend: costTrend.trend,
@@ -160,6 +167,7 @@ export function buildProjectPlatformOverviewCards(
             value: formatCurrency(todayUsage?.costUSD ?? 0),
         },
         {
+            detail: `${formatNumber(todaySessions)} sessions recorded today`,
             icon: 'lucide:messages-square',
             name: 'Today Sessions',
             trend: sessionTrend.label,
@@ -167,6 +175,7 @@ export function buildProjectPlatformOverviewCards(
             value: String(todaySessions),
         },
         {
+            detail: `${formatCurrency(summary.costUSD)} total project spend`,
             icon: 'lucide:receipt-text',
             name: 'Total Spend',
             trend: 'all time',
@@ -174,6 +183,7 @@ export function buildProjectPlatformOverviewCards(
             value: formatCurrency(summary.costUSD),
         },
         {
+            detail: `${formatNumber(summary.sessions)} total sessions for this platform`,
             icon: 'lucide:list-checks',
             name: 'Sessions',
             trend: 'project total',
@@ -181,6 +191,7 @@ export function buildProjectPlatformOverviewCards(
             value: String(summary.sessions),
         },
         {
+            detail: `${formatNumber(summary.cachedInputTokens)} of ${formatNumber(summary.inputTokens)} input tokens were served from cache`,
             icon: 'lucide:database-zap',
             name: 'Cache Hit Rate',
             trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
@@ -188,6 +199,7 @@ export function buildProjectPlatformOverviewCards(
             value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
         },
         {
+            detail: `${formatCurrency(summary.costUSD)} across ${formatNumber(summary.sessions)} sessions`,
             icon: 'lucide:circle-dollar-sign',
             name: 'Avg Session Cost',
             trend: 'per session',
