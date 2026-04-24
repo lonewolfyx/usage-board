@@ -37,6 +37,7 @@ import {
     roundCurrency,
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
+import { formatNumber } from '@lonewolfyx/utils'
 
 /**
  * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
@@ -381,6 +382,7 @@ export function buildOverviewCards(options: {
 
     return [
         {
+            detail: `${formatNumber(options.todayTotalTokens)} tokens used today`,
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
             trend: tokenTrend.trend,
@@ -388,6 +390,7 @@ export function buildOverviewCards(options: {
             value: formatCompactNumber(options.todayTotalTokens),
         },
         {
+            detail: `${formatCurrency(options.todayTotalCost)} spent today`,
             icon: 'lucide:wallet',
             name: 'Today Spend',
             trend: costTrend.trend,
@@ -395,6 +398,9 @@ export function buildOverviewCards(options: {
             value: formatCurrency(options.todayTotalCost),
         },
         {
+            detail: options.todayTopProject
+                ? `${options.todayTopProject.project} with ${formatNumber(options.todayTopProject.sessionCount)} sessions today`
+                : 'No project sessions recorded today',
             icon: 'lucide:folder-git-2',
             name: 'Top Session Project',
             trend: options.todayTopProject ? `${options.todayTopProject.sessionCount} sessions` : 'No sessions',
@@ -402,6 +408,9 @@ export function buildOverviewCards(options: {
             value: options.todayTopProject?.project ?? '-',
         },
         {
+            detail: options.todayTopModel
+                ? `${options.todayTopModel.model} with ${formatNumber(options.todayTopModel.totalTokens)} tokens today`
+                : 'No model usage recorded today',
             icon: 'lucide:bot',
             name: 'Top Invoked Model',
             trend: options.todayTopModel ? `${formatCompactNumber(options.todayTopModel.totalTokens)} tokens` : 'No usage',

@@ -25,6 +25,8 @@
 </template>
 
 <script lang="ts" setup>
+import { formatNumber } from '@lonewolfyx/utils'
+
 const {
     cachedInputTokens,
     costGrowthTrend,
@@ -42,6 +44,7 @@ const {
 
 const overviewCards = computed(() => [
     {
+        detail: `${formatCurrency(totalCost.value)} total spend across all tools`,
         icon: 'lucide:wallet',
         name: 'Total Spend',
         trend: costGrowthTrend.value.trend,
@@ -49,6 +52,7 @@ const overviewCards = computed(() => [
         value: formatCurrency(totalCost.value),
     },
     {
+        detail: `${formatNumber(totalTokens.value)} total tokens across all tools`,
         icon: 'solar:cpu-line-duotone',
         name: 'Token Usage',
         trend: tokenGrowthTrend.value.trend,
@@ -56,6 +60,7 @@ const overviewCards = computed(() => [
         value: formatCompactNumber(totalTokens.value),
     },
     {
+        detail: `${formatNumber(cachedInputTokens.value)} of ${formatNumber(inputTokens.value)} input tokens were served from cache`,
         icon: 'lucide:database-zap',
         name: 'Cache Hit Rate',
         trend: `${formatCompactNumber(cachedInputTokens.value)} cached`,
@@ -63,6 +68,7 @@ const overviewCards = computed(() => [
         value: formatPercent(inputTokens.value > 0 ? cachedInputTokens.value / inputTokens.value : 0),
     },
     {
+        detail: `${formatCurrency(totalCost.value)} across ${formatNumber(totalSessions.value)} sessions`,
         icon: 'lucide:receipt-text',
         name: 'Avg Session Cost',
         trend: 'across all tools',

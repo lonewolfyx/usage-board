@@ -1,7 +1,15 @@
 <template>
     <StatisticalAnalysisPanel compact :icon="icon" :title="name">
         <div class="flex justify-between items-center">
-            <span class="text-2xl font-bold tracking-tight">{{ value }}</span>
+            <ValueTooltip :content="detail">
+                <span
+                    :class="cn(
+                        'text-2xl font-bold tracking-tight',
+                    )"
+                >
+                    {{ value }}
+                </span>
+            </ValueTooltip>
             <div class="flex items-center gap-1">
                 <Icon :class="trendMeta.iconClass" mode="svg" :name="trendMeta.icon" />
                 <span :class="trendMeta.textClass">
@@ -13,11 +21,14 @@
 </template>
 
 <script setup lang="ts">
+import { cn } from '~/lib/utils'
+
 defineOptions({
     name: 'StatisticalAnalysisTotalCard',
 })
 
 const props = withDefaults(defineProps<{
+    detail?: string
     name: string
     value: string
     icon: string

@@ -3,6 +3,7 @@
         <StatisticalAnalysisTotalCard
             v-for="card in cards"
             :key="card.name"
+            :detail="card.detail"
             :icon="card.icon"
             :name="card.name"
             :trend="card.trend"
