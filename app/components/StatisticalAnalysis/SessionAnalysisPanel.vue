@@ -44,7 +44,9 @@
                 <VisAxis
                     :grid-line="false"
                     :tick-format="formatProjectAxis"
-                    :tick-text-width="104"
+                    :tick-text-width="100"
+                    tick-text-fit-mode="trim"
+                    tick-text-trim-type="end"
                     :tick-values="projectTicks"
                     type="y"
                 />
