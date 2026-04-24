@@ -247,11 +247,11 @@ export function toProjectDisplayDailyUsageRows(
     }))
 }
 
-export function toProjectSessionTableRows(
-    sessions: ProjectSessionListItem[],
+export function toProjectSessionTableRow(
+    session: ProjectSessionListItem,
     platform: ProjectDashboardPlatformKey,
-): ProjectSessionTableRow[] {
-    return sessions.map(session => ({
+): ProjectSessionTableRow {
+    return {
         cacheTokens: formatNumber(session.cachedInputTokens),
         cost: formatCurrency(session.costUSD),
         duration: session.duration || '-',
@@ -265,7 +265,14 @@ export function toProjectSessionTableRows(
         startedAt: formatSafeProjectDate(session.startedAt),
         threadName: session.threadName,
         tokens: formatNumber(session.tokenTotal),
-    }))
+    }
+}
+
+export function toProjectSessionTableRows(
+    sessions: ProjectSessionListItem[],
+    platform: ProjectDashboardPlatformKey,
+): ProjectSessionTableRow[] {
+    return sessions.map(session => toProjectSessionTableRow(session, platform))
 }
 
 export function summarizeProjectUsage(sessions: ProjectSessionListItem[]): ProjectUsageSummary {

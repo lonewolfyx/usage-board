@@ -30,7 +30,7 @@
                 </TableRow>
             </TableHeader>
             <TableBody>
-                <TableRow v-for="invoice in dailyTokenUsage" :key="invoice.date">
+                <TableRow v-for="invoice in paginatedItems" :key="invoice.date">
                     <TableCell class="font-medium">
                         {{ invoice.date }}
                     </TableCell>
@@ -56,6 +56,14 @@
                 </TableRow>
             </TableBody>
         </Table>
+
+        <UsageAnalyticsPaginationFooter
+            v-if="dailyTokenUsage.length > pageSize"
+            v-model:page="page"
+            :page-count="pageCount"
+            :page-size="pageSize"
+            :total="dailyTokenUsage.length"
+        />
     </StatisticalAnalysisPanel>
 </template>
 
@@ -67,4 +75,17 @@ defineOptions({
 })
 
 const { dailyTokenUsage } = useUsageDashboard()
+const pageSize = 10
+const page = shallowRef(1)
+const pageCount = computed(() => Math.max(1, Math.ceil(dailyTokenUsage.value.length / pageSize)))
+const paginatedItems = computed(() => {
+    const safePage = Math.min(page.value, pageCount.value)
+    const start = (safePage - 1) * pageSize
+
+    return dailyTokenUsage.value.slice(start, start + pageSize)
+})
+
+watch(dailyTokenUsage, () => {
+    page.value = 1
+})
 </script>

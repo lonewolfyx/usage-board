@@ -148,7 +148,7 @@ export function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
  */
 export function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryGroup>): DailyTokenUsage[] {
     return Array.from(dailyGroups.values())
-        .sort((a, b) => a.dateKey.localeCompare(b.dateKey))
+        .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
         .map(group => ({
             cachedInputTokens: group.cachedInputTokens,
             costUSD: roundCurrency(group.costUSD),
@@ -302,20 +302,22 @@ export function buildSessionRows<TSession extends SessionUsageSummaryLike>(
     sessions: TSession[],
     options: SessionUsageOptions<TSession> = {},
 ): TokenUsageRow[] {
-    return sessions.map(session => ({
-        cachedInputTokens: getCachedInputTokens(session, options),
-        costUSD: session.costUSD,
-        id: session.sessionId,
-        inputTokens: session.inputTokens,
-        label: session.sessionId,
-        models: session.models,
-        outputTokens: session.outputTokens,
-        period: formatDateLabelFromDateKey(getDateKey(new Date(session.lastActivity))),
-        projects: [session.project],
-        reasoningOutputTokens: getReasoningOutputTokens(session, options),
-        sessionCount: 1,
-        totalTokens: session.tokenTotal,
-    }))
+    return [...sessions]
+        .sort((a, b) => getSessionSortTimestamp(b) - getSessionSortTimestamp(a))
+        .map(session => ({
+            cachedInputTokens: getCachedInputTokens(session, options),
+            costUSD: session.costUSD,
+            id: session.sessionId,
+            inputTokens: session.inputTokens,
+            label: session.sessionId,
+            models: session.models,
+            outputTokens: session.outputTokens,
+            period: formatDateLabelFromDateKey(getDateKey(new Date(session.lastActivity))),
+            projects: [session.project],
+            reasoningOutputTokens: getReasoningOutputTokens(session, options),
+            sessionCount: 1,
+            totalTokens: session.tokenTotal,
+        }))
 }
 
 /**
@@ -352,6 +354,18 @@ export function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike
         tokenTotal: session.tokenTotal,
         week: getWeekLabel(startedAtDate),
     }
+}
+
+function getSessionSortTimestamp(session: SessionUsageSummaryLike) {
+    const startedAtTimestamp = Date.parse(session.startedAt)
+
+    if (Number.isFinite(startedAtTimestamp)) {
+        return startedAtTimestamp
+    }
+
+    const lastActivityTimestamp = Date.parse(session.lastActivity)
+
+    return Number.isFinite(lastActivityTimestamp) ? lastActivityTimestamp : 0
 }
 
 /**
@@ -441,7 +455,8 @@ export function buildLoadUsageResult<
 ): LoadUsageResult {
     const aggregateOptions = options.aggregateOptions ?? {}
     const sessionOptions = options.sessionOptions ?? {}
-    const sessionUsage = sessions.map(session => toUsageSessionUsageItem(session, sessionOptions))
+    const sortedSessions = [...sessions].sort((a, b) => getSessionSortTimestamp(b) - getSessionSortTimestamp(a))
+    const sessionUsage = sortedSessions.map(session => toUsageSessionUsageItem(session, sessionOptions))
     const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
     const todayDateKey = getDateKey(new Date())
     const previousDayDateKey = getPreviousDateKey(todayDateKey)
@@ -470,7 +485,7 @@ export function buildLoadUsageResult<
             todayTotalTokens,
         }),
         projectUsage: buildProjectUsage(sessionUsage),
-        sessionRows: buildSessionRows(sessions, sessionOptions),
+        sessionRows: buildSessionRows(sortedSessions, sessionOptions),
         sessionUsage,
         todayTopModel,
         todayTopProject,
