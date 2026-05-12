@@ -75,8 +75,8 @@
         "embla-carousel-vue": "^8.6.0",
         "eslint": "^10.2.0",
         "get-port-please": "^3.2.0",
-        "lint-staged": "^16.4.0",
         "lucide-vue-next": "^0.545.0",
+        "nano-staged": "^1.0.2",
         "nuxt": "^4.4.2",
         "open": "^11.0.0",
         "path-type": "^6.0.0",
@@ -101,10 +101,10 @@
         "zod": "3.25.76"
     },
     "simple-git-hooks": {
-        "pre-commit": "npx lint-staged",
+        "pre-commit": "npx nano-staged",
         "commit-msg": "node scripts/verify-commit.js"
     },
-    "lint-staged": {
+    "nano-staged": {
         "*": "eslint --fix"
     }
 }
