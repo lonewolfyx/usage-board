@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { IOptions } from '~~/src/types'
 import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import cac from 'cac'
 import { getPort } from 'get-port-please'
 import open from 'open'
@@ -35,7 +35,7 @@ function isNodeListener(value: unknown): value is NodeListener {
 async function loadNitroEntrypoint(outputDir: string): Promise<LoadedNitroEntrypoint> {
     const entryPath = resolve(outputDir, 'server/index.mjs')
 
-    const mod = await import(entryPath)
+    const mod = await import(pathToFileURL(entryPath).href)
     const listener
         = mod.listener
             ?? mod.middleware
