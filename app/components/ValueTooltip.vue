@@ -6,7 +6,7 @@
             <slot />
         </TooltipTrigger>
 
-        <TooltipContent side="top">
+        <TooltipContent side="bottom">
             <p class="max-w-64 leading-relaxed">
                 {{ content }}
             </p>
