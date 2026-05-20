@@ -462,9 +462,6 @@ export function buildLoadUsageResult<
     const previousDayDateKey = getPreviousDateKey(todayDateKey)
     const todayDailyGroup = dailyGroups.get(todayDateKey)
     const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayDailyGroups = todayDailyGroup
-        ? new Map([[todayDateKey, todayDailyGroup]])
-        : new Map()
     const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
     const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
     const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
@@ -472,7 +469,7 @@ export function buildLoadUsageResult<
     const todayTopModel = getTopModelForDate(todayEvents, aggregateOptions)
 
     return {
-        dailyRows: buildDailyRows(todayDailyGroups),
+        dailyRows: buildDailyRows(dailyGroups),
         dailyTokenUsage: buildDailyTokenUsage(dailyGroups),
         monthlyModelUsage: buildMonthlyModelUsage(events, aggregateOptions),
         monthlyRows: buildPeriodRows(events, 'month', aggregateOptions),

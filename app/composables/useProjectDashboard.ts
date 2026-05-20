@@ -34,7 +34,6 @@ import {
     toProjectSessionTableRows,
 } from '#shared/utils/project-dashboard'
 import {
-    buildSessionDailyRows,
     formatCompactNumber,
     formatCurrency,
 } from '#shared/utils/usage-dashboard'
@@ -205,7 +204,7 @@ export function useProjectDashboard() {
                 modelLabels: modelChart.labels,
                 modelSeries: modelChart.series,
                 modelTickIndexes: yearlyTickIndexes.value,
-                dayRows: buildSessionDailyRows(getSessionPayload(tab.value).sessions),
+                dayRows: getTokenUsagePayload(tab.value).dailyRows,
                 monthRows: getTokenUsagePayload(tab.value).monthlyRows,
                 overviewCards: buildProjectPlatformOverviewCards(
                     getSessionPayload(tab.value).sessions,
