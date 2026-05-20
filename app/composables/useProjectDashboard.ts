@@ -20,6 +20,7 @@ import type {
     ProjectWebSocketRequest,
     ProjectWebSocketResponse,
 } from '#shared/types/ws'
+import type { ShallowRef } from 'vue'
 import {
     buildMonthlyTickIndexes,
     buildProjectDailyModelUsageChart,
@@ -78,17 +79,40 @@ const emptySessionListPayload: ProjectSessionListModulePayload = {
     sessions: [],
 }
 
+interface ProjectModuleStateMap {
+    daily_trend: ShallowRef<ProjectPlatformModulePayload<ProjectDailyTrendModulePayload> | null>
+    meta: ShallowRef<ProjectMetaModule | null>
+    model_usage: ShallowRef<ProjectPlatformModulePayload<ProjectModelUsageModulePayload> | null>
+    session_list: ShallowRef<ProjectPlatformModulePayload<ProjectSessionListModulePayload> | null>
+    token_usage: ShallowRef<ProjectPlatformModulePayload<ProjectTokenUsageModulePayload> | null>
+}
+
+interface ProjectPlatformModulePayloadMap {
+    daily_trend: ProjectDailyTrendModulePayload
+    model_usage: ProjectModelUsageModulePayload
+    session_list: ProjectSessionListModulePayload
+    token_usage: ProjectTokenUsageModulePayload
+}
+
 export function useProjectDashboard() {
     const selectedProjectId = shallowRef('')
     const activeTab = shallowRef<ProjectDashboardScope>('all')
     const catalogLoading = shallowRef(false)
     const projectCatalog = shallowRef<ProjectUsageCatalogItem[]>([])
     const websocketError = shallowRef('')
-    const metaModule = shallowRef<ProjectMetaModule | null>(null)
-    const dailyTrendModule = shallowRef<ProjectPlatformModulePayload<ProjectDailyTrendModulePayload> | null>(null)
-    const modelUsageModule = shallowRef<ProjectPlatformModulePayload<ProjectModelUsageModulePayload> | null>(null)
-    const tokenUsageModule = shallowRef<ProjectPlatformModulePayload<ProjectTokenUsageModulePayload> | null>(null)
-    const sessionListModule = shallowRef<ProjectPlatformModulePayload<ProjectSessionListModulePayload> | null>(null)
+    const projectModules: ProjectModuleStateMap = {
+        daily_trend: shallowRef<ProjectPlatformModulePayload<ProjectDailyTrendModulePayload> | null>(null),
+        meta: shallowRef<ProjectMetaModule | null>(null),
+        model_usage: shallowRef<ProjectPlatformModulePayload<ProjectModelUsageModulePayload> | null>(null),
+        session_list: shallowRef<ProjectPlatformModulePayload<ProjectSessionListModulePayload> | null>(null),
+        token_usage: shallowRef<ProjectPlatformModulePayload<ProjectTokenUsageModulePayload> | null>(null),
+    }
+    const platformModuleDefaults: ProjectPlatformModulePayloadMap = {
+        daily_trend: emptyDailyTrendPayload,
+        model_usage: emptyModelUsagePayload,
+        session_list: emptySessionListPayload,
+        token_usage: emptyTokenUsagePayload,
+    }
     const loadingModules = reactive<Record<ProjectUsageDataModule, boolean>>({
         daily_trend: false,
         meta: false,
@@ -144,7 +168,7 @@ export function useProjectDashboard() {
     const isScopeReady = computed(() => isModuleLoaded('session_list'))
     const tabSummaries = computed<Record<ProjectDashboardScope, ProjectTabSummary>>(() => Object.fromEntries(
         tabs.map((tab) => {
-            const summary = summarizeProjectSessions(getSessionPayload(tab.value).sessions)
+            const summary = summarizeProjectSessions(getPlatformModulePayload('session_list', tab.value).sessions)
 
             return [tab.value, {
                 cost: formatCurrency(summary.costUSD),
@@ -172,13 +196,13 @@ export function useProjectDashboard() {
     const recentDayLabels = computed(() => buildRecentDateLabels(recentProjectDays))
     const yearlyDayLabels = computed(() => buildRecentDateLabels(yearlyProjectDays))
     const yearlyTickIndexes = computed(() => buildMonthlyTickIndexes(yearlyDayLabels.value))
-    const allOverviewCards = computed(() => buildProjectOverviewCards(getSessionPayload('all').sessions))
+    const allOverviewCards = computed(() => buildProjectOverviewCards(getPlatformModulePayload('session_list', 'all').sessions))
     const allDailyUsageRows = computed(() => toProjectDisplayDailyUsageRows(
-        getDailyTrendPayload('all').dailyTokenUsage,
-        getSessionPayload('all').sessions,
+        getPlatformModulePayload('daily_trend', 'all').dailyTokenUsage,
+        getPlatformModulePayload('session_list', 'all').sessions,
     ))
     const allSessionRows = computed(() => platformTabs
-        .flatMap(tab => getSessionPayload(tab.value).sessions.map(session => ({
+        .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions.map(session => ({
             platform: tab.value,
             session,
         })))
@@ -192,26 +216,30 @@ export function useProjectDashboard() {
         points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
     })))
     const allModelChart = computed(() => buildProjectDailyModelUsageChart(
-        getModelUsagePayload('all').dailyTokenUsage,
+        getPlatformModulePayload('model_usage', 'all').dailyTokenUsage,
         recentDayLabels.value,
     ))
     const platformViews = computed<Record<ProjectDashboardPlatformKey, ProjectPlatformView>>(() => Object.fromEntries(
         platformTabs.map((tab) => {
             const trendLabels = yearlyDayLabels.value
-            const modelChart = buildProjectDailyModelUsageChart(getModelUsagePayload(tab.value).dailyTokenUsage, trendLabels)
+            const dailyTrendPayload = getPlatformModulePayload('daily_trend', tab.value)
+            const modelUsagePayload = getPlatformModulePayload('model_usage', tab.value)
+            const tokenUsagePayload = getPlatformModulePayload('token_usage', tab.value)
+            const sessionListPayload = getPlatformModulePayload('session_list', tab.value)
+            const modelChart = buildProjectDailyModelUsageChart(modelUsagePayload.dailyTokenUsage, trendLabels)
 
             return [tab.value, {
                 modelLabels: modelChart.labels,
                 modelSeries: modelChart.series,
                 modelTickIndexes: yearlyTickIndexes.value,
-                dayRows: getTokenUsagePayload(tab.value).dailyRows,
-                monthRows: getTokenUsagePayload(tab.value).monthlyRows,
+                dayRows: tokenUsagePayload.dailyRows,
+                monthRows: tokenUsagePayload.monthlyRows,
                 overviewCards: buildProjectPlatformOverviewCards(
-                    getSessionPayload(tab.value).sessions,
-                    getDailyTrendPayload(tab.value).dailyTokenUsage,
+                    sessionListPayload.sessions,
+                    dailyTrendPayload.dailyTokenUsage,
                 ),
-                sessionRows: getTokenUsagePayload(tab.value).sessionRows,
-                sessionTableRows: toProjectSessionTableRows(getSessionPayload(tab.value).sessions, tab.value),
+                sessionRows: tokenUsagePayload.sessionRows,
+                sessionTableRows: toProjectSessionTableRows(sessionListPayload.sessions, tab.value),
                 trendLabels,
                 trendSeries: [{
                     color: tab.color,
@@ -220,7 +248,7 @@ export function useProjectDashboard() {
                 }],
                 trendTickIndexes: yearlyTickIndexes.value,
                 trendTooltipLabels: trendLabels,
-                weekRows: getTokenUsagePayload(tab.value).weeklyRows,
+                weekRows: tokenUsagePayload.weeklyRows,
             }]
         }),
     ) as Record<ProjectDashboardPlatformKey, ProjectPlatformView>)
@@ -262,18 +290,19 @@ export function useProjectDashboard() {
         catalogLoading.value = true
         websocketError.value = ''
 
-        return sendWebSocketRequest<ProjectUsageCatalogItem[]>({ type: 'project' })
-            .then((catalog) => {
-                projectCatalog.value = catalog
-                const existingProject = catalog.find(project => project.label === selectedProjectId.value)
-                selectedProjectId.value = existingProject?.label ?? catalog[0]?.label ?? ''
-            })
-            .catch((error) => {
-                websocketError.value = error.message
-            })
-            .finally(() => {
-                catalogLoading.value = false
-            })
+        try {
+            const catalog = await sendWebSocketRequest<ProjectUsageCatalogItem[]>({ type: 'project' })
+            const existingProject = catalog.find(project => project.label === selectedProjectId.value)
+
+            projectCatalog.value = catalog
+            selectedProjectId.value = existingProject?.label ?? catalog[0]?.label ?? ''
+        }
+        catch (error) {
+            websocketError.value = error instanceof Error ? error.message : 'Failed to load project catalog.'
+        }
+        finally {
+            catalogLoading.value = false
+        }
     }
 
     async function loadProjectModules(projectId: string) {
@@ -433,11 +462,9 @@ export function useProjectDashboard() {
     }
 
     function resetProjectModules() {
-        metaModule.value = null
-        dailyTrendModule.value = null
-        modelUsageModule.value = null
-        tokenUsageModule.value = null
-        sessionListModule.value = null
+        for (const module of projectModuleLoadOrder) {
+            projectModules[module].value = null
+        }
 
         for (const module of projectModuleLoadOrder) {
             loadingModules[module] = false
@@ -445,69 +472,29 @@ export function useProjectDashboard() {
     }
 
     function setProjectModulesData(response: ProjectUsageDataModulesResponse) {
-        if (response.modules.meta) {
-            metaModule.value = response.modules.meta
-        }
-
-        if (response.modules.daily_trend) {
-            dailyTrendModule.value = response.modules.daily_trend
-        }
-
-        if (response.modules.model_usage) {
-            modelUsageModule.value = response.modules.model_usage
-        }
-
-        if (response.modules.token_usage) {
-            tokenUsageModule.value = response.modules.token_usage
-        }
-
-        if (response.modules.session_list) {
-            sessionListModule.value = response.modules.session_list
+        for (const module of projectModuleLoadOrder) {
+            const payload = response.modules[module]
+            if (payload) {
+                projectModules[module].value = payload as ProjectModuleStateMap[typeof module]['value']
+            }
         }
     }
 
     function isModuleLoaded(module: ProjectUsageDataModule) {
-        if (module === 'meta') {
-            return metaModule.value !== null
-        }
-
-        if (module === 'daily_trend') {
-            return dailyTrendModule.value !== null
-        }
-
-        if (module === 'model_usage') {
-            return modelUsageModule.value !== null
-        }
-
-        if (module === 'token_usage') {
-            return tokenUsageModule.value !== null
-        }
-
-        if (module === 'session_list') {
-            return sessionListModule.value !== null
-        }
-
-        return false
+        return module in projectModules
+            ? projectModules[module as keyof ProjectModuleStateMap].value !== null
+            : false
     }
 
-    function getDailyTrendPayload(platform: ProjectDashboardScope) {
-        return dailyTrendModule.value?.[platform] ?? emptyDailyTrendPayload
-    }
-
-    function getModelUsagePayload(platform: ProjectDashboardScope) {
-        return modelUsageModule.value?.[platform] ?? emptyModelUsagePayload
-    }
-
-    function getTokenUsagePayload(platform: ProjectDashboardScope) {
-        return tokenUsageModule.value?.[platform] ?? emptyTokenUsagePayload
-    }
-
-    function getSessionPayload(platform: ProjectDashboardScope) {
-        return sessionListModule.value?.[platform] ?? emptySessionListPayload
+    function getPlatformModulePayload<TModule extends keyof ProjectPlatformModulePayloadMap>(
+        module: TModule,
+        platform: ProjectDashboardScope,
+    ) {
+        return projectModules[module].value?.[platform] ?? platformModuleDefaults[module]
     }
 
     function getDailySeriesPoints(platform: ProjectDashboardPlatformKey, labels: string[]) {
-        const usageByDate = new Map(getDailyTrendPayload(platform).dailyTokenUsage.map(item => [item.date, item.totalTokens]))
+        const usageByDate = new Map(getPlatformModulePayload('daily_trend', platform).dailyTokenUsage.map(item => [item.date, item.totalTokens]))
 
         return labels.map(label => usageByDate.get(label) ?? 0)
     }
@@ -519,7 +506,6 @@ export function useProjectDashboard() {
         allModelChart,
         allOverviewCards,
         allSessionRows,
-        catalogLoading,
         dailySeries,
         dailyTooltipLabels,
         dailyTrendLabels,
@@ -527,8 +513,6 @@ export function useProjectDashboard() {
         isProjectModuleLoading,
         isProjectSelectDisabled,
         isScopeReady,
-        loadingModules,
-        metaModule,
         platformTabs,
         platformViews,
         projects,

@@ -32,7 +32,7 @@ defineOptions({
     name: 'DashboardTokenConsumptionDashboard',
 })
 
-const props = defineProps<{
+defineProps<{
     dailyRows: UsageAnalyticsTokenUsageRow[]
     dailyTokenUsage: DailyTokenUsage[]
     monthlyModelUsage: MonthlyModelUsage[]

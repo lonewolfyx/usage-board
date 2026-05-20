@@ -34,13 +34,16 @@ function isNodeListener(value: unknown): value is NodeListener {
 
 async function loadNitroEntrypoint(outputDir: string): Promise<LoadedNitroEntrypoint> {
     const entryPath = resolve(outputDir, 'server/index.mjs')
-
-    const mod = await import(pathToFileURL(entryPath).href)
+    const mod = await import(pathToFileURL(entryPath).href) as NitroEntrypoint
     const listener
         = mod.listener
             ?? mod.middleware
             ?? mod.handler
             ?? mod.default
+
+    if (!isNodeListener(listener)) {
+        throw new TypeError(`Invalid Nitro listener exported from ${entryPath}`)
+    }
 
     return {
         listener,

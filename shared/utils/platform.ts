@@ -146,7 +146,7 @@ export function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
  * const chartRows = buildDailyTokenUsage(dailyGroups)
  * ```
  */
-export function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryGroup>): DailyTokenUsage[] {
+function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryGroup>): DailyTokenUsage[] {
     return Array.from(dailyGroups.values())
         .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
         .map(group => ({
@@ -176,7 +176,7 @@ export function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryG
  * const rows = buildDailyRows(dailyGroups)
  * ```
  */
-export function buildDailyRows(dailyGroups: Map<string, DailyUsageSummaryGroup>): TokenUsageRow[] {
+function buildDailyRows(dailyGroups: Map<string, DailyUsageSummaryGroup>): TokenUsageRow[] {
     return Array.from(dailyGroups.values())
         .sort((a, b) => b.dateKey.localeCompare(a.dateKey))
         .map(group => ({
@@ -383,7 +383,7 @@ function getSessionSortTimestamp(session: SessionUsageSummaryLike) {
  * })
  * ```
  */
-export function buildOverviewCards(options: {
+function buildOverviewCards(options: {
     previousDayCost: number
     previousDayTokens: number
     todayTopModel: UsageTopModel | null
@@ -556,7 +556,7 @@ export function getTopModelForDate<TEvent extends UsageAggregateEvent>(
  * const group = createAggregateGroup('Apr 16, 2026')
  * ```
  */
-export function createAggregateGroup(label: string): SessionAggregateGroup {
+function createAggregateGroup(label: string): SessionAggregateGroup {
     return {
         cachedInputTokens: 0,
         costUSD: 0,
@@ -1109,7 +1109,7 @@ export function getRepositoryNameFromProjectRoot(projectRoot: string) {
  * getOriginUrlFromGitConfig('[remote "origin"]\n    url = git@github.com:lonewolfyx/usage-board.git')
  * ```
  */
-export function getOriginUrlFromGitConfig(config: string) {
+function getOriginUrlFromGitConfig(config: string) {
     let isOriginBlock = false
 
     for (const rawLine of config.split('\n')) {

@@ -1,10 +1,8 @@
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { resolveConfig } from '#shared/utils/configs'
 import { getClaudeCodePaths } from '#shared/utils/paths'
 import { afterEach, describe, expect, it } from 'vitest'
-import { version } from '../package.json' with { type: 'josn' }
 
 const originalClaudeConfigDir = process.env.CLAUDE_CONFIG_DIR
 const tempDirs: string[] = []
@@ -20,11 +18,6 @@ afterEach(() => {
     for (const dir of tempDirs.splice(0)) {
         rmSync(dir, { force: true, recursive: true })
     }
-})
-
-const config = resolveConfig({
-    appVersion: version,
-    home: homedir(),
 })
 
 describe('paths', () => {

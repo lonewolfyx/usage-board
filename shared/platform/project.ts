@@ -73,7 +73,7 @@ import { glob } from 'glob'
 
 const EMPTY_USAGE_ROOT = '/__usage-board-empty__'
 
-export const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
+const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
 
 const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'meta' satisfies ProjectUsageDataModule
 
@@ -271,7 +271,7 @@ export async function loadProjectUsageDataModule(
     }
 }
 
-export function buildProjectUsageCatalogItems(
+function buildProjectUsageCatalogItems(
     projects: LoadProjectsUsageResult,
     config: IConfig,
 ): ProjectUsageCatalogItem[] {
@@ -293,22 +293,6 @@ export function buildProjectUsageCatalogItems(
             }
         })
         .filter((item): item is ProjectUsageCatalogItem => item !== null)
-}
-
-export function buildProjectUsageDetailIndex(projects: LoadProjectsUsageResult) {
-    const details = new Map<string, ProjectUsageDetail>()
-
-    for (const project of projects) {
-        const [label, detail] = Object.entries(project)[0] ?? []
-
-        if (!label || !detail) {
-            continue
-        }
-
-        details.set(label, detail)
-    }
-
-    return details
 }
 
 export function buildProjectUsageDataModuleFromDetail(
@@ -390,27 +374,6 @@ export function buildProjectUsageDetailFromPlatformSessions(
         models: collectSessionModels(sessions),
         sessionCound: sessions.length,
     }
-}
-
-export function buildProjectUsageDetailIndexFromPlatformSessions(
-    platformSessions: Record<ProjectUsagePlatform, ProjectSessionUsageItem[]>,
-) {
-    const projectNames = uniqueItems([
-        ...platformSessions.claudeCode.map(session => session.project),
-        ...platformSessions.codex.map(session => session.project),
-        ...platformSessions.gemini.map(session => session.project),
-    ]).sort((a, b) => a.localeCompare(b))
-    const details = new Map<string, ProjectUsageDetail>()
-
-    for (const projectName of projectNames) {
-        details.set(projectName, buildProjectUsageDetailFromPlatformSessions(projectName, {
-            claudeCode: platformSessions.claudeCode.filter(session => session.project === projectName),
-            codex: platformSessions.codex.filter(session => session.project === projectName),
-            gemini: platformSessions.gemini.filter(session => session.project === projectName),
-        }))
-    }
-
-    return details
 }
 
 export function buildProjectUsageCatalogItemsFromDetails(
@@ -514,36 +477,31 @@ function buildLoadUsageModulePayload(
     usage: LoadUsageResult,
     module: Exclude<ProjectUsageDataModule, 'meta' | 'session_interactions' | 'session_list'>,
 ) {
-    if (module === 'overview_cards') {
-        return {
+    const modulePayloadBuilders = {
+        daily_trend: () => ({
+            dailyRows: usage.dailyRows,
+            dailyTokenUsage: usage.dailyTokenUsage,
+        }),
+        model_usage: () => ({
+            dailyTokenUsage: usage.dailyTokenUsage,
+            monthlyModelUsage: usage.monthlyModelUsage,
+        }),
+        overview_cards: () => ({
             overviewCards: usage.overviewCards,
             todayTopModel: usage.todayTopModel,
             todayTopProject: usage.todayTopProject,
             todayTotalCost: usage.todayTotalCost,
             todayTotalTokens: usage.todayTotalTokens,
-        }
-    }
-
-    if (module === 'daily_trend') {
-        return {
+        }),
+        token_usage: () => ({
             dailyRows: usage.dailyRows,
-            dailyTokenUsage: usage.dailyTokenUsage,
-        }
-    }
+            monthlyRows: usage.monthlyRows,
+            sessionRows: usage.sessionRows,
+            weeklyRows: usage.weeklyRows,
+        }),
+    } satisfies Record<typeof module, () => unknown>
 
-    if (module === 'model_usage') {
-        return {
-            dailyTokenUsage: usage.dailyTokenUsage,
-            monthlyModelUsage: usage.monthlyModelUsage,
-        }
-    }
-
-    return {
-        dailyRows: usage.dailyRows,
-        monthlyRows: usage.monthlyRows,
-        sessionRows: usage.sessionRows,
-        weeklyRows: usage.weeklyRows,
-    }
+    return modulePayloadBuilders[module]()
 }
 
 function buildProjectSessionInteractionsModule(
@@ -1297,16 +1255,6 @@ function createSessionFromDetail(detail: ProjectSessionDetail): ProjectSessionUs
 
 function getValidTimestamp(value: string) {
     return Number.isFinite(Date.parse(value)) ? value : null
-}
-
-function getSessionDateLabel(startedAt: string) {
-    const date = new Date(startedAt)
-
-    if (!Number.isFinite(date.getTime())) {
-        return ''
-    }
-
-    return formatDateLabelFromDateKey(getDateKey(date))
 }
 
 async function globClaudeUsageFiles(config: IConfig) {

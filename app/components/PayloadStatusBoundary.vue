@@ -71,14 +71,6 @@ const hasPayload = computed(() => payload.value !== null)
 const shouldShowError = computed(() => requiresPayload.value && status.value === 'error' && !hasPayload.value)
 const shouldShowLoading = computed(() => requiresPayload.value && !hasPayload.value && !shouldShowError.value)
 
-const loadingText = computed(() => {
-    if (status.value === 'idle') {
-        return 'Preparing to load data'
-    }
-
-    return 'Loading data'
-})
-
 const errorText = computed(() => {
     const value = error.value
 

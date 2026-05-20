@@ -100,38 +100,12 @@ export function buildProjectOverviewCards(sessions: ProjectSessionListItem[]): U
             trendTone: 'neutral',
             value: formatCompactNumber(summary.totalTokens),
         },
-        {
-            detail: `${formatCurrency(summary.costUSD)} total project spend`,
-            icon: 'lucide:wallet',
-            name: 'Total Spend',
-            trend: 'all time',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.costUSD),
-        },
-        {
-            detail: `${formatNumber(summary.sessions)} sessions across all tools`,
-            icon: 'lucide:messages-square',
-            name: 'Sessions',
-            trend: 'all tools',
-            trendTone: 'neutral',
-            value: String(summary.sessions),
-        },
-        {
-            detail: `${formatNumber(summary.cachedInputTokens)} of ${formatNumber(summary.inputTokens)} input tokens were served from cache`,
-            icon: 'lucide:database-zap',
-            name: 'Cache Hit Rate',
-            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
-            trendTone: 'neutral',
-            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
-        },
-        {
-            detail: `${formatCurrency(summary.costUSD)} across ${formatNumber(summary.sessions)} sessions`,
-            icon: 'lucide:circle-dollar-sign',
-            name: 'Avg Session Cost',
-            trend: 'per session',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
-        },
+        ...buildProjectSummaryCards(summary, {
+            sessionDetail: `${formatNumber(summary.sessions)} sessions across all tools`,
+            sessionIcon: 'lucide:messages-square',
+            sessionTrend: 'all tools',
+            totalSpendIcon: 'lucide:wallet',
+        }),
     ]
 }
 
@@ -140,11 +114,12 @@ export function buildProjectPlatformOverviewCards(
     dailyItems: DailyTokenUsage[],
 ): UsageOverviewCard[] {
     const summary = summarizeProjectUsage(sessions)
+    const sessionCountByDate = buildSessionCountByDate(sessions)
     const [todayLabel = '', yesterdayLabel = ''] = buildRecentDateLabels(2).slice().reverse()
     const todayUsage = dailyItems.find(item => item.date === todayLabel)
     const yesterdayUsage = dailyItems.find(item => item.date === yesterdayLabel)
-    const todaySessions = countSessionsByDate(sessions, todayLabel)
-    const yesterdaySessions = countSessionsByDate(sessions, yesterdayLabel)
+    const todaySessions = sessionCountByDate.get(todayLabel) ?? 0
+    const yesterdaySessions = sessionCountByDate.get(yesterdayLabel) ?? 0
     const tokenTrend = buildGrowthTrend(todayUsage?.totalTokens ?? 0, yesterdayUsage?.totalTokens ?? 0, formatCompactNumber)
     const costTrend = buildGrowthTrend(todayUsage?.costUSD ?? 0, yesterdayUsage?.costUSD ?? 0, formatCurrency)
     const sessionTrend = buildPercentTrend(todaySessions, yesterdaySessions)
@@ -174,44 +149,19 @@ export function buildProjectPlatformOverviewCards(
             trendTone: sessionTrend.tone,
             value: String(todaySessions),
         },
-        {
-            detail: `${formatCurrency(summary.costUSD)} total project spend`,
-            icon: 'lucide:receipt-text',
-            name: 'Total Spend',
-            trend: 'all time',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.costUSD),
-        },
-        {
-            detail: `${formatNumber(summary.sessions)} total sessions for this platform`,
-            icon: 'lucide:list-checks',
-            name: 'Sessions',
-            trend: 'project total',
-            trendTone: 'neutral',
-            value: String(summary.sessions),
-        },
-        {
-            detail: `${formatNumber(summary.cachedInputTokens)} of ${formatNumber(summary.inputTokens)} input tokens were served from cache`,
-            icon: 'lucide:database-zap',
-            name: 'Cache Hit Rate',
-            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
-            trendTone: 'neutral',
-            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
-        },
-        {
-            detail: `${formatCurrency(summary.costUSD)} across ${formatNumber(summary.sessions)} sessions`,
-            icon: 'lucide:circle-dollar-sign',
-            name: 'Avg Session Cost',
-            trend: 'per session',
-            trendTone: 'neutral',
-            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
-        },
+        ...buildProjectSummaryCards(summary, {
+            sessionDetail: `${formatNumber(summary.sessions)} total sessions for this platform`,
+            sessionIcon: 'lucide:list-checks',
+            sessionTrend: 'project total',
+            totalSpendIcon: 'lucide:receipt-text',
+        }),
     ]
 }
 
 export function buildProjectDailyModelUsageChart(items: DailyTokenUsage[], labels: string[]) {
     const labelSet = new Set(labels)
     const visibleItems = items.filter(item => labelSet.has(item.date))
+    const usageByDate = new Map(visibleItems.map(item => [item.date, item.models]))
     const models = uniqueItems(visibleItems.flatMap(item => Object.keys(item.models)))
         .map(model => ({
             model,
@@ -222,7 +172,7 @@ export function buildProjectDailyModelUsageChart(items: DailyTokenUsage[], label
     const series = models.map((model, index): ProjectLineSeries => ({
         color: modelSeriesColors[index % modelSeriesColors.length]!,
         label: model,
-        points: labels.map(label => items.find(item => item.date === label)?.models[model]?.totalTokens ?? 0),
+        points: labels.map(label => usageByDate.get(label)?.[model]?.totalTokens ?? 0),
     }))
 
     return { labels, series }
@@ -275,7 +225,7 @@ export function toProjectSessionTableRows(
     return sessions.map(session => toProjectSessionTableRow(session, platform))
 }
 
-export function summarizeProjectUsage(sessions: ProjectSessionListItem[]): ProjectUsageSummary {
+function summarizeProjectUsage(sessions: ProjectSessionListItem[]): ProjectUsageSummary {
     return sessions.reduce((summary, session) => ({
         cachedInputTokens: summary.cachedInputTokens + session.cachedInputTokens,
         costUSD: summary.costUSD + session.costUSD,
@@ -295,6 +245,51 @@ export function summarizeProjectUsage(sessions: ProjectSessionListItem[]): Proje
     })
 }
 
+function buildProjectSummaryCards(
+    summary: ProjectUsageSummary,
+    options: {
+        sessionDetail: string
+        sessionIcon: string
+        sessionTrend: string
+        totalSpendIcon: string
+    },
+): UsageOverviewCard[] {
+    return [
+        {
+            detail: `${formatCurrency(summary.costUSD)} total project spend`,
+            icon: options.totalSpendIcon,
+            name: 'Total Spend',
+            trend: 'all time',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.costUSD),
+        },
+        {
+            detail: options.sessionDetail,
+            icon: options.sessionIcon,
+            name: 'Sessions',
+            trend: options.sessionTrend,
+            trendTone: 'neutral',
+            value: String(summary.sessions),
+        },
+        {
+            detail: `${formatNumber(summary.cachedInputTokens)} of ${formatNumber(summary.inputTokens)} input tokens were served from cache`,
+            icon: 'lucide:database-zap',
+            name: 'Cache Hit Rate',
+            trend: `${formatCompactNumber(summary.cachedInputTokens)} cached`,
+            trendTone: 'neutral',
+            value: formatPercent(summary.inputTokens > 0 ? summary.cachedInputTokens / summary.inputTokens : 0),
+        },
+        {
+            detail: `${formatCurrency(summary.costUSD)} across ${formatNumber(summary.sessions)} sessions`,
+            icon: 'lucide:circle-dollar-sign',
+            name: 'Avg Session Cost',
+            trend: 'per session',
+            trendTone: 'neutral',
+            value: formatCurrency(summary.sessions > 0 ? summary.costUSD / summary.sessions : 0),
+        },
+    ]
+}
+
 export function summarizeProjectSessions(sessions: ProjectSessionListItem[]): ProjectSessionSummary {
     return sessions.reduce((summary, session) => ({
         costUSD: summary.costUSD + session.costUSD,
@@ -307,7 +302,7 @@ export function summarizeProjectSessions(sessions: ProjectSessionListItem[]): Pr
     })
 }
 
-export function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
+function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
     return sessions.reduce((counts, session) => {
         const dateLabel = getProjectSessionDateLabel(session.startedAt)
 
@@ -321,7 +316,7 @@ export function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
     }, new Map<string, number>())
 }
 
-export function getProjectSessionDateLabel(value: string) {
+function getProjectSessionDateLabel(value: string) {
     if (!value) {
         return ''
     }
@@ -335,7 +330,7 @@ export function getProjectSessionDateLabel(value: string) {
     return formatDateLabelFromDateKey(getDateKey(date))
 }
 
-export function formatSafeProjectDate(value: string) {
+function formatSafeProjectDate(value: string) {
     if (!value) {
         return '-'
     }
@@ -347,8 +342,4 @@ export function formatSafeProjectDate(value: string) {
     }
 
     return formatDate(date)
-}
-
-function countSessionsByDate(sessions: ProjectSessionListItem[], dateLabel: string) {
-    return sessions.filter(session => getProjectSessionDateLabel(session.startedAt) === dateLabel).length
 }
