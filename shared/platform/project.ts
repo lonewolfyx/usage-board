@@ -73,7 +73,7 @@ import { glob } from 'glob'
 
 const EMPTY_USAGE_ROOT = '/__usage-board-empty__'
 
-const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
+export const PROJECT_USAGE_PLATFORMS = ['claudeCode', 'codex', 'gemini'] satisfies ProjectUsagePlatform[]
 
 const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'meta' satisfies ProjectUsageDataModule
 
@@ -180,24 +180,7 @@ export async function loadProjectsUsage(config: IConfig): Promise<LoadProjectsUs
 export async function loadProjectUsageCatalog(config: IConfig): Promise<ProjectUsageCatalogItem[]> {
     const projects = await loadProjectsUsage(config)
 
-    return projects
-        .map((project) => {
-            const [label, detail] = Object.entries(project)[0] ?? []
-
-            if (!label || !detail) {
-                return null
-            }
-
-            const platforms = getProjectDetailPlatforms(detail)
-
-            return {
-                label,
-                path: uniqueItems(platforms.flatMap(platform => getPlatformUsageRoots(config, platform)))
-                    .map(toHomeRelativePath),
-                type: getProjectCatalogType(platforms),
-            }
-        })
-        .filter((item): item is ProjectUsageCatalogItem => item !== null)
+    return buildProjectUsageCatalogItems(projects, config)
 }
 
 /**
@@ -286,6 +269,166 @@ export async function loadProjectUsageDataModule(
             buildProjectUsageDataModule(detail, module, options),
         ])),
     }
+}
+
+export function buildProjectUsageCatalogItems(
+    projects: LoadProjectsUsageResult,
+    config: IConfig,
+): ProjectUsageCatalogItem[] {
+    return projects
+        .map((project) => {
+            const [label, detail] = Object.entries(project)[0] ?? []
+
+            if (!label || !detail) {
+                return null
+            }
+
+            const platforms = getProjectDetailPlatforms(detail)
+
+            return {
+                label,
+                path: uniqueItems(platforms.flatMap(platform => getPlatformUsageRoots(config, platform)))
+                    .map(toHomeRelativePath),
+                type: getProjectCatalogType(platforms),
+            }
+        })
+        .filter((item): item is ProjectUsageCatalogItem => item !== null)
+}
+
+export function buildProjectUsageDetailIndex(projects: LoadProjectsUsageResult) {
+    const details = new Map<string, ProjectUsageDetail>()
+
+    for (const project of projects) {
+        const [label, detail] = Object.entries(project)[0] ?? []
+
+        if (!label || !detail) {
+            continue
+        }
+
+        details.set(label, detail)
+    }
+
+    return details
+}
+
+export function buildProjectUsageDataModuleFromDetail(
+    detail: ProjectUsageDetail,
+    options: {
+        module?: ProjectUsageDataModule
+        modules?: ProjectUsageDataModule[]
+        platform?: ProjectUsageDataPlatformScope
+        sessionId?: string
+    },
+): ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse {
+    const modules = uniqueItems(options.modules?.length
+        ? options.modules
+        : [options.module ?? DEFAULT_PROJECT_USAGE_DATA_MODULE])
+
+    for (const module of modules) {
+        assertProjectUsageDataModule(module)
+    }
+
+    if (options.platform) {
+        assertProjectUsagePlatformScope(options.platform)
+    }
+
+    if (modules.length === 1) {
+        const module = modules[0]!
+        const data = buildProjectUsageDataModule(detail, module, options) as ProjectUsageDataModulePayloadMap[typeof module]
+
+        return {
+            data,
+            label: detail.label,
+            module,
+        } as ProjectUsageDataModuleResponse
+    }
+
+    return {
+        label: detail.label,
+        modules: Object.fromEntries(modules.map(module => [
+            module,
+            buildProjectUsageDataModule(detail, module, options),
+        ])),
+    }
+}
+
+export function buildPlatformLoadUsageResult(
+    sessions: ProjectSessionUsageItem[],
+    platform: ProjectUsagePlatform,
+): LoadUsageResult {
+    return buildProjectLoadUsageResult(sessions, platform)
+}
+
+export function buildProjectUsageDetailFromPlatformSessions(
+    projectName: string,
+    platformSessions: Record<ProjectUsagePlatform, ProjectSessionUsageItem[]>,
+): ProjectUsageDetail {
+    const analyzing: ProjectUsageAnalyzing = {
+        claudeCode: {
+            ...buildProjectLoadUsageResult(platformSessions.claudeCode, 'claudeCode'),
+            sessions: platformSessions.claudeCode,
+        },
+        codex: {
+            ...buildProjectLoadUsageResult(platformSessions.codex, 'codex'),
+            sessions: platformSessions.codex,
+        },
+        gemini: {
+            ...buildProjectLoadUsageResult(platformSessions.gemini, 'gemini'),
+            sessions: platformSessions.gemini,
+        },
+    }
+    const sessions = [
+        ...platformSessions.claudeCode,
+        ...platformSessions.codex,
+        ...platformSessions.gemini,
+    ]
+
+    return {
+        analyzing,
+        createTime: getEarliestStartedAt(sessions),
+        label: projectName,
+        models: collectSessionModels(sessions),
+        sessionCound: sessions.length,
+    }
+}
+
+export function buildProjectUsageDetailIndexFromPlatformSessions(
+    platformSessions: Record<ProjectUsagePlatform, ProjectSessionUsageItem[]>,
+) {
+    const projectNames = uniqueItems([
+        ...platformSessions.claudeCode.map(session => session.project),
+        ...platformSessions.codex.map(session => session.project),
+        ...platformSessions.gemini.map(session => session.project),
+    ]).sort((a, b) => a.localeCompare(b))
+    const details = new Map<string, ProjectUsageDetail>()
+
+    for (const projectName of projectNames) {
+        details.set(projectName, buildProjectUsageDetailFromPlatformSessions(projectName, {
+            claudeCode: platformSessions.claudeCode.filter(session => session.project === projectName),
+            codex: platformSessions.codex.filter(session => session.project === projectName),
+            gemini: platformSessions.gemini.filter(session => session.project === projectName),
+        }))
+    }
+
+    return details
+}
+
+export function buildProjectUsageCatalogItemsFromDetails(
+    details: Iterable<[string, ProjectUsageDetail]>,
+    config: IConfig,
+): ProjectUsageCatalogItem[] {
+    return Array.from(details)
+        .map(([label, detail]) => {
+            const platforms = getProjectDetailPlatforms(detail)
+
+            return {
+                label,
+                path: uniqueItems(platforms.flatMap(platform => getPlatformUsageRoots(config, platform)))
+                    .map(toHomeRelativePath),
+                type: getProjectCatalogType(platforms),
+            }
+        })
+        .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 function buildProjectUsageDataModule(

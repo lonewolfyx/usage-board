@@ -36,7 +36,7 @@
         "lint:fix": "eslint --fix",
         "dev:cli": "tsdown -w",
         "test": "vitest",
-        "prepare": "simple-git-hooks",
+        "prepare": "nuxt prepare && simple-git-hooks",
         "prepublishOnly": "pnpm build"
     },
     "publishConfig": {

@@ -1,5 +1,5 @@
 import type { ProjectUsageDataModule, ProjectUsageDataPlatformScope, ProjectWebSocketRequest } from '#shared/types/ws'
-import { loadProjectUsageCatalog, loadProjectUsageDataModule } from '#shared/platform/project'
+import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveConfig } from '#shared/utils/configs'
 
 export default defineWebSocketHandler({
@@ -12,12 +12,13 @@ export default defineWebSocketHandler({
             const request = parseProjectRequest(message)
             const runtimeConfig = useRuntimeConfig()
             const config = resolveConfig(runtimeConfig.public)
+            const runtime = getUsageDataRuntime(config)
 
             if (request.type === 'project') {
-                sendData(peer, request, await loadProjectUsageCatalog(config))
+                sendData(peer, request, await runtime.getProjectCatalog())
             }
             else if (request.type === 'project_data') {
-                sendData(peer, request, await loadProjectUsageDataModule(config, request))
+                sendData(peer, request, await runtime.getProjectDataModules(request))
             }
         }
         catch (error) {
