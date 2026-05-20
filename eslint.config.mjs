@@ -25,7 +25,6 @@ export default antfu({
         'no-console': 'off',
         'regexp/no-unused-capturing-group': 'off',
         'node/prefer-global/process': 'off',
-        'unused-imports/no-unused-vars': 'off',
         'symbol-description': 'off',
     },
 }).append(withNuxt)

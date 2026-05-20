@@ -1,6 +1,5 @@
 import type {
     ProjectUsageItem,
-    TokenUsageRow,
     TrendTone,
     UsageOverviewCard,
     UsageSessionUsageItem,
@@ -37,14 +36,6 @@ const dateLabelFormatter = new Intl.DateTimeFormat('en-US', {
     year: 'numeric',
 })
 
-const dateTimeLabelFormatter = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-})
-
 export function normalizeNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }
@@ -71,14 +62,6 @@ export function formatPercent(value: number) {
 
 export function formatDate(value: Date | string) {
     return dateLabelFormatter.format(new Date(value))
-}
-
-export function formatDateTime(value: Date | string) {
-    return dateTimeLabelFormatter.format(new Date(value))
-}
-
-export function isSameDay(value: string, dateKey: string) {
-    return value.startsWith(dateKey)
 }
 
 export function buildPercentTrend(currentValue: number, previousValue: number): { label: string, tone: TrendTone } {
@@ -204,43 +187,6 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
             value: formatCurrency(project.costUSD),
         }))
         .sort((a, b) => b.costUSD - a.costUSD)
-}
-
-export function buildSessionDailyRows(sessionUsage: UsageSessionUsageItem[]): TokenUsageRow[] {
-    const groups = new Map<string, TokenUsageRow>()
-
-    for (const session of sessionUsage) {
-        const id = getDateKeyFromLabel(session.date)
-        const group = groups.get(id) ?? {
-            cachedInputTokens: 0,
-            costUSD: 0,
-            id,
-            inputTokens: 0,
-            label: session.date,
-            models: [],
-            outputTokens: 0,
-            period: session.date,
-            projects: [],
-            reasoningOutputTokens: 0,
-            sessionCount: 0,
-            totalTokens: 0,
-        }
-
-        group.cachedInputTokens += session.cachedInputTokens
-        group.costUSD += session.costUSD
-        group.inputTokens += session.inputTokens
-        if (session.model && session.model !== 'unknown') {
-            group.models = uniqueItems([...group.models, session.model])
-        }
-        group.outputTokens += session.outputTokens
-        group.projects = uniqueItems([...group.projects, session.project])
-        group.reasoningOutputTokens += session.reasoningOutputTokens
-        group.sessionCount += 1
-        group.totalTokens += session.tokenTotal
-        groups.set(id, group)
-    }
-
-    return Array.from(groups.values()).sort((a, b) => b.id.localeCompare(a.id))
 }
 
 function formatSignedPercent(value: number) {

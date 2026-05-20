@@ -8,7 +8,7 @@ export interface DashboardProductDefinition {
     slug: string
 }
 
-export const dashboardProducts: DashboardProductDefinition[] = [
+const dashboardProducts: DashboardProductDefinition[] = [
     {
         icon: 'claude_code',
         name: 'Claude Code',

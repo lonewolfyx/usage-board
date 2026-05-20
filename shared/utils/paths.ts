@@ -96,10 +96,6 @@ export function getClaudeCodePaths(): string[] {
     )
 }
 
-export function getClaudeCodePath(): string {
-    return getClaudeCodePaths()[0]!
-}
-
 export function getGeminiPath(): string {
     return resolve(USER_HOME_DIR, '.gemini')
 }
