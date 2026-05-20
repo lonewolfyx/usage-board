@@ -16,7 +16,7 @@ import type {
 import type {
     ProjectUsageCatalogItem,
     ProjectUsageDataModule,
-    ProjectUsageDataModuleResponse,
+    ProjectUsageDataModulesResponse,
     ProjectWebSocketRequest,
     ProjectWebSocketResponse,
 } from '#shared/types/ws'
@@ -102,7 +102,6 @@ export function useProjectDashboard() {
 
     let moduleLoadRunId = 0
     let requestIdCounter = 0
-    let requestChain: Promise<unknown> = Promise.resolve()
     const pendingWebSocketRequests = new Map<string, ProjectPendingWebSocketRequest>()
 
     const wsUrl = computed(() => {
@@ -264,7 +263,7 @@ export function useProjectDashboard() {
         catalogLoading.value = true
         websocketError.value = ''
 
-        return runQueuedRequest<ProjectUsageCatalogItem[]>({ type: 'project' })
+        return sendWebSocketRequest<ProjectUsageCatalogItem[]>({ type: 'project' })
             .then((catalog) => {
                 projectCatalog.value = catalog
                 const existingProject = catalog.find(project => project.label === selectedProjectId.value)
@@ -289,25 +288,13 @@ export function useProjectDashboard() {
         const runId = moduleLoadRunId + 1
         moduleLoadRunId = runId
         resetProjectModules()
-        await loadProjectModulesRecursively(project, projectModuleLoadOrder, 0, runId)
-    }
-
-    async function loadProjectModulesRecursively(
-        project: ProjectSelectItem,
-        modules: readonly ProjectUsageDataModule[],
-        index: number,
-        runId: number,
-    ): Promise<void> {
-        if (index >= modules.length || runId !== moduleLoadRunId) {
-            return
+        for (const module of projectModuleLoadOrder) {
+            loadingModules[module] = true
         }
 
-        const module = modules[index]!
-        loadingModules[module] = true
-
         try {
-            const response = await runQueuedRequest<ProjectUsageDataModuleResponse<typeof module>>({
-                module,
+            const response = await sendWebSocketRequest<ProjectUsageDataModulesResponse>({
+                modules: [...projectModuleLoadOrder],
                 path: project.path,
                 project: project.id,
                 type: 'project_data',
@@ -317,7 +304,7 @@ export function useProjectDashboard() {
                 return
             }
 
-            setProjectModuleData(response)
+            setProjectModulesData(response)
         }
         catch (error) {
             if (runId !== moduleLoadRunId) {
@@ -328,18 +315,11 @@ export function useProjectDashboard() {
         }
         finally {
             if (runId === moduleLoadRunId) {
-                loadingModules[module] = false
+                for (const module of projectModuleLoadOrder) {
+                    loadingModules[module] = false
+                }
             }
         }
-
-        await loadProjectModulesRecursively(project, modules, index + 1, runId)
-    }
-
-    function runQueuedRequest<T>(payload: ProjectWebSocketRequest): Promise<T> {
-        const task = requestChain.then(() => sendWebSocketRequest<T>(payload))
-        requestChain = task.catch(() => undefined)
-
-        return task
     }
 
     function sendWebSocketRequest<T>(payload: ProjectWebSocketRequest): Promise<T> {
@@ -465,29 +445,25 @@ export function useProjectDashboard() {
         }
     }
 
-    function setProjectModuleData(response: ProjectUsageDataModuleResponse) {
-        if (response.module === 'meta') {
-            metaModule.value = response.data
-            return
+    function setProjectModulesData(response: ProjectUsageDataModulesResponse) {
+        if (response.modules.meta) {
+            metaModule.value = response.modules.meta
         }
 
-        if (response.module === 'daily_trend') {
-            dailyTrendModule.value = response.data
-            return
+        if (response.modules.daily_trend) {
+            dailyTrendModule.value = response.modules.daily_trend
         }
 
-        if (response.module === 'model_usage') {
-            modelUsageModule.value = response.data
-            return
+        if (response.modules.model_usage) {
+            modelUsageModule.value = response.modules.model_usage
         }
 
-        if (response.module === 'token_usage') {
-            tokenUsageModule.value = response.data
-            return
+        if (response.modules.token_usage) {
+            tokenUsageModule.value = response.modules.token_usage
         }
 
-        if (response.module === 'session_list') {
-            sessionListModule.value = response.data
+        if (response.modules.session_list) {
+            sessionListModule.value = response.modules.session_list
         }
     }
 
