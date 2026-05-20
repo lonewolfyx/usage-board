@@ -57,7 +57,7 @@ describe('project daily rows', () => {
             })
             const exampleProject = data.find(item => item['example-project'])?.['example-project']
 
-            expect(exampleProject?.analyzing.claudeCode.dailyRows).toHaveLength(0)
+            expect(exampleProject?.analyzing.claudeCode.dailyRows).toHaveLength(1)
             expect(exampleProject?.analyzing.claudeCode.dailyTokenUsage).toHaveLength(1)
             expect(exampleProject?.analyzing.claudeCode.todayTotalCost).toBe(0)
             expect(exampleProject?.analyzing.claudeCode.todayTotalTokens).toBe(0)

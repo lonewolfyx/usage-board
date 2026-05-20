@@ -60,7 +60,7 @@ describe('test gemini', () => {
                 geminiPath,
             })
 
-            expect(data.dailyRows).toHaveLength(0)
+            expect(data.dailyRows).toHaveLength(1)
             expect(data.dailyTokenUsage).toHaveLength(1)
             expect(data.monthlyRows).toHaveLength(1)
             expect(data.sessionUsage).toHaveLength(1)

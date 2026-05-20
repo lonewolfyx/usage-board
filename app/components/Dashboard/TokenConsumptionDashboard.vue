@@ -11,7 +11,7 @@
                 :title="`${productName} Token Heatmap`"
             />
             <UsageAnalyticsTokenUsageTabsPanel
-                :daily-items="sessionDailyRows"
+                :daily-items="dailyRows"
                 :monthly-items="monthlyRows"
                 :product-name="productName"
                 :session-items="sessionRows"
@@ -28,8 +28,6 @@
 </template>
 
 <script setup lang="ts">
-import { buildSessionDailyRows } from '#shared/utils/usage-dashboard'
-
 defineOptions({
     name: 'DashboardTokenConsumptionDashboard',
 })
@@ -46,6 +44,4 @@ const props = defineProps<{
     sessionUsage: UsageAnalyticsSessionUsageItem[]
     weeklyRows: UsageAnalyticsTokenUsageRow[]
 }>()
-
-const sessionDailyRows = computed<UsageAnalyticsTokenUsageRow[]>(() => buildSessionDailyRows(props.sessionUsage))
 </script>

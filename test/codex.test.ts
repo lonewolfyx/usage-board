@@ -83,6 +83,7 @@ describe('test codex', () => {
             expect(data.dailyRows[0]?.totalTokens).toBe(1_050)
             expect(data.sessionUsage[0]?.inputTokens).toBe(800)
             expect(data.sessionUsage[0]?.cachedInputTokens).toBe(200)
+            expect(data.sessionUsage[0]?.tokenTotal).toBe(1_050)
         }
         finally {
             await rm(codexPath, { force: true, recursive: true })
@@ -145,7 +146,7 @@ describe('test codex', () => {
                 codexPath,
             })
 
-            expect(data.dailyRows).toHaveLength(0)
+            expect(data.dailyRows).toHaveLength(1)
             expect(data.dailyTokenUsage).toHaveLength(1)
             expect(data.monthlyRows).toHaveLength(1)
             expect(data.sessionUsage).toHaveLength(1)
