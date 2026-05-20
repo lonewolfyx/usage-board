@@ -1,6 +1,6 @@
 import type { ProjectUsageDataModule, ProjectUsageDataPlatformScope } from '#shared/types/ws'
+import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveConfig } from '#shared/utils/configs'
-import { getUsageDataRuntime } from '../../../services/usage-data-runtime'
 
 export default defineEventHandler(async (event) => {
     const runtimeConfig = useRuntimeConfig()

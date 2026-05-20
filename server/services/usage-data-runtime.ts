@@ -9,6 +9,8 @@ import type {
 import type { FSWatcher } from 'chokidar'
 import { accessSync, constants } from 'node:fs'
 import { join } from 'node:path'
+import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
+import { buildIncrementalUsageIndex } from '#server/services/usage-indexer'
 import {
     buildPlatformLoadUsageResult,
     buildProjectUsageCatalogItemsFromDetails,
@@ -16,8 +18,6 @@ import {
     buildProjectUsageDetailFromPlatformSessions,
 } from '#shared/platform/project'
 import chokidar from 'chokidar'
-import { UsageCacheRepository } from '../repositories/sqlite/usage-cache.repository'
-import { buildIncrementalUsageIndex } from './usage-indexer'
 
 const RUNTIME_STALE_AFTER_MS = 1000 * 60
 const WATCHER_DEBOUNCE_MS = 350

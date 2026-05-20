@@ -1,6 +1,6 @@
+import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
 import type { ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { ProjectUsageCatalogItem } from '#shared/types/ws'
-import type { IndexedUsageSourceFile } from '../../types/usage-indexer'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'

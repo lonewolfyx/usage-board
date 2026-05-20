@@ -1,6 +1,6 @@
 import type { ProjectUsageDataModule, ProjectUsageDataPlatformScope, ProjectWebSocketRequest } from '#shared/types/ws'
+import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveConfig } from '#shared/utils/configs'
-import { getUsageDataRuntime } from '../services/usage-data-runtime'
 
 export default defineWebSocketHandler({
     open(peer) {
