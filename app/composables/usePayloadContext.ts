@@ -2,13 +2,10 @@ import type { TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { DeepReadonly, Ref } from 'vue'
 import { createContext } from 'reka-ui'
 
-type PayloadRequestStatus = 'error' | 'idle' | 'pending' | 'success'
-type PayloadData = DeepReadonly<TokensConsumptionResult> | null
-
 interface PayloadContext {
-    payload: Readonly<Ref<PayloadData>>
+    payload: Readonly<Ref<DeepReadonly<TokensConsumptionResult> | null>>
     requiresPayload: Readonly<Ref<boolean>>
-    status: Readonly<Ref<PayloadRequestStatus>>
+    status: Readonly<Ref<'error' | 'idle' | 'pending' | 'success'>>
     error: Readonly<Ref<unknown>>
     refresh: () => Promise<void>
 }

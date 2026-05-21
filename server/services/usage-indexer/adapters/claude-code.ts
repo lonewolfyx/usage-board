@@ -9,6 +9,11 @@ import {
 } from '#shared/platform/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
+    normalizeFiniteNumberOrNull,
+    normalizeStringValue,
+    normalizeUnknownRecord,
+} from '#shared/utils/normalize'
+import {
     decodeClaudeProjectPath,
     extractClaudeProjectFromPath,
     getClaudeLookupCandidates,
@@ -16,13 +21,11 @@ import {
     parseJsonlFile,
     toIsoString,
 } from '#shared/utils/platform'
+import { normalizeNumber } from '#shared/utils/usage-dashboard'
 import { glob } from 'glob'
 import {
     addFragmentInteraction,
     createSessionFragment,
-    getRecord,
-    getString,
-    normalizeOptionalNumber,
     normalizeRole,
     toDiscoveredUsageFile,
 } from '../session-fragment'
@@ -61,12 +64,12 @@ export const claudeCodeUsageAdapter = {
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
-            const sessionId = getString(line.sessionId) || fallbackSessionId
-            const cwd = getString(line.cwd)
+            const sessionId = normalizeStringValue(line.sessionId) || fallbackSessionId
+            const cwd = normalizeStringValue(line.cwd) ?? ''
             const project = getProjectName(cwd, '') || decodeClaudeProjectPath(projectPath)
             const timestamp = toIsoString(line.timestamp) ?? null
-            const message = getRecord(line.message)
-            const usageRecord = getRecord(message?.usage)
+            const message = normalizeUnknownRecord(line.message)
+            const usageRecord = normalizeUnknownRecord(message?.usage)
             const model = getClaudeDisplayModel(line)
             const usage = usageRecord
                 ? getClaudeInteractionUsage(usageRecord, model, resolvePricing, line)
@@ -88,7 +91,7 @@ export const claudeCodeUsageAdapter = {
                 model: model ?? null,
                 role: getInteractionRole(line, message),
                 timestamp,
-                type: getString(line.type) || getString(message?.type) || 'message',
+                type: normalizeStringValue(line.type) || normalizeStringValue(message?.type) || 'message',
                 usage,
             })
             fragments.set(key, fragment)
@@ -111,7 +114,7 @@ function getClaudeInteractionUsage(
     const cacheReadTokens = normalizeNumber(usage.cache_read_input_tokens)
     const inputTokens = normalizeNumber(usage.input_tokens)
     const outputTokens = normalizeNumber(usage.output_tokens)
-    const costUSD = normalizeOptionalNumber(line.costUSD) ?? (model
+    const costUSD = normalizeFiniteNumberOrNull(line.costUSD) ?? (model
         ? calculateUsageCostUSD({
                 cacheCreationTokens,
                 cachedInputTokens: cacheReadTokens,
@@ -135,9 +138,9 @@ function getClaudeInteractionUsage(
 }
 
 function getClaudeDisplayModel(line: Record<string, unknown>) {
-    const message = getRecord(line.message)
-    const model = getString(message?.model)
-    const usage = getRecord(message?.usage)
+    const message = normalizeUnknownRecord(line.message)
+    const model = normalizeStringValue(message?.model)
+    const usage = normalizeUnknownRecord(message?.usage)
 
     if (!model) {
         return undefined
@@ -147,9 +150,9 @@ function getClaudeDisplayModel(line: Record<string, unknown>) {
 }
 
 function getClaudeUniqueHash(line: Record<string, unknown>) {
-    const message = getRecord(line.message)
-    const messageId = getString(message?.id)
-    const requestId = getString(line.requestId)
+    const message = normalizeUnknownRecord(line.message)
+    const messageId = normalizeStringValue(message?.id)
+    const requestId = normalizeStringValue(line.requestId)
 
     return messageId && requestId ? `${messageId}:${requestId}` : null
 }
@@ -164,17 +167,13 @@ function extractClaudeMessageText(content: unknown) {
     }
 
     return content
-        .map(item => typeof item === 'object' && item ? getString((item as Record<string, unknown>).text) : '')
+        .map(item => typeof item === 'object' && item ? normalizeStringValue((item as Record<string, unknown>).text) ?? '' : '')
         .filter(Boolean)
         .join('\n')
 }
 
 function getInteractionRole(line: Record<string, unknown>, message: Record<string, unknown> | null): ProjectInteractionRole {
-    const role = getString(line.type) || getString(message?.role) || getString(message?.type)
+    const role = normalizeStringValue(line.type) || normalizeStringValue(message?.role) || normalizeStringValue(message?.type) || ''
 
     return normalizeRole(role)
-}
-
-function normalizeNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? value : 0
 }

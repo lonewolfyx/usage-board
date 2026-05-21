@@ -59,18 +59,6 @@ export function getSessionLookupKey(project: string, sessionId: string) {
     return `${project}:${sessionId}`
 }
 
-export function getRecord(value: unknown): Record<string, unknown> | null {
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
-}
-
-export function getString(value: unknown) {
-    return typeof value === 'string' ? value.trim() : ''
-}
-
-export function normalizeOptionalNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? value : null
-}
-
 export function normalizeRole(value: string): ProjectInteractionRole {
     const normalized = value.toLowerCase()
 
@@ -95,8 +83,4 @@ export function normalizeRole(value: string): ProjectInteractionRole {
     }
 
     return 'unknown'
-}
-
-export function getValidTimestamp(value: string) {
-    return Number.isFinite(Date.parse(value)) ? value : null
 }

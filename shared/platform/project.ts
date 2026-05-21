@@ -2,13 +2,12 @@ import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/t
 import type {
     UsageAggregateEvent,
 } from '#shared/types/platform'
-import type { ProjectUsageCatalogType } from '#shared/types/project-dashboard'
+import type { ProjectDashboardScope, ProjectUsageCatalogType } from '#shared/types/project-dashboard'
 import type {
     LoadUsageResult,
     ProjectInteractionUsage,
     ProjectPlatformUsage,
     ProjectSessionUsageItem,
-    ProjectUsageAnalyzing,
     ProjectUsageDetail,
 } from '#shared/types/usage-dashboard'
 import type {
@@ -17,31 +16,20 @@ import type {
     ProjectUsageDataModulePayloadMap,
     ProjectUsageDataModuleResponse,
     ProjectUsageDataModulesResponse,
-    ProjectUsageDataPlatformScope,
 } from '#shared/types/ws'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { buildLoadUsageResult } from '#shared/utils/platform'
 import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'session_list' satisfies ProjectUsageDataModule
-
-const PROJECT_USAGE_DATA_MODULES = [
-    'daily_trend',
-    'model_usage',
-    'session_list',
-    'token_usage',
-] satisfies ProjectUsageDataModule[]
-
-type ProjectLoadUsageResult = Omit<LoadUsageResult, 'sessionUsage'> & {
-    sessionUsage: ProjectSessionUsageItem[]
-}
 
 export function buildProjectUsageDataModuleFromDetail(
     detail: ProjectUsageDetail,
     options: {
         module?: ProjectUsageDataModule
         modules?: ProjectUsageDataModule[]
-        platform?: ProjectUsageDataPlatformScope
+        platform?: ProjectDashboardScope
     },
 ): ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse {
     const modules = uniqueItems(options.modules?.length
@@ -88,7 +76,7 @@ export function buildProjectUsageDetailFromPlatformSessions(
                 sessions: platformSessions[platform],
             },
         ]),
-    ) as ProjectUsageAnalyzing
+    ) as ProjectUsagePlatformRecord<ProjectPlatformUsage>
     const sessions = PROJECT_USAGE_PLATFORMS.flatMap(platform => platformSessions[platform])
 
     return {
@@ -116,7 +104,7 @@ export function buildProjectUsageCatalogItemsFromDetails(
 function buildProjectPlatformModule(
     detail: ProjectUsageDetail,
     module: ProjectUsageDataModule,
-    platform: ProjectUsageDataPlatformScope,
+    platform: ProjectDashboardScope,
 ) {
     if (platform !== 'all') {
         return buildPlatformModulePayload(detail.analyzing[platform], module)
@@ -179,7 +167,7 @@ function buildLoadUsageModulePayload(
 
 function getProjectDetailSessions(
     detail: ProjectUsageDetail,
-    platform: ProjectUsageDataPlatformScope = 'all',
+    platform: ProjectDashboardScope = 'all',
 ) {
     if (platform !== 'all') {
         return detail.analyzing[platform].sessions
@@ -196,7 +184,7 @@ function assertProjectUsageDataModule(module: string): asserts module is Project
     }
 }
 
-function assertProjectUsagePlatformScope(platform: string): asserts platform is ProjectUsageDataPlatformScope {
+function assertProjectUsagePlatformScope(platform: string): asserts platform is ProjectDashboardScope {
     if (platform !== 'all' && !PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform)) {
         throw new Error(`Unsupported project data platform: ${platform}.`)
     }
@@ -238,7 +226,7 @@ function buildProjectPlatformPayloadMap(
 export function buildProjectLoadUsageResult(
     sessions: ProjectSessionUsageItem[],
     platform: ProjectUsagePlatform | 'all' = 'all',
-): ProjectLoadUsageResult {
+): Omit<LoadUsageResult, 'sessionUsage'> & { sessionUsage: ProjectSessionUsageItem[] } {
     const usage = buildLoadUsageResult(getProjectAggregateEvents(sessions), sessions, {
         aggregateOptions: {
             includeModel: event => platform !== 'claudeCode' || event.model !== '<synthetic>',

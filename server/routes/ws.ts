@@ -1,6 +1,11 @@
-import type { ProjectUsageDataModule, ProjectUsageDataPlatformScope, ProjectWebSocketRequest } from '#shared/types/ws'
+import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
+import type { ProjectUsageDataModule, ProjectWebSocketRequest } from '#shared/types/ws'
 import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveConfig } from '#shared/utils/configs'
+import {
+    normalizeStringList,
+    normalizeStringValue,
+} from '#shared/utils/normalize'
 
 export default defineWebSocketHandler({
     open(peer) {
@@ -66,7 +71,7 @@ function parseTextRequest(text: string): unknown {
 
     return {
         module: params.get('module') ?? undefined,
-        modules: params.getAll('modules').flatMap(splitValueList),
+        modules: params.getAll('modules').flatMap(item => normalizeStringList<ProjectUsageDataModule>(item) ?? []),
         platform: params.get('platform') ?? undefined,
         project: params.get('project') ?? undefined,
         requestId: params.get('requestId') ?? undefined,
@@ -84,61 +89,27 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
     }
 
     const record = value as Record<string, unknown>
-    const type = getString(record.type)
+    const type = normalizeStringValue<string>(record.type) ?? ''
 
     if (type === 'project') {
         return {
-            requestId: getString(record.requestId) || undefined,
+            requestId: normalizeStringValue<string>(record.requestId),
             type,
         }
     }
 
     if (type === 'project_data') {
         return {
-            module: normalizeProjectDataModule(record.module),
-            modules: normalizeProjectDataModules(record.modules),
-            platform: normalizePlatform(record.platform),
-            project: getString(record.project) || undefined,
-            requestId: getString(record.requestId) || undefined,
+            module: normalizeStringValue<ProjectUsageDataModule>(record.module),
+            modules: normalizeStringList<ProjectUsageDataModule>(record.modules),
+            platform: normalizeStringValue<ProjectDashboardScope>(record.platform),
+            project: normalizeStringValue<string>(record.project),
+            requestId: normalizeStringValue<string>(record.requestId),
             type,
         }
     }
 
     throw new Error(`Unsupported websocket request type: ${type || 'unknown'}.`)
-}
-
-function normalizeProjectDataModule(value: unknown): ProjectUsageDataModule | undefined {
-    const module = getString(value)
-
-    return module ? module as ProjectUsageDataModule : undefined
-}
-
-function normalizeProjectDataModules(value: unknown): ProjectUsageDataModule[] | undefined {
-    if (Array.isArray(value)) {
-        return value.flatMap(item => typeof item === 'string' ? splitValueList(item) : []) as ProjectUsageDataModule[]
-    }
-
-    if (typeof value === 'string') {
-        return splitValueList(value) as ProjectUsageDataModule[]
-    }
-
-    return undefined
-}
-
-function normalizePlatform(value: unknown): ProjectUsageDataPlatformScope | undefined {
-    const platform = getString(value)
-
-    return platform ? platform as ProjectUsageDataPlatformScope : undefined
-}
-
-function splitValueList(value: string) {
-    return value.split(',')
-        .map(item => item.trim())
-        .filter(Boolean)
-}
-
-function getString(value: unknown) {
-    return typeof value === 'string' ? value.trim() : ''
 }
 
 function sendData(

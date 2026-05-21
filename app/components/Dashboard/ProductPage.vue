@@ -14,14 +14,14 @@
 </template>
 
 <script setup lang="ts">
-import type { PayloadDashboardKey } from '#shared/types/usage-dashboard'
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 
 defineOptions({
     name: 'DashboardProductPage',
 })
 
 const props = defineProps<{
-    productKey: PayloadDashboardKey
+    productKey: ProjectUsagePlatform
     productName: string
 }>()
 

@@ -1,4 +1,4 @@
-import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
 
 export interface ModelTokenUsage {
     inputTokens: number
@@ -127,17 +127,13 @@ export interface ProjectPlatformUsage extends LoadUsageResult {
     sessions: ProjectSessionUsageItem[]
 }
 
-export type ProjectUsageAnalyzing = ProjectUsagePlatformRecord<ProjectPlatformUsage>
-
 export interface ProjectUsageDetail {
     label: string
     models: string[]
     createTime: string | null
     sessionCound: number
-    analyzing: ProjectUsageAnalyzing
+    analyzing: ProjectUsagePlatformRecord<ProjectPlatformUsage>
 }
-
-export type LoadProjectsUsageResult = Array<Record<string, ProjectUsageDetail>>
 
 export interface UsageTopProject {
     project: string
@@ -192,5 +188,3 @@ export interface LoadUsageResult {
 export type TokensConsumptionResult = ProjectUsagePlatformRecord<LoadUsageResult> & {
     version: string
 }
-
-export type PayloadDashboardKey = ProjectUsagePlatform

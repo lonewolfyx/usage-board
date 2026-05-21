@@ -1,5 +1,5 @@
 import type { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
-import type { DiscoveredUsageFile, PricingResolvers } from '#server/services/usage-indexer/platform-adapter'
+import type { DiscoveredUsageFile } from '#server/services/usage-indexer/platform-adapter'
 import type {
     IncrementalUsageIndexResult,
     IndexedUsageInteraction,
@@ -8,10 +8,11 @@ import type {
 } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
+import type { ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
-import { getValidTimestamp } from '#server/services/usage-indexer/session-fragment'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { normalizeTimestampValue } from '#shared/utils/normalize'
 import {
     formatDuration,
     getDurationMinutes,
@@ -120,13 +121,13 @@ export async function buildIncrementalUsageIndex(
     }
 }
 
-async function createPricingResolvers(): Promise<PricingResolvers> {
+async function createPricingResolvers(): Promise<ProjectUsagePlatformRecord<ModelPricingResolver>> {
     const entries = await Promise.all(PROJECT_USAGE_PLATFORMS.map(async platform => [
         platform,
         await usagePlatformAdapters[platform].createPricingResolver(),
     ] as const))
 
-    return Object.fromEntries(entries) as PricingResolvers
+    return Object.fromEntries(entries) as ProjectUsagePlatformRecord<ModelPricingResolver>
 }
 
 async function discoverUsageFiles(config: IConfig) {
@@ -139,7 +140,7 @@ async function discoverUsageFiles(config: IConfig) {
 
 function parseUsageFile(
     file: DiscoveredUsageFile,
-    pricingResolvers: PricingResolvers,
+    pricingResolvers: ProjectUsagePlatformRecord<ModelPricingResolver>,
 ): IndexedUsageSourceFile {
     const adapter = usagePlatformAdapters[file.platform]
     const payload = adapter.parseFile(file.path, pricingResolvers[file.platform])
@@ -281,8 +282,8 @@ function hasBillableSessionDetail(detail: MutableSessionDetail) {
 }
 
 function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSessionUsageItem {
-    const startedAt = getValidTimestamp(detail.startedAt) ?? getValidTimestamp(detail.lastActivity) ?? new Date(0).toISOString()
-    const lastActivity = getValidTimestamp(detail.lastActivity) ?? startedAt
+    const startedAt = normalizeTimestampValue(detail.startedAt) ?? normalizeTimestampValue(detail.lastActivity) ?? new Date(0).toISOString()
+    const lastActivity = normalizeTimestampValue(detail.lastActivity) ?? startedAt
     const startedAtDate = new Date(startedAt)
     const hasValidStartedAtDate = Number.isFinite(startedAtDate.getTime())
     const dateKey = hasValidStartedAtDate ? getDateKey(startedAtDate) : ''

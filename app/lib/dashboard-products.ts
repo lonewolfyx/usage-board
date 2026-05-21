@@ -1,10 +1,10 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type { AiIconName, NavItem } from '#shared/types/navigation'
-import type { PayloadDashboardKey } from '#shared/types/usage-dashboard'
 
 export interface DashboardProductDefinition {
     icon: AiIconName
     name: string
-    payloadKey: PayloadDashboardKey
+    payloadKey: ProjectUsagePlatform
     slug: string
 }
 

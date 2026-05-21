@@ -1,4 +1,5 @@
-import type { LoadUsageResult, PayloadDashboardKey } from '#shared/types/usage-dashboard'
+import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type { LoadUsageResult } from '#shared/types/usage-dashboard'
 import { computed } from 'vue'
 import { usePayloadContext } from '~/composables/usePayloadContext'
 
@@ -18,7 +19,7 @@ const emptyDashboard: LoadUsageResult = {
     weeklyRows: [],
 }
 
-export function usePayloadDashboard(key: PayloadDashboardKey) {
+export function usePayloadDashboard(key: ProjectUsagePlatform) {
     const { payload } = usePayloadContext()
 
     const dashboard = computed<LoadUsageResult>(() => {

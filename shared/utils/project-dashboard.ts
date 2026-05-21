@@ -1,5 +1,5 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
-    ProjectDashboardPlatformKey,
     ProjectDashboardPlatformMeta,
     ProjectDashboardPlatformTab,
     ProjectDashboardTab,
@@ -43,7 +43,7 @@ const projectPlatformMetaMap = {
         color: '#0ea5e9',
         label: 'Gemini',
     },
-} satisfies Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformMeta>
+} satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
 
 export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
     ...projectPlatformMetaMap[value],
@@ -52,14 +52,14 @@ export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
 
 const projectPlatformTabMap = Object.fromEntries(
     projectPlatformTabs.map(tab => [tab.value, tab]),
-) as Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformTab>
+) as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>
 
 export const projectDashboardTabs = [
     { label: 'All', value: 'all' },
     ...projectPlatformTabs,
 ] satisfies ProjectDashboardTab[]
 
-export function getProjectPlatform(platform: ProjectDashboardPlatformKey): ProjectDashboardPlatformTab {
+export function getProjectPlatform(platform: ProjectUsagePlatform): ProjectDashboardPlatformTab {
     return projectPlatformTabMap[platform]
 }
 
@@ -199,7 +199,7 @@ export function toProjectDisplayDailyUsageRows(
 
 export function toProjectSessionTableRow(
     session: ProjectSessionListItem,
-    platform: ProjectDashboardPlatformKey,
+    platform: ProjectUsagePlatform,
 ): ProjectSessionTableRow {
     return {
         cacheTokens: formatNumber(session.cachedInputTokens),
@@ -220,7 +220,7 @@ export function toProjectSessionTableRow(
 
 export function toProjectSessionTableRows(
     sessions: ProjectSessionListItem[],
-    platform: ProjectDashboardPlatformKey,
+    platform: ProjectUsagePlatform,
 ): ProjectSessionTableRow[] {
     return sessions.map(session => toProjectSessionTableRow(session, platform))
 }

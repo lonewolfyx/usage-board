@@ -7,6 +7,7 @@ import {
     CODEX_MODEL_ALIASES,
 } from '#shared/platform/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { normalizeStringValue } from '#shared/utils/normalize'
 import {
     convertCodexRawUsage,
     extractModelName,
@@ -23,7 +24,6 @@ import { glob } from 'glob'
 import {
     addFragmentInteraction,
     createSessionFragment,
-    getString,
     normalizeRole,
     toDiscoveredUsageFile,
 } from '../session-fragment'
@@ -53,9 +53,9 @@ export const codexUsageAdapter = {
     parseFile(filePath, resolvePricing) {
         const lines = parseJsonlFile<SessionLogLine>(filePath)
         const sessionMeta = lines.find(line => line.type === 'session_meta')?.payload
-        const sessionId = getSessionId(filePath, getString(sessionMeta?.id))
+        const sessionId = getSessionId(filePath, normalizeStringValue(sessionMeta?.id))
         const startedAt = toIsoString(sessionMeta?.timestamp) ?? toIsoString(lines[0]?.timestamp)
-        const project = getProjectName(getString(sessionMeta?.cwd))
+        const project = getProjectName(normalizeStringValue(sessionMeta?.cwd) ?? '')
         const repository = normalizeRepositoryUrl(sessionMeta?.git?.repository_url) || `local/${project}`
         const fragment = createSessionFragment({
             project,
@@ -173,7 +173,7 @@ function extractCodexContent(line: SessionLogLine) {
         return message
     }
 
-    return getString(payload.text) || getString(payload.output) || getString(payload.content)
+    return normalizeStringValue(payload.text) || normalizeStringValue(payload.output) || normalizeStringValue(payload.content) || ''
 }
 
 function getCodexRole(line: SessionLogLine) {

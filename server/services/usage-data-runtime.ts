@@ -25,9 +25,6 @@ import chokidar from 'chokidar'
 const RUNTIME_STALE_AFTER_MS = 1000 * 60
 const WATCHER_DEBOUNCE_MS = 350
 
-type ProjectDataRequest = Extract<ProjectWebSocketRequest, { type: 'project_data' }>
-type PlatformSessionIndex = ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
     hydratedAt: number
@@ -96,7 +93,7 @@ class UsageDataRuntime {
     }
 
     async getProjectDataModules(
-        request: Pick<ProjectDataRequest, 'module' | 'modules' | 'platform' | 'project'>,
+        request: Pick<Extract<ProjectWebSocketRequest, { type: 'project_data' }>, 'module' | 'modules' | 'platform' | 'project'>,
     ): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
         await this.initialize()
         const projectLabel = (request.project || '').trim()
@@ -299,7 +296,7 @@ function patchProjectDetails(
     currentDetails: Map<string, ProjectUsageDetail>,
     removedProjects: string[],
     affectedProjects: string[],
-    platformSessions: PlatformSessionIndex,
+    platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
 ) {
     const details = new Map(currentDetails)
 
@@ -322,7 +319,7 @@ function patchProjectDetails(
 }
 
 function buildAllProjectDetails(
-    platformSessions: PlatformSessionIndex,
+    platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
 ) {
     const projectNames = new Set(PROJECT_USAGE_PLATFORMS.flatMap(platform => platformSessions[platform].map(session => session.project)))
     const details = new Map<string, ProjectUsageDetail>()
@@ -339,13 +336,13 @@ function buildAllProjectDetails(
 }
 
 function getProjectPlatformSessions(
-    platformSessions: PlatformSessionIndex,
+    platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
     projectName: string,
-): PlatformSessionIndex {
+): ProjectUsagePlatformRecord<ProjectSessionUsageItem[]> {
     return Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [
             platform,
             platformSessions[platform].filter(session => session.project === projectName),
         ]),
-    ) as PlatformSessionIndex
+    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
 }
