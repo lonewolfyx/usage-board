@@ -4,101 +4,116 @@
         icon="lucide:file-json-2"
         :title="`${productName} Session Statistics`"
     >
-        <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Sessions
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ items.length }}
-                </p>
-            </div>
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Tokens
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ formatCompactNumber(totalTokens) }}
-                </p>
-            </div>
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Spend
-                </p>
-                <p class="mt-1 text-lg font-semibold tabular-nums">
-                    {{ formatCurrency(totalCost) }}
-                </p>
-            </div>
-        </div>
+        <p v-if="errorMessage" class="text-xs text-destructive">
+            {{ errorMessage }}
+        </p>
 
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Session ID</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Thread</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead class="text-right">
-                        Duration
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Input
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Output
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Total Tokens
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Cost
-                    </TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                <TableRow v-for="session in paginatedItems" :key="session.sessionId">
-                    <TableCell class="max-w-80 truncate font-mono text-xs">
-                        {{ session.sessionId }}
-                    </TableCell>
-                    <TableCell class="font-medium">
-                        {{ session.project }}
-                    </TableCell>
-                    <TableCell class="max-w-64 truncate">
-                        {{ session.threadName }}
-                    </TableCell>
-                    <TableCell>{{ session.model }}</TableCell>
-                    <TableCell class="whitespace-nowrap">
-                        {{ formatDateTime(session.startedAt) }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ session.duration }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ formatNumber(session.inputTokens) }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ formatNumber(session.outputTokens) }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ formatNumber(session.tokenTotal) }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ formatCurrency(session.costUSD) }}
-                    </TableCell>
-                </TableRow>
-                <TableEmpty v-if="items.length === 0" :colspan="10">
-                    No {{ productName }} sessions found.
-                </TableEmpty>
-            </TableBody>
-        </Table>
+        <template v-else-if="loading">
+            <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <Skeleton class="h-20 w-full rounded-md" />
+                <Skeleton class="h-20 w-full rounded-md" />
+                <Skeleton class="h-20 w-full rounded-md" />
+            </div>
+            <Skeleton class="h-72 w-full rounded-md" />
+        </template>
 
-        <UsageAnalyticsPaginationFooter
-            v-model:page="page"
-            :page-count="pageCount"
-            :page-size="pageSize"
-            :total="items.length"
-        />
+        <template v-else>
+            <div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div class="rounded-md border px-3 py-2">
+                    <p class="text-xs text-muted-foreground">
+                        Sessions
+                    </p>
+                    <p class="mt-1 text-lg font-semibold tabular-nums">
+                        {{ items.length }}
+                    </p>
+                </div>
+                <div class="rounded-md border px-3 py-2">
+                    <p class="text-xs text-muted-foreground">
+                        Tokens
+                    </p>
+                    <p class="mt-1 text-lg font-semibold tabular-nums">
+                        {{ formatCompactNumber(totalTokens) }}
+                    </p>
+                </div>
+                <div class="rounded-md border px-3 py-2">
+                    <p class="text-xs text-muted-foreground">
+                        Spend
+                    </p>
+                    <p class="mt-1 text-lg font-semibold tabular-nums">
+                        {{ formatCurrency(totalCost) }}
+                    </p>
+                </div>
+            </div>
+
+            <Table>
+                <TableHeader>
+                    <TableRow>
+                        <TableHead>Session ID</TableHead>
+                        <TableHead>Project</TableHead>
+                        <TableHead>Thread</TableHead>
+                        <TableHead>Model</TableHead>
+                        <TableHead>Started</TableHead>
+                        <TableHead class="text-right">
+                            Duration
+                        </TableHead>
+                        <TableHead class="text-right">
+                            Input
+                        </TableHead>
+                        <TableHead class="text-right">
+                            Output
+                        </TableHead>
+                        <TableHead class="text-right">
+                            Total Tokens
+                        </TableHead>
+                        <TableHead class="text-right">
+                            Cost
+                        </TableHead>
+                    </TableRow>
+                </TableHeader>
+                <TableBody>
+                    <TableRow v-for="session in paginatedItems" :key="session.sessionId">
+                        <TableCell class="max-w-80 truncate font-mono text-xs">
+                            {{ session.sessionId }}
+                        </TableCell>
+                        <TableCell class="font-medium">
+                            {{ session.project }}
+                        </TableCell>
+                        <TableCell class="max-w-64 truncate">
+                            {{ session.threadName }}
+                        </TableCell>
+                        <TableCell>{{ session.model }}</TableCell>
+                        <TableCell class="whitespace-nowrap">
+                            {{ formatDateTime(session.startedAt) }}
+                        </TableCell>
+                        <TableCell class="text-right tabular-nums">
+                            {{ session.duration }}
+                        </TableCell>
+                        <TableCell class="text-right tabular-nums">
+                            {{ formatNumber(session.inputTokens) }}
+                        </TableCell>
+                        <TableCell class="text-right tabular-nums">
+                            {{ formatNumber(session.outputTokens) }}
+                        </TableCell>
+                        <TableCell class="text-right tabular-nums">
+                            {{ formatNumber(session.tokenTotal) }}
+                        </TableCell>
+                        <TableCell class="text-right tabular-nums">
+                            {{ formatCurrency(session.costUSD) }}
+                        </TableCell>
+                    </TableRow>
+                    <TableEmpty v-if="items.length === 0" :colspan="10">
+                        No {{ productName }} sessions found.
+                    </TableEmpty>
+                </TableBody>
+            </Table>
+
+            <UsageAnalyticsPaginationFooter
+                v-model:page="page"
+                :page-count="pageCount"
+                :page-size="pageSize"
+                :total="items.length"
+            />
+        </template>
     </StatisticalAnalysisPanel>
 </template>
 
@@ -110,7 +125,9 @@ defineOptions({
 })
 
 const props = withDefaults(defineProps<{
+    errorMessage?: string
     items: UsageAnalyticsSessionUsageItem[]
+    loading?: boolean
     pageSize?: number
     productName?: string
 }>(), {

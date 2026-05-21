@@ -1,4 +1,4 @@
-import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
 import type { ProjectSessionUsageItem, ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type {
@@ -13,6 +13,7 @@ import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
 import { buildIncrementalUsageIndex } from '#server/services/usage-indexer'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
+import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import {
     buildProjectLoadUsageResult,
     buildProjectUsageCatalogItemsFromDetails,
@@ -90,6 +91,12 @@ class UsageDataRuntime {
         }
 
         return this.state.projectCatalog
+    }
+
+    async getAgentDashboard(platform: ProjectUsagePlatform) {
+        const bootstrap = await this.getBootstrap()
+
+        return bootstrap[platform] ?? createEmptyLoadUsageResult()
     }
 
     async getProjectDataModules(

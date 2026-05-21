@@ -4,67 +4,81 @@
         icon="lucide:messages-square"
         title="Session Analysis"
     >
-        <div class="mb-4 grid grid-cols-2 gap-3">
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Total Sessions
-                </p>
-                <p class="mt-1 text-xl font-semibold tabular-nums">
-                    {{ totalSessions }}
-                </p>
-            </div>
-            <div class="rounded-md border px-3 py-2">
-                <p class="text-xs text-muted-foreground">
-                    Top Session Avg
-                </p>
-                <p class="mt-1 text-xl font-semibold tabular-nums">
-                    {{ topSessionAverageCost }}
-                </p>
-            </div>
-        </div>
+        <p v-if="errorMessage" class="text-xs text-destructive">
+            {{ errorMessage }}
+        </p>
 
-        <ChartContainer class="h-80 w-full" :config="chartConfig">
-            <VisXYContainer
-                :auto-margin="false"
-                :data="chartData"
-                :height="320"
-                :margin="chartMargin"
-                y-direction="south"
-            >
-                <VisStackedBar
-                    :bar-max-width="28"
-                    :bar-padding="0.28"
-                    :color="getSegmentColor"
-                    cursor="pointer"
-                    orientation="horizontal"
-                    :rounded-corners="3"
-                    :x="getProjectIndex"
-                    :y="[getTokenScore, getDurationScore, getCostScore]"
-                />
-                <VisAxis
-                    :grid-line="false"
-                    :tick-format="formatProjectAxis"
-                    :tick-text-width="100"
-                    tick-text-fit-mode="trim"
-                    tick-text-trim-type="end"
-                    :tick-values="projectTicks"
-                    type="y"
-                />
-                <VisAxis
-                    :num-ticks="4"
-                    :tick-format="formatScoreAxis"
-                    type="x"
-                />
-                <VisTooltip :triggers="tooltipTriggers" />
-            </VisXYContainer>
-        </ChartContainer>
-
-        <div class="mt-4 flex flex-wrap justify-center items-center gap-3 text-xs text-muted-foreground">
-            <div v-for="segment in chartSegments" :key="segment.key" class="flex items-center gap-2">
-                <span class="size-2.5 rounded-sm" :style="{ backgroundColor: segment.color }" />
-                <span>{{ segment.label }}</span>
+        <template v-else-if="loading">
+            <div class="mb-4 grid grid-cols-2 gap-3">
+                <Skeleton class="h-20 w-full rounded-md" />
+                <Skeleton class="h-20 w-full rounded-md" />
             </div>
-        </div>
+            <Skeleton class="h-80 w-full rounded-md" />
+        </template>
+
+        <template v-else>
+            <div class="mb-4 grid grid-cols-2 gap-3">
+                <div class="rounded-md border px-3 py-2">
+                    <p class="text-xs text-muted-foreground">
+                        Total Sessions
+                    </p>
+                    <p class="mt-1 text-xl font-semibold tabular-nums">
+                        {{ totalSessions }}
+                    </p>
+                </div>
+                <div class="rounded-md border px-3 py-2">
+                    <p class="text-xs text-muted-foreground">
+                        Top Session Avg
+                    </p>
+                    <p class="mt-1 text-xl font-semibold tabular-nums">
+                        {{ topSessionAverageCost }}
+                    </p>
+                </div>
+            </div>
+
+            <ChartContainer class="h-80 w-full" :config="chartConfig">
+                <VisXYContainer
+                    :auto-margin="false"
+                    :data="chartData"
+                    :height="320"
+                    :margin="chartMargin"
+                    y-direction="south"
+                >
+                    <VisStackedBar
+                        :bar-max-width="28"
+                        :bar-padding="0.28"
+                        :color="getSegmentColor"
+                        cursor="pointer"
+                        orientation="horizontal"
+                        :rounded-corners="3"
+                        :x="getProjectIndex"
+                        :y="[getTokenScore, getDurationScore, getCostScore]"
+                    />
+                    <VisAxis
+                        :grid-line="false"
+                        :tick-format="formatProjectAxis"
+                        :tick-text-width="100"
+                        tick-text-fit-mode="trim"
+                        tick-text-trim-type="end"
+                        :tick-values="projectTicks"
+                        type="y"
+                    />
+                    <VisAxis
+                        :num-ticks="4"
+                        :tick-format="formatScoreAxis"
+                        type="x"
+                    />
+                    <VisTooltip :triggers="tooltipTriggers" />
+                </VisXYContainer>
+            </ChartContainer>
+
+            <div class="mt-4 flex flex-wrap justify-center items-center gap-3 text-xs text-muted-foreground">
+                <div v-for="segment in chartSegments" :key="segment.key" class="flex items-center gap-2">
+                    <span class="size-2.5 rounded-sm" :style="{ backgroundColor: segment.color }" />
+                    <span>{{ segment.label }}</span>
+                </div>
+            </div>
+        </template>
     </StatisticalAnalysisPanel>
 </template>
 
@@ -78,7 +92,9 @@ defineOptions({
 })
 
 const props = defineProps<{
+    errorMessage?: string
     items: SessionUsageItem[]
+    loading?: boolean
     totalSessions: number
 }>()
 
@@ -123,6 +139,10 @@ const chartMargin = {
 }
 
 const topSessionAverageCost = computed(() => {
+    if (props.items.length === 0) {
+        return formatCurrency(0)
+    }
+
     const averageCost = props.items.reduce((sum, item) => sum + item.costUSD, 0) / props.items.length
 
     return formatCurrency(averageCost)

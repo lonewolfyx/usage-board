@@ -19,6 +19,6 @@ defineOptions({
 })
 
 defineProps<{
-    cards: DashboardOverviewCard[]
+    cards: UsageOverviewCard[]
 }>()
 </script>
