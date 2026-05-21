@@ -44,8 +44,8 @@ export function roundCurrency(value: number) {
     return Math.round(value * 1_000_000) / 1_000_000
 }
 
-export function uniqueItems(items: string[]) {
-    return Array.from(new Set(items.filter(Boolean)))
+export function uniqueItems<T>(items: T[]) {
+    return Array.from(new Set(items))
 }
 
 export function formatCompactNumber(value: number) {

@@ -46,6 +46,7 @@
 
 <script setup lang="ts">
 import { VisDonut, VisDonutSelectors, VisSingleContainer, VisTooltip } from '@unovis/vue'
+import { escapeHtml } from '~/lib/chart'
 
 defineOptions({
     name: 'StatisticalAnalysisEfficiencyCachePanel',
@@ -115,14 +116,5 @@ function formatSegmentTooltip(item: DonutTooltipDatum) {
             </div>
         </div>
     `
-}
-
-function escapeHtml(value: string) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
 }
 </script>

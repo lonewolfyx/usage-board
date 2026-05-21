@@ -1,3 +1,4 @@
+import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
 import type { ProjectSessionUsageItem, ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type {
@@ -11,19 +12,21 @@ import { accessSync, constants } from 'node:fs'
 import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
 import { buildIncrementalUsageIndex } from '#server/services/usage-indexer'
+import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import {
-    buildPlatformLoadUsageResult,
+    buildProjectLoadUsageResult,
     buildProjectUsageCatalogItemsFromDetails,
     buildProjectUsageDataModuleFromDetail,
     buildProjectUsageDetailFromPlatformSessions,
 } from '#shared/platform/project'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import chokidar from 'chokidar'
 
 const RUNTIME_STALE_AFTER_MS = 1000 * 60
 const WATCHER_DEBOUNCE_MS = 350
 
 type ProjectDataRequest = Extract<ProjectWebSocketRequest, { type: 'project_data' }>
-type PlatformSessionIndex = Record<'claudeCode' | 'codex' | 'gemini', ProjectSessionUsageItem[]>
+type PlatformSessionIndex = ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
 
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
@@ -177,15 +180,15 @@ class UsageDataRuntime {
 
         const indexed = await buildIncrementalUsageIndex(this.config, this.repository)
         const { bootstrapByPlatform } = indexed
-        const claudeCode = buildPlatformLoadUsageResult(bootstrapByPlatform.claudeCode, 'claudeCode')
-        const codex = buildPlatformLoadUsageResult(bootstrapByPlatform.codex, 'codex')
-        const gemini = buildPlatformLoadUsageResult(bootstrapByPlatform.gemini, 'gemini')
         const bootstrap: TokensConsumptionResult = {
-            claudeCode,
-            codex,
-            gemini,
+            ...Object.fromEntries(
+                PROJECT_USAGE_PLATFORMS.map(platform => [
+                    platform,
+                    buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform),
+                ]),
+            ),
             version: this.config.version,
-        }
+        } as TokensConsumptionResult
         const projectDetails = this.state.projectDetails.size > 0
             ? patchProjectDetails(this.state.projectDetails, indexed.removedProjects, indexed.affectedProjects, bootstrapByPlatform)
             : buildAllProjectDetails(bootstrapByPlatform)
@@ -289,12 +292,7 @@ function isWritableDirectory(directoryPath: string) {
 }
 
 function getUsageWatchPatterns(config: IConfig) {
-    return [
-        ...config.claudeCodePaths.map(path => join(path, 'projects', '**', '*.jsonl')),
-        join(config.codexPath, 'sessions', '**', '*.jsonl'),
-        join(config.geminiPath, 'tmp', '*', 'chats', 'session-*.json'),
-        join(config.geminiPath, 'tmp', '*', 'chats', 'sessions-*.json'),
-    ]
+    return PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(config))
 }
 
 function patchProjectDetails(
@@ -310,11 +308,7 @@ function patchProjectDetails(
     }
 
     for (const projectName of affectedProjects) {
-        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, {
-            claudeCode: platformSessions.claudeCode.filter(session => session.project === projectName),
-            codex: platformSessions.codex.filter(session => session.project === projectName),
-            gemini: platformSessions.gemini.filter(session => session.project === projectName),
-        })
+        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(platformSessions, projectName))
 
         if (detail.sessionCound === 0) {
             details.delete(projectName)
@@ -330,19 +324,11 @@ function patchProjectDetails(
 function buildAllProjectDetails(
     platformSessions: PlatformSessionIndex,
 ) {
-    const projectNames = new Set([
-        ...platformSessions.claudeCode.map(session => session.project),
-        ...platformSessions.codex.map(session => session.project),
-        ...platformSessions.gemini.map(session => session.project),
-    ])
+    const projectNames = new Set(PROJECT_USAGE_PLATFORMS.flatMap(platform => platformSessions[platform].map(session => session.project)))
     const details = new Map<string, ProjectUsageDetail>()
 
     for (const projectName of projectNames) {
-        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, {
-            claudeCode: platformSessions.claudeCode.filter(session => session.project === projectName),
-            codex: platformSessions.codex.filter(session => session.project === projectName),
-            gemini: platformSessions.gemini.filter(session => session.project === projectName),
-        })
+        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(platformSessions, projectName))
 
         if (detail.sessionCound > 0) {
             details.set(projectName, detail)
@@ -350,4 +336,16 @@ function buildAllProjectDetails(
     }
 
     return details
+}
+
+function getProjectPlatformSessions(
+    platformSessions: PlatformSessionIndex,
+    projectName: string,
+): PlatformSessionIndex {
+    return Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map(platform => [
+            platform,
+            platformSessions[platform].filter(session => session.project === projectName),
+        ]),
+    ) as PlatformSessionIndex
 }

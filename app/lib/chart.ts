@@ -1,0 +1,12 @@
+export function clampNumber(value: number, min: number, max: number) {
+    return Math.min(Math.max(value, min), max)
+}
+
+export function escapeHtml(value: string) {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+}

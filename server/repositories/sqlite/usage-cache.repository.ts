@@ -1,10 +1,12 @@
 import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
+import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { ProjectUsageCatalogItem } from '#shared/types/ws'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
 type SnapshotKey = 'bootstrap' | 'project_catalog'
 
@@ -245,32 +247,28 @@ export class UsageCacheRepository {
 function stripRawPayload(detail: ProjectUsageDetail): ProjectUsageDetail {
     return {
         ...detail,
-        analyzing: {
-            claudeCode: stripRawInteractions(detail.analyzing.claudeCode),
-            codex: stripRawInteractions(detail.analyzing.codex),
-            gemini: stripRawInteractions(detail.analyzing.gemini),
-        },
+        analyzing: Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [platform, stripRawInteractions(detail.analyzing[platform])]),
+        ) as ProjectUsagePlatformRecord<ProjectUsageDetail['analyzing'][ProjectUsagePlatform]>,
     }
 }
 
-function stripRawInteractions(detail: ProjectUsageDetail['analyzing']['claudeCode']) {
+function stripRawInteractions(detail: ProjectUsageDetail['analyzing'][ProjectUsagePlatform]) {
     return {
         ...detail,
-        sessionUsage: detail.sessionUsage.map(session => ({
-            ...session,
-            interactions: session.interactions.map(({ raw: _raw, ...interaction }) => ({
-                ...interaction,
-                raw: null,
-            })),
-        })),
-        sessions: detail.sessions.map(session => ({
-            ...session,
-            interactions: session.interactions.map(({ raw: _raw, ...interaction }) => ({
-                ...interaction,
-                raw: null,
-            })),
-        })),
+        sessionUsage: stripRawFromSessionList(detail.sessionUsage),
+        sessions: stripRawFromSessionList(detail.sessions),
     }
+}
+
+function stripRawFromSessionList<T extends { interactions: Array<{ raw: unknown }> }>(sessions: T[]) {
+    return sessions.map(session => ({
+        ...session,
+        interactions: session.interactions.map(({ raw: _raw, ...interaction }) => ({
+            ...interaction,
+            raw: null,
+        })),
+    }))
 }
 
 function createPayloadHash(value: string) {
