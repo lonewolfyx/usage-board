@@ -10,8 +10,6 @@ import type {
 
 export type ProjectDashboardScope = 'all' | ProjectUsagePlatform
 
-export type ProjectDashboardPlatformKey = ProjectUsagePlatform
-
 export type ProjectUsageCatalogType = ProjectUsagePlatform | 'mixed'
 
 export interface ProjectDashboardPlatformMeta {
@@ -28,7 +26,7 @@ export interface ProjectDashboardTab {
 }
 
 export interface ProjectDashboardPlatformTab extends Omit<ProjectDashboardTab, 'aiIcon' | 'color' | 'value'>, ProjectDashboardPlatformMeta {
-    value: ProjectDashboardPlatformKey
+    value: ProjectUsagePlatform
 }
 
 export interface ProjectLineSeries {
@@ -45,7 +43,7 @@ export interface ProjectSessionTableRow {
     inputTokens: string
     model: string
     outputTokens: string
-    platform: ProjectDashboardPlatformKey
+    platform: ProjectUsagePlatform
     reasoningTokens: string
     sessionId: string
     startedAt: string

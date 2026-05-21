@@ -108,6 +108,7 @@ import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
+import { clampNumber, escapeHtml } from '~/lib/chart'
 
 interface ChartPoint {
     index: number
@@ -207,7 +208,7 @@ const hoverGuide = computed(() => {
 
     const xRatio = props.xLabels.length <= 1 ? 0 : hoverGuideState.datumIndex / (props.xLabels.length - 1)
     const x = plotLeft.value + chartPadding.left + (xRatio * plotInnerWidth.value)
-    const y = clampValue(hoverGuideState.pointerY, plotTop.value, plotBottom.value)
+    const y = clampNumber(hoverGuideState.pointerY, plotTop.value, plotBottom.value)
     const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
     const yValue = yRatio * maxStackedValue.value
 
@@ -320,7 +321,7 @@ function handlePointerMove(event: PointerEvent) {
         return
     }
 
-    const relativeX = clampValue((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1), 0, 1)
+    const relativeX = clampNumber((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1), 0, 1)
     const datumIndex = props.xLabels.length <= 1
         ? 0
         : Math.round(relativeX * (props.xLabels.length - 1))
@@ -350,19 +351,6 @@ function formatAxisLabel(label: string, index: number, total: number) {
 
 function getGradientId(label: string) {
     return `project-line-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
-}
-
-function clampValue(value: number, min: number, max: number) {
-    return Math.min(Math.max(value, min), max)
-}
-
-function escapeHtml(value: string) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
 }
 
 function getThemeAwareColor(color: string) {

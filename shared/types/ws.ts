@@ -13,13 +13,14 @@ export interface ProjectUsageCatalogItem {
     type: ProjectUsageCatalogType
 }
 
-export type ProjectUsageDataModule
-    = | 'daily_trend'
-        | 'model_usage'
-        | 'session_list'
-        | 'token_usage'
+export const PROJECT_USAGE_DATA_MODULES = [
+    'daily_trend',
+    'model_usage',
+    'session_list',
+    'token_usage',
+] as const
 
-export type ProjectUsageDataPlatformScope = ProjectDashboardScope
+export type ProjectUsageDataModule = typeof PROJECT_USAGE_DATA_MODULES[number]
 
 export interface ProjectUsageDataModulePayloadMap {
     daily_trend: ProjectPlatformModulePayload<ProjectDailyTrendModulePayload>
@@ -57,5 +58,5 @@ export type ProjectWebSocketRequest
         modules?: ProjectUsageDataModule[]
         project?: string
         requestId?: string
-        platform?: ProjectUsageDataPlatformScope
+        platform?: ProjectDashboardScope
     }

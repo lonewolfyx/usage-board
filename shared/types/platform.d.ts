@@ -81,12 +81,8 @@ export interface UsageSessionMeta {
     threadName: string
 }
 
-export type CodexSessionMeta = UsageSessionMeta
-
-export type CodexTokenUsageEvent = UsageAggregateEvent
-
 export interface CodexSessionFileData {
-    events: CodexTokenUsageEvent[]
+    events: UsageAggregateEvent[]
     meta: UsageSessionMeta
 }
 
@@ -163,8 +159,6 @@ export interface ClaudeUsageEntry extends ClaudeTokenTotals {
     timestamp: string
 }
 
-export type ClaudeSessionSummary = SessionUsageSummaryLike & ClaudeTokenTotals
-
 export interface ClaudeAggregateEvent extends UsageAggregateEvent, ClaudeTokenTotals {
     costUSD: number
 }
@@ -198,8 +192,6 @@ export interface ModelUsageSummary {
     reasoningOutputTokens: number
     totalTokens: number
 }
-
-export type CodexModelUsageSummary = ModelUsageSummary
 
 export interface DailyUsageSummaryGroup extends SessionAggregateGroup {
     dateKey: string

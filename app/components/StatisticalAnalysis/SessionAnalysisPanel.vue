@@ -71,6 +71,7 @@
 <script setup lang="ts">
 import { VisAxis, VisStackedBar, VisStackedBarSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { computed } from 'vue'
+import { escapeHtml } from '~/lib/chart'
 
 defineOptions({
     name: 'StatisticalAnalysisSessionAnalysisPanel',
@@ -276,14 +277,5 @@ function formatScoreAxis(tick: number | Date) {
     }
 
     return `${Math.round(tick)}%`
-}
-
-function escapeHtml(value: string) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
 }
 </script>

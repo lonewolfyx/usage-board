@@ -8,6 +8,7 @@ import type {
     PricingCacheEntry,
     TokenCostUsage,
 } from '#shared/types/platform'
+import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 /** Multiplier used to convert per-token prices into per-million-token prices. */
 const MILLION = 1_000_000
@@ -169,7 +170,7 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
             return createZeroPricing()
         }
 
-        const lookupCandidates = uniqueItems(expandLookupCandidates(model, aliases, getLookupCandidates))
+        const lookupCandidates = uniqueItems(expandLookupCandidates(model, aliases, getLookupCandidates).filter(Boolean))
         const datasetPricing = resolveDatasetPricing(dataset, lookupCandidates)
 
         if (datasetPricing) {
@@ -183,7 +184,7 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
         }
 
         if (fallbackModel) {
-            const fallbackCandidates = uniqueItems(expandLookupCandidates(fallbackModel, aliases, getLookupCandidates))
+            const fallbackCandidates = uniqueItems(expandLookupCandidates(fallbackModel, aliases, getLookupCandidates).filter(Boolean))
 
             return resolveDatasetPricing(dataset, fallbackCandidates)
                 ?? resolveFallbackPricing(fallbackPricingTable, fallbackCandidates)
@@ -469,17 +470,4 @@ function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: num
     }
 
     return (safeTokens / MILLION) * baseCostPerMTokens
-}
-
-/**
- * Removes empty strings while preserving unique item order.
- *
- * @example
- * ```ts
- * uniqueItems(['gpt-5', '', 'gpt-5'])
- * // ['gpt-5']
- * ```
- */
-function uniqueItems(items: string[]) {
-    return Array.from(new Set(items.filter(Boolean)))
 }

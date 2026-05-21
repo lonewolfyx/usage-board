@@ -1,4 +1,4 @@
-import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { ProjectInteractionRole, ProjectInteractionUsage, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 
 export interface IndexedUsageInteraction {
@@ -36,7 +36,7 @@ export interface IndexedUsageSourceFile {
 
 export interface IncrementalUsageIndexResult {
     affectedProjects: string[]
-    bootstrapByPlatform: Record<ProjectUsagePlatform, ProjectSessionUsageItem[]>
+    bootstrapByPlatform: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
     indexedFiles: IndexedUsageSourceFile[]
     removedProjects: string[]
 }

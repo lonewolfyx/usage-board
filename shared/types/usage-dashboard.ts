@@ -1,3 +1,5 @@
+import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
+
 export interface ModelTokenUsage {
     inputTokens: number
     cachedInputTokens: number
@@ -125,21 +127,13 @@ export interface ProjectPlatformUsage extends LoadUsageResult {
     sessions: ProjectSessionUsageItem[]
 }
 
-export interface ProjectUsageAnalyzing {
-    claudeCode: ProjectPlatformUsage
-    codex: ProjectPlatformUsage
-    gemini: ProjectPlatformUsage
-}
-
 export interface ProjectUsageDetail {
     label: string
     models: string[]
     createTime: string | null
     sessionCound: number
-    analyzing: ProjectUsageAnalyzing
+    analyzing: ProjectUsagePlatformRecord<ProjectPlatformUsage>
 }
-
-export type LoadProjectsUsageResult = Array<Record<string, ProjectUsageDetail>>
 
 export interface UsageTopProject {
     project: string
@@ -191,11 +185,6 @@ export interface LoadUsageResult {
     weeklyRows: TokenUsageRow[]
 }
 
-export interface TokensConsumptionResult {
+export type TokensConsumptionResult = ProjectUsagePlatformRecord<LoadUsageResult> & {
     version: string
-    claudeCode: LoadUsageResult
-    codex: LoadUsageResult
-    gemini: LoadUsageResult
 }
-
-export type PayloadDashboardKey = 'claudeCode' | 'codex' | 'gemini'

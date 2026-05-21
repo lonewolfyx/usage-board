@@ -25,6 +25,7 @@ import type {
 } from '#shared/types/usage-dashboard'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
+import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import {
     buildGrowthTrend,
     buildProjectUsage,
@@ -891,9 +892,9 @@ export function extractModelName(value: unknown): string | undefined {
     }
 
     const record = value as Record<string, unknown>
-    const info = getObjectRecord(record.info)
-    const metadata = getObjectRecord(record.metadata)
-    const infoMetadata = getObjectRecord(info?.metadata)
+    const info = normalizeUnknownRecord(record.info)
+    const metadata = normalizeUnknownRecord(record.metadata)
+    const infoMetadata = normalizeUnknownRecord(info?.metadata)
     const candidates = [
         record.model,
         record.model_name,
@@ -1227,10 +1228,6 @@ function getNumericProperty(value: object, key: string) {
     const property = record[key]
 
     return typeof property === 'number' && Number.isFinite(property) ? property : 0
-}
-
-function getObjectRecord(value: unknown): Record<string, unknown> | null {
-    return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null
 }
 
 /**

@@ -6,6 +6,7 @@ import type {
     RankedUsageItem,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
     buildProjectUsage,
@@ -21,8 +22,6 @@ import {
 import { computed } from 'vue'
 import { usePayloadContext } from '~/composables/usePayloadContext'
 
-const payloadDashboardKeys = ['claudeCode', 'codex', 'gemini'] as const
-
 export function useUsageDashboard() {
     const { payload } = usePayloadContext()
 
@@ -31,14 +30,14 @@ export function useUsageDashboard() {
             return []
         }
 
-        return payloadDashboardKeys.map(key => payload.value![key] as LoadUsageResult)
+        return PROJECT_USAGE_PLATFORMS.map(key => payload.value![key] as LoadUsageResult)
     })
 
     const sessionUsage = computed<UsageSessionUsageItem[]>(() => dashboards.value
         .flatMap((dashboard, dashboardIndex) => dashboard.sessionUsage.map(session => ({
             ...session,
-            id: `${payloadDashboardKeys[dashboardIndex]}:${session.id}`,
-            sessionId: `${payloadDashboardKeys[dashboardIndex]}:${session.sessionId}`,
+            id: `${PROJECT_USAGE_PLATFORMS[dashboardIndex]}:${session.id}`,
+            sessionId: `${PROJECT_USAGE_PLATFORMS[dashboardIndex]}:${session.sessionId}`,
         })))
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
 

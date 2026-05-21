@@ -1,5 +1,5 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
-    ProjectDashboardPlatformKey,
     ProjectDashboardPlatformMeta,
     ProjectDashboardPlatformTab,
     ProjectDashboardTab,
@@ -11,6 +11,7 @@ import type {
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
     buildPercentTrend,
@@ -25,7 +26,6 @@ import {
 import { formatNumber } from '@lonewolfyx/utils'
 
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
-const projectPlatformOrder = ['claudeCode', 'codex', 'gemini'] satisfies ProjectDashboardPlatformKey[]
 
 const projectPlatformMetaMap = {
     claudeCode: {
@@ -43,23 +43,23 @@ const projectPlatformMetaMap = {
         color: '#0ea5e9',
         label: 'Gemini',
     },
-} satisfies Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformMeta>
+} satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
 
-export const projectPlatformTabs = projectPlatformOrder.map(value => ({
+export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
     ...projectPlatformMetaMap[value],
     value,
 })) satisfies ProjectDashboardPlatformTab[]
 
 const projectPlatformTabMap = Object.fromEntries(
     projectPlatformTabs.map(tab => [tab.value, tab]),
-) as Record<ProjectDashboardPlatformKey, ProjectDashboardPlatformTab>
+) as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>
 
 export const projectDashboardTabs = [
     { label: 'All', value: 'all' },
     ...projectPlatformTabs,
 ] satisfies ProjectDashboardTab[]
 
-export function getProjectPlatform(platform: ProjectDashboardPlatformKey): ProjectDashboardPlatformTab {
+export function getProjectPlatform(platform: ProjectUsagePlatform): ProjectDashboardPlatformTab {
     return projectPlatformTabMap[platform]
 }
 
@@ -199,7 +199,7 @@ export function toProjectDisplayDailyUsageRows(
 
 export function toProjectSessionTableRow(
     session: ProjectSessionListItem,
-    platform: ProjectDashboardPlatformKey,
+    platform: ProjectUsagePlatform,
 ): ProjectSessionTableRow {
     return {
         cacheTokens: formatNumber(session.cachedInputTokens),
@@ -212,7 +212,7 @@ export function toProjectSessionTableRow(
         platform,
         reasoningTokens: formatNumber(session.reasoningOutputTokens),
         sessionId: session.sessionId,
-        startedAt: formatSafeProjectDate(session.startedAt),
+        startedAt: formatProjectSessionDate(session.startedAt, formatDate),
         threadName: session.threadName,
         tokens: formatNumber(session.tokenTotal),
     }
@@ -220,7 +220,7 @@ export function toProjectSessionTableRow(
 
 export function toProjectSessionTableRows(
     sessions: ProjectSessionListItem[],
-    platform: ProjectDashboardPlatformKey,
+    platform: ProjectUsagePlatform,
 ): ProjectSessionTableRow[] {
     return sessions.map(session => toProjectSessionTableRow(session, platform))
 }
@@ -304,7 +304,11 @@ export function summarizeProjectSessions(sessions: ProjectSessionListItem[]): Pr
 
 function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
     return sessions.reduce((counts, session) => {
-        const dateLabel = getProjectSessionDateLabel(session.startedAt)
+        const dateLabel = formatProjectSessionDate(
+            session.startedAt,
+            date => formatDateLabelFromDateKey(getDateKey(date)),
+            '',
+        )
 
         if (!dateLabel) {
             return counts
@@ -316,30 +320,20 @@ function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
     }, new Map<string, number>())
 }
 
-function getProjectSessionDateLabel(value: string) {
+function formatProjectSessionDate(
+    value: string,
+    formatter: (date: Date) => string,
+    fallback = '-',
+) {
     if (!value) {
-        return ''
+        return fallback
     }
 
     const date = new Date(value)
 
     if (!Number.isFinite(date.getTime())) {
-        return ''
+        return fallback
     }
 
-    return formatDateLabelFromDateKey(getDateKey(date))
-}
-
-function formatSafeProjectDate(value: string) {
-    if (!value) {
-        return '-'
-    }
-
-    const date = new Date(value)
-
-    if (!Number.isFinite(date.getTime())) {
-        return '-'
-    }
-
-    return formatDate(date)
+    return formatter(date)
 }

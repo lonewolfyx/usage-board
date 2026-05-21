@@ -105,6 +105,7 @@
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
+import { clampNumber, escapeHtml } from '~/lib/chart'
 
 defineOptions({
     name: 'StatisticalAnalysisModelUsagePanel',
@@ -213,7 +214,7 @@ const hoverGuide = computed(() => {
 
     const xRatio = months.value.length <= 1 ? 0 : hoverDatumIndex.value / (months.value.length - 1)
     const x = plotLeft.value + (xRatio * plotWidth.value)
-    const y = clampValue(hoverPointerY.value, plotTop.value, plotBottom.value)
+    const y = clampNumber(hoverPointerY.value, plotTop.value, plotBottom.value)
     const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
     const yValue = yRatio * maxTotalTokens.value
 
@@ -329,7 +330,7 @@ function handlePointerMove(event: PointerEvent) {
         return
     }
 
-    const relativeX = clampValue((pointerX - plotLeft.value) / Math.max(plotWidth.value, 1), 0, 1)
+    const relativeX = clampNumber((pointerX - plotLeft.value) / Math.max(plotWidth.value, 1), 0, 1)
     hoverDatumIndex.value = months.value.length <= 1
         ? 0
         : Math.round(relativeX * (months.value.length - 1))
@@ -354,18 +355,5 @@ function getGradientId(model: string) {
 
 function getModelColor(index: number) {
     return modelColors[index % modelColors.length] ?? '#2563eb'
-}
-
-function clampValue(value: number, min: number, max: number) {
-    return Math.min(Math.max(value, min), max)
-}
-
-function escapeHtml(value: string) {
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
 }
 </script>
