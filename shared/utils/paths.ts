@@ -2,14 +2,7 @@ import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { isDirectorySync } from 'path-type'
 
-/**
- * Default OpenCode data directory path (~/.local/share/opencode)
- */
-const DEFAULT_OPENCODE_PATH = '.local/share/opencode'
-
 const CODEX_HOME_ENV = 'CODEX_HOME'
-
-const OPENCODE_CONFIG_DIR_ENV = 'OPENCODE_DATA_DIR'
 
 const CLAUDE_CONFIG_DIR_ENV = 'CLAUDE_CONFIG_DIR'
 
@@ -22,25 +15,6 @@ const DEFAULT_CLAUDE_CODE_PATH = '.claude'
 const DEFAULT_CLAUDE_CONFIG_PATH = join(process.env.XDG_CONFIG_HOME?.trim() || join(USER_HOME_DIR, '.config'), 'claude')
 
 const CLAUDE_PROJECTS_DIR_NAME = 'projects'
-
-export function getOpenCodePath(): string | null {
-    // Check environment variable first
-    const envPath = process.env[OPENCODE_CONFIG_DIR_ENV]
-    if (envPath != null && envPath.trim() !== '') {
-        const normalizedPath = resolve(envPath)
-        if (isDirectorySync(normalizedPath)) {
-            return normalizedPath
-        }
-    }
-
-    // Use default path
-    const defaultPath = join(USER_HOME_DIR, DEFAULT_OPENCODE_PATH)
-    if (isDirectorySync(defaultPath)) {
-        return defaultPath
-    }
-
-    return null
-}
 
 export function getCodexPath(): string {
     const codexHomeEnv = process.env[CODEX_HOME_ENV]?.trim()

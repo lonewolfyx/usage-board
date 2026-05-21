@@ -93,7 +93,7 @@ class UsageDataRuntime {
     }
 
     async getProjectDataModules(
-        request: Pick<ProjectDataRequest, 'module' | 'modules' | 'platform' | 'project' | 'sessionId'>,
+        request: Pick<ProjectDataRequest, 'module' | 'modules' | 'platform' | 'project'>,
     ): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
         await this.initialize()
         const projectLabel = (request.project || '').trim()
@@ -121,7 +121,6 @@ class UsageDataRuntime {
             module: request.module,
             modules: request.modules,
             platform: request.platform,
-            sessionId: request.sessionId,
         })
     }
 
@@ -191,7 +190,7 @@ class UsageDataRuntime {
             ? patchProjectDetails(this.state.projectDetails, indexed.removedProjects, indexed.affectedProjects, bootstrapByPlatform)
             : buildAllProjectDetails(bootstrapByPlatform)
 
-        const projectCatalog = buildProjectUsageCatalogItemsFromDetails(projectDetails.entries(), this.config)
+        const projectCatalog = buildProjectUsageCatalogItemsFromDetails(projectDetails.entries())
 
         this.repository.saveBootstrap(bootstrap)
         this.repository.saveProjectCatalog(projectCatalog)

@@ -6,7 +6,6 @@ import type {
     RankedUsageItem,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
-import type { ComputedRef } from 'vue'
 import {
     buildGrowthTrend,
     buildProjectUsage,
@@ -75,45 +74,6 @@ export function useUsageDashboard() {
         formatCompactNumber,
     ))
 
-    const modelUsage: ComputedRef<RankedUsageItem[]> = computed(() => {
-        const models = new Map<string, {
-            activeDays: Set<string>
-            costUSD: number
-            inputTokens: number
-            outputTokens: number
-            totalTokens: number
-        }>()
-
-        for (const day of dailyTokenUsage.value) {
-            for (const [name, usage] of Object.entries(day.models)) {
-                const model = models.get(name) ?? {
-                    activeDays: new Set<string>(),
-                    costUSD: 0,
-                    inputTokens: 0,
-                    outputTokens: 0,
-                    totalTokens: 0,
-                }
-                const tokenShare = day.totalTokens > 0 ? usage.totalTokens / day.totalTokens : 0
-                model.activeDays.add(day.date)
-                model.costUSD += day.costUSD * tokenShare
-                model.inputTokens += usage.inputTokens
-                model.outputTokens += usage.outputTokens
-                model.totalTokens += usage.totalTokens
-                models.set(name, model)
-            }
-        }
-
-        return Array.from(models.entries())
-            .map(([name, usage], index) => ({
-                label: name,
-                value: formatCurrency(usage.costUSD),
-                detail: `${formatCompactNumber(usage.totalTokens)} tokens / ${usage.activeDays.size} active days`,
-                percent: safeRatio(usage.costUSD, totalCost.value) * 100,
-                tone: (index === 0 ? 'sky' : 'green') as RankedUsageItem['tone'],
-            }))
-            .sort((a, b) => b.percent - a.percent)
-    })
-
     const efficiencyMetrics = computed<RankedUsageItem[]>(() => {
         const cacheHitRate = safeRatio(cachedInputTokens.value, inputTokens.value)
         const reasoningShare = safeRatio(reasoningOutputTokens.value, totalTokens.value)
@@ -150,11 +110,8 @@ export function useUsageDashboard() {
         dailyTokenUsage,
         efficiencyMetrics,
         inputTokens,
-        modelUsage,
         monthlyModelUsage,
-        outputTokens,
         projectUsage,
-        reasoningOutputTokens,
         sessionUsage,
         totalCost,
         totalSessions,

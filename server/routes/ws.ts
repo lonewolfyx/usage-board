@@ -5,7 +5,6 @@ import { resolveConfig } from '#shared/utils/configs'
 export default defineWebSocketHandler({
     open(peer) {
         console.log(`[ws] opened: ${peer.id}`)
-        peer.send('Welcome use WebSocket server！')
     },
     async message(peer, message) {
         try {
@@ -66,14 +65,11 @@ function parseTextRequest(text: string): unknown {
     }
 
     return {
-        label: params.get('label') ?? undefined,
         module: params.get('module') ?? undefined,
         modules: params.getAll('modules').flatMap(splitValueList),
-        path: params.getAll('path').flatMap(splitPathList),
         platform: params.get('platform') ?? undefined,
         project: params.get('project') ?? undefined,
         requestId: params.get('requestId') ?? undefined,
-        sessionId: params.get('sessionId') ?? undefined,
         type,
     }
 }
@@ -99,31 +95,16 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
 
     if (type === 'project_data') {
         return {
-            label: getString(record.label) || undefined,
             module: normalizeProjectDataModule(record.module),
             modules: normalizeProjectDataModules(record.modules),
-            path: normalizePathList(record.path),
             platform: normalizePlatform(record.platform),
             project: getString(record.project) || undefined,
             requestId: getString(record.requestId) || undefined,
-            sessionId: getString(record.sessionId) || undefined,
             type,
         }
     }
 
     throw new Error(`Unsupported websocket request type: ${type || 'unknown'}.`)
-}
-
-function normalizePathList(value: unknown) {
-    if (Array.isArray(value)) {
-        return value.flatMap(item => typeof item === 'string' ? splitPathList(item) : [])
-    }
-
-    if (typeof value === 'string') {
-        return splitPathList(value)
-    }
-
-    return undefined
 }
 
 function normalizeProjectDataModule(value: unknown): ProjectUsageDataModule | undefined {
@@ -148,10 +129,6 @@ function normalizePlatform(value: unknown): ProjectUsageDataPlatformScope | unde
     const platform = getString(value)
 
     return platform ? platform as ProjectUsageDataPlatformScope : undefined
-}
-
-function splitPathList(value: string) {
-    return splitValueList(value)
 }
 
 function splitValueList(value: string) {

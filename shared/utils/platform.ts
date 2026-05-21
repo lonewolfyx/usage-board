@@ -100,7 +100,7 @@ export function parseJsonFile(filePath: string) {
  * const today = dailyGroups.get(getDateKey(new Date()))
  * ```
  */
-export function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
+function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: AggregateOptions<TEvent> = {},
 ) {
@@ -204,7 +204,7 @@ function buildDailyRows(dailyGroups: Map<string, DailyUsageSummaryGroup>): Token
  * const monthlyRows = buildPeriodRows(events, 'month')
  * ```
  */
-export function buildPeriodRows<TEvent extends UsageAggregateEvent>(
+function buildPeriodRows<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     periodType: 'month' | 'week',
     options: AggregateOptions<TEvent> = {},
@@ -255,7 +255,7 @@ export function buildPeriodRows<TEvent extends UsageAggregateEvent>(
  * const monthlyModelUsage = buildMonthlyModelUsage(events)
  * ```
  */
-export function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
+function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: Pick<AggregateOptions<TEvent>, 'includeModel'> = {},
 ): MonthlyModelUsage[] {
@@ -298,7 +298,7 @@ export function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
  * const sessionRows = buildSessionRows(sessionSummaries)
  * ```
  */
-export function buildSessionRows<TSession extends SessionUsageSummaryLike>(
+function buildSessionRows<TSession extends SessionUsageSummaryLike>(
     sessions: TSession[],
     options: SessionUsageOptions<TSession> = {},
 ): TokenUsageRow[] {
@@ -328,7 +328,7 @@ export function buildSessionRows<TSession extends SessionUsageSummaryLike>(
  * const item = toUsageSessionUsageItem(sessionSummary)
  * ```
  */
-export function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
+function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
     session: TSession,
     options: SessionUsageOptions<TSession> = {},
 ): UsageSessionUsageItem {
@@ -500,7 +500,7 @@ export function buildLoadUsageResult<
  * const topProject = getTopProjectForDate(todayEvents)
  * ```
  */
-export function getTopProjectForDate<TEvent extends UsageAggregateEvent>(events: TEvent[]): UsageTopProject | null {
+function getTopProjectForDate<TEvent extends UsageAggregateEvent>(events: TEvent[]): UsageTopProject | null {
     const projects = new Map<string, Set<string>>()
 
     for (const event of events) {
@@ -524,7 +524,7 @@ export function getTopProjectForDate<TEvent extends UsageAggregateEvent>(events:
  * const topModel = getTopModelForDate(todayEvents)
  * ```
  */
-export function getTopModelForDate<TEvent extends UsageAggregateEvent>(
+function getTopModelForDate<TEvent extends UsageAggregateEvent>(
     events: TEvent[],
     options: Pick<AggregateOptions<TEvent>, 'includeModel'> = {},
 ): UsageTopModel | null {
@@ -621,29 +621,6 @@ export function isZeroUsage(usage: TokenUsageDelta) {
         && usage.outputTokens === 0
         && usage.reasoningOutputTokens === 0
         && usage.totalTokens === 0
-}
-
-/**
- * Derives a session name from the first user message or summary, truncating long text.
- *
- * @example
- * ```ts
- * getThreadName('Refactor the dashboard', 'usage-board')
- * // 'Refactor the dashboard'
- * ```
- */
-export function getThreadName(message: string, project: string, summary?: string) {
-    const firstLine = message
-        .split('\n')
-        .map(line => line.trim())
-        .find(line => line && !line.startsWith('<'))
-        ?? summary?.trim()
-
-    if (!firstLine) {
-        return `Session for ${project}`
-    }
-
-    return firstLine.length > 96 ? `${firstLine.slice(0, 93)}...` : firstLine
 }
 
 /**

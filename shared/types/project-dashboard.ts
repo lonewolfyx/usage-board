@@ -3,20 +3,14 @@ import type { AiIconName } from '#shared/types/navigation'
 import type {
     DailyTokenUsage,
     MonthlyModelUsage,
-    ProjectSessionInteractionItem,
     ProjectSessionUsageItem,
     TokenUsageRow,
-    TrendTone,
     UsageOverviewCard,
-    UsageTopModel,
-    UsageTopProject,
 } from '#shared/types/usage-dashboard'
 
 export type ProjectDashboardScope = 'all' | ProjectUsagePlatform
 
 export type ProjectDashboardPlatformKey = ProjectUsagePlatform
-
-export type ProjectDashboardTableTab = 'day' | 'month' | 'session' | 'week'
 
 export type ProjectUsageCatalogType = ProjectUsagePlatform | 'mixed'
 
@@ -83,16 +77,7 @@ export type ProjectSessionListItem = Omit<ProjectSessionUsageItem, 'interactions
 export interface ProjectSelectItem {
     id: string
     name: string
-    path: string[]
     type: ProjectUsageCatalogType
-}
-
-export interface ProjectMetaModule {
-    createTime: string | null
-    label: string
-    models: string[]
-    platforms: ProjectDashboardPlatformKey[]
-    sessionCound: number
 }
 
 export interface ProjectDailyTrendModulePayload {
@@ -116,20 +101,6 @@ export interface ProjectSessionListModulePayload {
     sessionRows: TokenUsageRow[]
     sessionUsage: ProjectSessionListItem[]
     sessions: ProjectSessionListItem[]
-}
-
-export interface ProjectOverviewCardsModulePayload {
-    overviewCards: UsageOverviewCard[]
-    todayTopModel: UsageTopModel | null
-    todayTopProject: UsageTopProject | null
-    todayTotalCost: number
-    todayTotalTokens: number
-}
-
-export type ProjectSessionInteractionPreview = Omit<ProjectSessionInteractionItem, 'raw'>
-
-export interface ProjectSessionInteractionsModulePayload extends ProjectSessionListItem {
-    interactions: ProjectSessionInteractionPreview[]
 }
 
 export type ProjectPlatformModulePayload<T> = Record<ProjectDashboardScope, T>
@@ -170,9 +141,4 @@ export interface ProjectSessionSummary {
     costUSD: number
     sessions: number
     totalTokens: number
-}
-
-export interface ProjectTrendResult {
-    tone: TrendTone
-    label: string
 }

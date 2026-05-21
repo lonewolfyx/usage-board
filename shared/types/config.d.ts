@@ -8,7 +8,6 @@ export interface IConfig {
     home: string
     claudeCodePath: string
     claudeCodePaths: string[]
-    openCodePath: string | null
     codexPath: string
     geminiPath: string
 }
