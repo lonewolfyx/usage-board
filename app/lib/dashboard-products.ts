@@ -7,7 +7,7 @@ import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 export interface DashboardProductDefinition {
     icon: string
     name: string
-    payloadKey: ProjectUsagePlatform
+    platformKey: ProjectUsagePlatform
     slug: string
 }
 
@@ -18,7 +18,7 @@ const dashboardProducts: DashboardProductDefinition[] = PROJECT_USAGE_PLATFORMS
     .map(platform => ({
         icon: PROJECT_USAGE_PLATFORM_META[platform].aiIcon,
         name: PROJECT_USAGE_PLATFORM_META[platform].label,
-        payloadKey: platform,
+        platformKey: platform,
         slug: PROJECT_USAGE_PLATFORM_META[platform].slug,
     }))
 

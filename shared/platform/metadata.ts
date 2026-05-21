@@ -1,5 +1,6 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type { AiIconName } from '#shared/types/navigation'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
 export interface ProjectUsagePlatformMeta {
     aiIcon: AiIconName
@@ -100,3 +101,28 @@ export const PROJECT_USAGE_PLATFORM_META: Record<ProjectUsagePlatform, ProjectUs
         slug: 'qwen',
     },
 } as const
+
+const platformSlugEntries = PROJECT_USAGE_PLATFORMS.map(platform => [
+    PROJECT_USAGE_PLATFORM_META[platform].slug,
+    platform,
+] as const)
+
+const platformBySlug = new Map<string, ProjectUsagePlatform>(platformSlugEntries)
+
+export function getProjectUsagePlatformSlug(platform: ProjectUsagePlatform) {
+    return PROJECT_USAGE_PLATFORM_META[platform].slug
+}
+
+export function resolveProjectUsagePlatform(value: string | null | undefined) {
+    const normalizedValue = value?.trim()
+
+    if (!normalizedValue) {
+        return null
+    }
+
+    if (PROJECT_USAGE_PLATFORMS.includes(normalizedValue as ProjectUsagePlatform)) {
+        return normalizedValue as ProjectUsagePlatform
+    }
+
+    return platformBySlug.get(normalizedValue) ?? null
+}

@@ -4,101 +4,112 @@
         icon="lucide:table-2"
         :title="`${productName} Token Usage`"
     >
-        <Tabs v-model="activeTab">
-            <TabsList class="grid w-full grid-cols-4 sm:w-fit">
-                <TabsTrigger
+        <p v-if="errorMessage" class="text-xs text-destructive">
+            {{ errorMessage }}
+        </p>
+
+        <template v-else-if="loading">
+            <Skeleton class="h-10 w-64 rounded-md" />
+            <Skeleton class="mt-4 h-72 w-full rounded-md" />
+        </template>
+
+        <template v-else>
+            <Tabs v-model="activeTab">
+                <TabsList class="grid w-full grid-cols-4 sm:w-fit">
+                    <TabsTrigger
+                        v-for="tab in tabs"
+                        :key="tab.value"
+                        :value="tab.value"
+                    >
+                        {{ tab.label }}
+                    </TabsTrigger>
+                </TabsList>
+
+                <TabsContent
                     v-for="tab in tabs"
                     :key="tab.value"
+                    class="mt-4"
                     :value="tab.value"
                 >
-                    {{ tab.label }}
-                </TabsTrigger>
-            </TabsList>
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>{{ tab.heading }}</TableHead>
+                                <TableHead>Models</TableHead>
+                                <TableHead>Projects</TableHead>
+                                <TableHead class="text-right">
+                                    Sessions
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Input
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Output
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Reasoning
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Cache Read
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Total Tokens
+                                </TableHead>
+                                <TableHead class="text-right">
+                                    Cost
+                                </TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            <TableRow
+                                v-for="item in tabState[tab.value].paginatedItems"
+                                :key="item.id"
+                            >
+                                <TableCell class="max-w-72 truncate font-medium">
+                                    {{ item.label }}
+                                </TableCell>
+                                <TableCell>{{ formatList(item.models) }}</TableCell>
+                                <TableCell class="max-w-56 truncate">
+                                    {{ formatList(item.projects) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ item.sessionCount }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatNumber(item.inputTokens) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatNumber(item.outputTokens) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatNumber(item.reasoningOutputTokens) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatNumber(item.cachedInputTokens) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatNumber(item.totalTokens) }}
+                                </TableCell>
+                                <TableCell class="text-right tabular-nums">
+                                    {{ formatCurrency(item.costUSD) }}
+                                </TableCell>
+                            </TableRow>
+                            <TableEmpty v-if="tabState[tab.value].items.length === 0" :colspan="10">
+                                No {{ productName }} token usage found.
+                            </TableEmpty>
+                        </TableBody>
+                    </Table>
 
-            <TabsContent
-                v-for="tab in tabs"
-                :key="tab.value"
-                class="mt-4"
-                :value="tab.value"
-            >
-                <Table>
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead>{{ tab.heading }}</TableHead>
-                            <TableHead>Models</TableHead>
-                            <TableHead>Projects</TableHead>
-                            <TableHead class="text-right">
-                                Sessions
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Input
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Output
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Reasoning
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Cache Read
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Total Tokens
-                            </TableHead>
-                            <TableHead class="text-right">
-                                Cost
-                            </TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        <TableRow
-                            v-for="item in tabState[tab.value].paginatedItems"
-                            :key="item.id"
-                        >
-                            <TableCell class="max-w-72 truncate font-medium">
-                                {{ item.label }}
-                            </TableCell>
-                            <TableCell>{{ formatList(item.models) }}</TableCell>
-                            <TableCell class="max-w-56 truncate">
-                                {{ formatList(item.projects) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ item.sessionCount }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatNumber(item.inputTokens) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatNumber(item.outputTokens) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatNumber(item.reasoningOutputTokens) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatNumber(item.cachedInputTokens) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatNumber(item.totalTokens) }}
-                            </TableCell>
-                            <TableCell class="text-right tabular-nums">
-                                {{ formatCurrency(item.costUSD) }}
-                            </TableCell>
-                        </TableRow>
-                        <TableEmpty v-if="tabState[tab.value].items.length === 0" :colspan="10">
-                            No {{ productName }} token usage found.
-                        </TableEmpty>
-                    </TableBody>
-                </Table>
-
-                <UsageAnalyticsPaginationFooter
-                    :page="tabState[tab.value].page"
-                    :page-count="tabState[tab.value].pageCount"
-                    :page-size="pageSize"
-                    :total="tabState[tab.value].items.length"
-                    @update:page="page => setPage(tab.value, page)"
-                />
-            </TabsContent>
-        </Tabs>
+                    <UsageAnalyticsPaginationFooter
+                        :page="tabState[tab.value].page"
+                        :page-count="tabState[tab.value].pageCount"
+                        :page-size="pageSize"
+                        :total="tabState[tab.value].items.length"
+                        @update:page="page => setPage(tab.value, page)"
+                    />
+                </TabsContent>
+            </Tabs>
+        </template>
     </StatisticalAnalysisPanel>
 </template>
 
@@ -111,6 +122,8 @@ defineOptions({
 
 const props = withDefaults(defineProps<{
     dailyItems: UsageAnalyticsTokenUsageRow[]
+    errorMessage?: string
+    loading?: boolean
     weeklyItems: UsageAnalyticsTokenUsageRow[]
     monthlyItems: UsageAnalyticsTokenUsageRow[]
     sessionItems: UsageAnalyticsTokenUsageRow[]

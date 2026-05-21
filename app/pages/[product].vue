@@ -1,6 +1,6 @@
 <template>
     <DashboardProductPage
-        :product-key="product.payloadKey"
+        :product-key="product.platformKey"
         :product-name="product.name"
     />
 </template>

@@ -58,11 +58,11 @@
         </Table>
 
         <UsageAnalyticsPaginationFooter
-            v-if="dailyTokenUsage.length > pageSize"
+            v-if="items.length > pageSize"
             v-model:page="page"
             :page-count="pageCount"
             :page-size="pageSize"
-            :total="dailyTokenUsage.length"
+            :total="items.length"
         />
     </StatisticalAnalysisPanel>
 </template>
@@ -74,18 +74,21 @@ defineOptions({
     name: 'StatisticalAnalysisTokensUsagePanel',
 })
 
-const { dailyTokenUsage } = useUsageDashboard()
+const props = defineProps<{
+    items: DailyTokenUsage[]
+}>()
+
 const pageSize = 10
 const page = shallowRef(1)
-const pageCount = computed(() => Math.max(1, Math.ceil(dailyTokenUsage.value.length / pageSize)))
+const pageCount = computed(() => Math.max(1, Math.ceil(props.items.length / pageSize)))
 const paginatedItems = computed(() => {
     const safePage = Math.min(page.value, pageCount.value)
     const start = (safePage - 1) * pageSize
 
-    return dailyTokenUsage.value.slice(start, start + pageSize)
+    return props.items.slice(start, start + pageSize)
 })
 
-watch(dailyTokenUsage, () => {
+watch(() => props.items, () => {
     page.value = 1
 })
 </script>
