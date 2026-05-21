@@ -10,14 +10,12 @@ export default defineEventHandler(async (event) => {
     const module = normalizeModule(query.module)
     const modules = normalizeModules(query.modules)
     const platform = normalizePlatform(query.platform)
-    const sessionId = typeof query.sessionId === 'string' ? query.sessionId.trim() : undefined
 
     return getUsageDataRuntime(config).getProjectDataModules({
         module,
         modules,
         platform,
         project,
-        sessionId,
     })
 })
 

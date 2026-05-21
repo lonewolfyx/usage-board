@@ -1,5 +1,5 @@
 import type { IConfig, IRuntimeConfig } from '#shared/types/config'
-import { getClaudeCodePaths, getCodexPath, getGeminiPath, getOpenCodePath } from '#shared/utils/paths'
+import { getClaudeCodePaths, getCodexPath, getGeminiPath } from '#shared/utils/paths'
 
 export function resolveConfig(rc: IRuntimeConfig): IConfig {
     const claudeCodePaths = getClaudeCodePaths()
@@ -8,7 +8,6 @@ export function resolveConfig(rc: IRuntimeConfig): IConfig {
         home: rc.home,
         claudeCodePath: claudeCodePaths[0]!,
         claudeCodePaths,
-        openCodePath: getOpenCodePath(),
         codexPath: getCodexPath(),
         geminiPath: getGeminiPath(),
     }

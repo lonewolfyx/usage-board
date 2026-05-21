@@ -78,7 +78,7 @@ const pricingCache = new Map<string, PricingCacheEntry>()
  * console.log(dataset['gpt-5']?.input_cost_per_token)
  * ```
  */
-export async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
+async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
     const url = options.url ?? DEFAULT_LITELLM_PRICING_URL
     const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_PRICING_CACHE_TTL_MS
     const now = Date.now()

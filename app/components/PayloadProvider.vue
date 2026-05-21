@@ -11,7 +11,6 @@ const route = useRoute()
 const requiresPayload = computed(() => route.path !== '/project')
 
 const {
-    clear,
     data: payload,
     error,
     execute,
@@ -32,9 +31,7 @@ watch(requiresPayload, (shouldFetchPayload) => {
 })
 
 providePayloadContext({
-    clear,
     error: readonly(error),
-    execute,
     payload: readonly(payload),
     requiresPayload: readonly(requiresPayload),
     refresh,

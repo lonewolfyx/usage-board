@@ -3,7 +3,6 @@ import type {
     ProjectDashboardPlatformKey,
     ProjectDashboardScope,
     ProjectLineSeries,
-    ProjectMetaModule,
     ProjectModelUsageModulePayload,
     ProjectPendingWebSocketRequest,
     ProjectPlatformModulePayload,
@@ -40,7 +39,6 @@ import {
 } from '#shared/utils/usage-dashboard'
 
 const projectModuleLoadOrder = [
-    'meta',
     'daily_trend',
     'model_usage',
     'token_usage',
@@ -79,19 +77,15 @@ const emptySessionListPayload: ProjectSessionListModulePayload = {
     sessions: [],
 }
 
-interface ProjectModuleStateMap {
-    daily_trend: ShallowRef<ProjectPlatformModulePayload<ProjectDailyTrendModulePayload> | null>
-    meta: ShallowRef<ProjectMetaModule | null>
-    model_usage: ShallowRef<ProjectPlatformModulePayload<ProjectModelUsageModulePayload> | null>
-    session_list: ShallowRef<ProjectPlatformModulePayload<ProjectSessionListModulePayload> | null>
-    token_usage: ShallowRef<ProjectPlatformModulePayload<ProjectTokenUsageModulePayload> | null>
-}
-
-interface ProjectPlatformModulePayloadMap {
+interface ProjectModulePayloadMap {
     daily_trend: ProjectDailyTrendModulePayload
     model_usage: ProjectModelUsageModulePayload
     session_list: ProjectSessionListModulePayload
     token_usage: ProjectTokenUsageModulePayload
+}
+
+type ProjectModuleStateMap = {
+    [TModule in keyof ProjectModulePayloadMap]: ShallowRef<ProjectPlatformModulePayload<ProjectModulePayloadMap[TModule]> | null>
 }
 
 export function useProjectDashboard() {
@@ -102,12 +96,11 @@ export function useProjectDashboard() {
     const websocketError = shallowRef('')
     const projectModules: ProjectModuleStateMap = {
         daily_trend: shallowRef<ProjectPlatformModulePayload<ProjectDailyTrendModulePayload> | null>(null),
-        meta: shallowRef<ProjectMetaModule | null>(null),
         model_usage: shallowRef<ProjectPlatformModulePayload<ProjectModelUsageModulePayload> | null>(null),
         session_list: shallowRef<ProjectPlatformModulePayload<ProjectSessionListModulePayload> | null>(null),
         token_usage: shallowRef<ProjectPlatformModulePayload<ProjectTokenUsageModulePayload> | null>(null),
     }
-    const platformModuleDefaults: ProjectPlatformModulePayloadMap = {
+    const platformModuleDefaults: ProjectModulePayloadMap = {
         daily_trend: emptyDailyTrendPayload,
         model_usage: emptyModelUsagePayload,
         session_list: emptySessionListPayload,
@@ -115,10 +108,7 @@ export function useProjectDashboard() {
     }
     const loadingModules = reactive<Record<ProjectUsageDataModule, boolean>>({
         daily_trend: false,
-        meta: false,
         model_usage: false,
-        overview_cards: false,
-        session_interactions: false,
         session_list: false,
         token_usage: false,
     })
@@ -160,7 +150,6 @@ export function useProjectDashboard() {
     const projects = computed<ProjectSelectItem[]>(() => projectCatalog.value.map(project => ({
         id: project.label,
         name: project.label,
-        path: project.path,
         type: project.type,
     })))
     const isProjectModuleLoading = computed(() => projectModuleLoadOrder.some(module => loadingModules[module]))
@@ -323,7 +312,6 @@ export function useProjectDashboard() {
         try {
             const response = await sendWebSocketRequest<ProjectUsageDataModulesResponse>({
                 modules: [...projectModuleLoadOrder],
-                path: project.path,
                 project: project.id,
                 type: 'project_data',
             })
@@ -475,7 +463,7 @@ export function useProjectDashboard() {
         for (const module of projectModuleLoadOrder) {
             const payload = response.modules[module]
             if (payload) {
-                projectModules[module].value = payload as ProjectModuleStateMap[typeof module]['value']
+                setProjectModuleData(module, payload)
             }
         }
     }
@@ -486,10 +474,17 @@ export function useProjectDashboard() {
             : false
     }
 
-    function getPlatformModulePayload<TModule extends keyof ProjectPlatformModulePayloadMap>(
+    function setProjectModuleData<TModule extends keyof ProjectModulePayloadMap>(
+        module: TModule,
+        payload: ProjectPlatformModulePayload<ProjectModulePayloadMap[TModule]>,
+    ) {
+        projectModules[module].value = payload
+    }
+
+    function getPlatformModulePayload<TModule extends keyof ProjectModulePayloadMap>(
         module: TModule,
         platform: ProjectDashboardScope,
-    ) {
+    ): ProjectModulePayloadMap[TModule] {
         return projectModules[module].value?.[platform] ?? platformModuleDefaults[module]
     }
 
