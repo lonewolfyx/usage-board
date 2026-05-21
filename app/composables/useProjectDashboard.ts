@@ -37,6 +37,7 @@ import {
 import {
     formatCompactNumber,
     formatCurrency,
+    mergeDailyTokenUsage,
 } from '#shared/utils/usage-dashboard'
 
 const recentProjectDays = 30
@@ -95,9 +96,9 @@ export function useProjectDashboard() {
     const catalogLoading = shallowRef(false)
     const projectCatalog = shallowRef<ProjectUsageCatalogItem[]>([])
     const websocketError = shallowRef('')
-    const projectModules = reactive(Object.fromEntries(
+    const projectModules = Object.fromEntries(
         PROJECT_USAGE_DATA_MODULES.map(module => [module, shallowRef(null)]),
-    ) as ProjectModuleStateMap)
+    ) as ProjectModuleStateMap
     const loadingModules = reactive(Object.fromEntries(
         PROJECT_USAGE_DATA_MODULES.map(module => [module, false]),
     ) as Record<ProjectUsageDataModule, boolean>)
@@ -144,9 +145,22 @@ export function useProjectDashboard() {
     const isProjectModuleLoading = computed(() => PROJECT_USAGE_DATA_MODULES.some(module => loadingModules[module]))
     const isProjectSelectDisabled = computed(() => catalogLoading.value || isProjectModuleLoading.value || projects.value.length === 0)
     const isScopeReady = computed(() => isModuleLoaded('session_list'))
+    const visiblePlatformSessions = computed(() => platformTabs
+        .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions)
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
+    const visiblePlatformDailyUsage = computed(() => mergeDailyTokenUsage(
+        platformTabs.flatMap(tab => getPlatformModulePayload('daily_trend', tab.value).dailyTokenUsage),
+    ))
+    const visiblePlatformModelUsage = computed(() => mergeDailyTokenUsage(
+        platformTabs.flatMap(tab => getPlatformModulePayload('model_usage', tab.value).dailyTokenUsage),
+    ))
     const tabSummaries = computed<Record<ProjectDashboardScope, ProjectTabSummary>>(() => Object.fromEntries(
         tabs.map((tab) => {
-            const summary = summarizeProjectSessions(getPlatformModulePayload('session_list', tab.value).sessions)
+            const summary = summarizeProjectSessions(
+                tab.value === 'all'
+                    ? visiblePlatformSessions.value
+                    : getPlatformModulePayload('session_list', tab.value).sessions,
+            )
 
             return [tab.value, {
                 cost: formatCurrency(summary.costUSD),
@@ -174,10 +188,10 @@ export function useProjectDashboard() {
     const recentDayLabels = computed(() => buildRecentDateLabels(recentProjectDays))
     const yearlyDayLabels = computed(() => buildRecentDateLabels(yearlyProjectDays))
     const yearlyTickIndexes = computed(() => buildMonthlyTickIndexes(yearlyDayLabels.value))
-    const allOverviewCards = computed(() => buildProjectOverviewCards(getPlatformModulePayload('session_list', 'all').sessions))
+    const allOverviewCards = computed(() => buildProjectOverviewCards(visiblePlatformSessions.value))
     const allDailyUsageRows = computed(() => toProjectDisplayDailyUsageRows(
-        getPlatformModulePayload('daily_trend', 'all').dailyTokenUsage,
-        getPlatformModulePayload('session_list', 'all').sessions,
+        visiblePlatformDailyUsage.value,
+        visiblePlatformSessions.value,
     ))
     const allSessionRows = computed(() => platformTabs
         .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions.map(session => ({
@@ -194,7 +208,7 @@ export function useProjectDashboard() {
         points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
     })))
     const allModelChart = computed(() => buildProjectDailyModelUsageChart(
-        getPlatformModulePayload('model_usage', 'all').dailyTokenUsage,
+        visiblePlatformModelUsage.value,
         recentDayLabels.value,
     ))
     const platformViews = computed<Record<ProjectUsagePlatform, ProjectPlatformView>>(() => Object.fromEntries(
@@ -440,7 +454,7 @@ export function useProjectDashboard() {
 
     function resetProjectModules() {
         for (const module of PROJECT_USAGE_DATA_MODULES) {
-            projectModules[module].value = null
+            getProjectModuleState(module).value = null
             loadingModules[module] = false
         }
     }
@@ -449,20 +463,24 @@ export function useProjectDashboard() {
         for (const module of PROJECT_USAGE_DATA_MODULES) {
             const payload = response.modules[module]
             if (payload) {
-                projectModules[module].value = payload
+                getProjectModuleState(module).value = payload as ProjectModuleStateMap[typeof module]['value']
             }
         }
     }
 
     function isModuleLoaded(module: ProjectUsageDataModule) {
-        return projectModules[module].value !== null
+        return getProjectModuleState(module).value !== null
     }
 
     function getPlatformModulePayload<TModule extends keyof ProjectModulePayloadMap>(
         module: TModule,
         platform: ProjectDashboardScope,
     ): ProjectModulePayloadMap[TModule] {
-        return projectModules[module].value?.[platform] ?? projectModuleDefaults[module]
+        return getProjectModuleState(module).value?.[platform] ?? projectModuleDefaults[module]
+    }
+
+    function getProjectModuleState<TModule extends keyof ProjectModulePayloadMap>(module: TModule) {
+        return projectModules[module] as ProjectModuleStateMap[TModule]
     }
 
     function getDailySeriesPoints(platform: ProjectUsagePlatform, labels: string[]) {

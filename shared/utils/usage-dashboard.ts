@@ -1,4 +1,7 @@
 import type {
+    DailyTokenUsage,
+    ModelTokenUsage,
+    MonthlyModelUsage,
     ProjectUsageItem,
     TrendTone,
     UsageOverviewCard,
@@ -189,6 +192,85 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
         .sort((a, b) => b.costUSD - a.costUSD)
 }
 
+export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
+    const groups = new Map<string, {
+        cachedInputTokens: number
+        costUSD: number
+        date: string
+        inputTokens: number
+        models: Map<string, ModelTokenUsage>
+        outputTokens: number
+        reasoningOutputTokens: number
+        totalTokens: number
+    }>()
+
+    for (const item of items) {
+        const dateKey = getDateKeyFromLabel(item.date)
+        const group = groups.get(dateKey) ?? {
+            cachedInputTokens: 0,
+            costUSD: 0,
+            date: formatDateLabelFromDateKey(dateKey, item.date),
+            inputTokens: 0,
+            models: new Map<string, ModelTokenUsage>(),
+            outputTokens: 0,
+            reasoningOutputTokens: 0,
+            totalTokens: 0,
+        }
+
+        group.cachedInputTokens += item.cachedInputTokens
+        group.costUSD += item.costUSD
+        group.inputTokens += item.inputTokens
+        group.outputTokens += item.outputTokens
+        group.reasoningOutputTokens += item.reasoningOutputTokens
+        group.totalTokens += item.totalTokens
+
+        for (const [modelName, usage] of Object.entries(item.models)) {
+            const model = group.models.get(modelName) ?? createEmptyModelUsage()
+            model.cachedInputTokens += usage.cachedInputTokens
+            model.inputTokens += usage.inputTokens
+            model.isFallback = model.isFallback || usage.isFallback
+            model.outputTokens += usage.outputTokens
+            model.reasoningOutputTokens += usage.reasoningOutputTokens
+            model.totalTokens += usage.totalTokens
+            group.models.set(modelName, model)
+        }
+
+        groups.set(dateKey, group)
+    }
+
+    return Array.from(groups.entries())
+        .sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([, group]) => ({
+            cachedInputTokens: group.cachedInputTokens,
+            costUSD: roundCurrency(group.costUSD),
+            date: group.date,
+            inputTokens: group.inputTokens,
+            models: Object.fromEntries(group.models.entries()),
+            outputTokens: group.outputTokens,
+            reasoningOutputTokens: group.reasoningOutputTokens,
+            totalTokens: group.totalTokens,
+        }))
+}
+
+export function mergeMonthlyModelUsage(items: MonthlyModelUsage[]) {
+    const groups = new Map<string, MonthlyModelUsage>()
+
+    for (const item of items) {
+        const key = `${item.month}__${item.model}`
+        const group = groups.get(key) ?? {
+            model: item.model,
+            month: item.month,
+            tokenTotal: 0,
+        }
+
+        group.tokenTotal += item.tokenTotal
+        groups.set(key, group)
+    }
+
+    return Array.from(groups.values())
+        .sort((a, b) => a.month.localeCompare(b.month) || a.model.localeCompare(b.model))
+}
+
 function formatSignedPercent(value: number) {
     const prefix = value > 0 ? '+' : ''
 
@@ -205,4 +287,15 @@ function getTrendTone(value: number): TrendTone {
     }
 
     return 'neutral'
+}
+
+function createEmptyModelUsage(): ModelTokenUsage {
+    return {
+        cachedInputTokens: 0,
+        inputTokens: 0,
+        isFallback: false,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        totalTokens: 0,
+    }
 }

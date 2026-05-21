@@ -3,7 +3,7 @@ import type { LoadUsageResult } from '#shared/types/usage-dashboard'
 import { computed } from 'vue'
 import { usePayloadContext } from '~/composables/usePayloadContext'
 
-const emptyDashboard: LoadUsageResult = {
+export const EMPTY_LOAD_USAGE_RESULT: LoadUsageResult = {
     dailyRows: [],
     dailyTokenUsage: [],
     monthlyModelUsage: [],
@@ -23,7 +23,7 @@ export function usePayloadDashboard(key: ProjectUsagePlatform) {
     const { payload } = usePayloadContext()
 
     const dashboard = computed<LoadUsageResult>(() => {
-        return (payload.value?.[key] as LoadUsageResult | undefined) ?? emptyDashboard
+        return (payload.value?.[key] as LoadUsageResult | undefined) ?? EMPTY_LOAD_USAGE_RESULT
     })
 
     return {

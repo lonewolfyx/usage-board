@@ -11,6 +11,8 @@ import type {
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import { DASHBOARD_VISIBLE_PLATFORM_PAGES } from '#shared/platform/dashboard'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
@@ -27,32 +29,25 @@ import { formatNumber } from '@lonewolfyx/utils'
 
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
 
-const projectPlatformMetaMap = {
-    claudeCode: {
-        aiIcon: 'claude_code',
-        color: '#d97757',
-        label: 'Claude Code',
-    },
-    codex: {
-        aiIcon: 'codex',
-        color: '#111827',
-        label: 'Codex',
-    },
-    gemini: {
-        aiIcon: 'gemini',
-        color: '#0ea5e9',
-        label: 'Gemini',
-    },
-} satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
+const projectPlatformMetaMap = PROJECT_USAGE_PLATFORM_META satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
 
-export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
+export const projectPlatformTabs = DASHBOARD_VISIBLE_PLATFORM_PAGES.map(value => ({
     ...projectPlatformMetaMap[value],
     value,
 })) satisfies ProjectDashboardPlatformTab[]
 
-const projectPlatformTabMap = Object.fromEntries(
-    projectPlatformTabs.map(tab => [tab.value, tab]),
-) as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>
+const projectPlatformTabMap = PROJECT_USAGE_PLATFORMS.reduce<Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>>((result, platform) => {
+    result[platform] = {
+        ...projectPlatformMetaMap[platform],
+        value: platform,
+    }
+    return result
+}, {} as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>)
+
+const visibleProjectPlatformTabMap = projectPlatformTabs.reduce<Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>>((result, tab) => {
+    result[tab.value] = tab
+    return result
+}, {} as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>)
 
 export const projectDashboardTabs = [
     { label: 'All', value: 'all' },
@@ -60,7 +55,7 @@ export const projectDashboardTabs = [
 ] satisfies ProjectDashboardTab[]
 
 export function getProjectPlatform(platform: ProjectUsagePlatform): ProjectDashboardPlatformTab {
-    return projectPlatformTabMap[platform]
+    return visibleProjectPlatformTabMap[platform] ?? projectPlatformTabMap[platform]
 }
 
 export function buildRecentDateLabels(days: number) {
