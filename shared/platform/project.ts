@@ -17,6 +17,10 @@ import type {
     ProjectUsageDataModuleResponse,
     ProjectUsageDataModulesResponse,
 } from '#shared/types/ws'
+import {
+    createEmptyProjectPlatformUsage,
+    normalizeProjectUsageDetail,
+} from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { buildLoadUsageResult } from '#shared/utils/platform'
@@ -32,6 +36,7 @@ export function buildProjectUsageDataModuleFromDetail(
         platform?: ProjectDashboardScope
     },
 ): ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse {
+    const normalizedDetail = normalizeProjectUsageDetail(detail)
     const modules = uniqueItems(options.modules?.length
         ? options.modules
         : [options.module ?? DEFAULT_PROJECT_USAGE_DATA_MODULE])
@@ -46,20 +51,20 @@ export function buildProjectUsageDataModuleFromDetail(
 
     if (modules.length === 1) {
         const module = modules[0]!
-        const data = buildProjectPlatformModule(detail, module, options.platform ?? 'all') as ProjectUsageDataModulePayloadMap[typeof module]
+        const data = buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all') as ProjectUsageDataModulePayloadMap[typeof module]
 
         return {
             data,
-            label: detail.label,
+            label: normalizedDetail.label,
             module,
         } as ProjectUsageDataModuleResponse
     }
 
     return {
-        label: detail.label,
+        label: normalizedDetail.label,
         modules: Object.fromEntries(modules.map(module => [
             module,
-            buildProjectPlatformModule(detail, module, options.platform ?? 'all'),
+            buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all'),
         ])),
     }
 }
@@ -107,7 +112,7 @@ function buildProjectPlatformModule(
     platform: ProjectDashboardScope,
 ) {
     if (platform !== 'all') {
-        return buildPlatformModulePayload(detail.analyzing[platform], module)
+        return buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module)
     }
 
     if (module === 'session_list') {
@@ -170,11 +175,11 @@ function getProjectDetailSessions(
     platform: ProjectDashboardScope = 'all',
 ) {
     if (platform !== 'all') {
-        return detail.analyzing[platform].sessions
+        return (detail.analyzing[platform] ?? createEmptyProjectPlatformUsage()).sessions
     }
 
     return PROJECT_USAGE_PLATFORMS
-        .flatMap(currentPlatform => detail.analyzing[currentPlatform].sessions)
+        .flatMap(currentPlatform => (detail.analyzing[currentPlatform] ?? createEmptyProjectPlatformUsage()).sessions)
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
 
@@ -191,7 +196,7 @@ function assertProjectUsagePlatformScope(platform: string): asserts platform is 
 }
 
 function getProjectDetailPlatforms(detail: ProjectUsageDetail): ProjectUsagePlatform[] {
-    return PROJECT_USAGE_PLATFORMS.filter(platform => detail.analyzing[platform].sessions.length > 0)
+    return PROJECT_USAGE_PLATFORMS.filter(platform => (detail.analyzing[platform] ?? createEmptyProjectPlatformUsage()).sessions.length > 0)
 }
 
 function getProjectCatalogType(platforms: ProjectUsagePlatform[]): ProjectUsageCatalogType {
@@ -218,7 +223,7 @@ function buildProjectPlatformPayloadMap(
     return Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [
             platform,
-            buildPlatformModulePayload(detail.analyzing[platform], module),
+            buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module),
         ]),
     ) as ProjectUsagePlatformRecord<ReturnType<typeof buildPlatformModulePayload>>
 }

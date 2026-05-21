@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import { normalizeProjectUsageDetail } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
 type SnapshotKey = 'bootstrap' | 'project_catalog'
@@ -94,7 +95,7 @@ export class UsageCacheRepository {
         const details = new Map<string, ProjectUsageDetail>()
 
         for (const row of rows) {
-            details.set(row.label, JSON.parse(row.payload) as ProjectUsageDetail)
+            details.set(row.label, normalizeProjectUsageDetail(JSON.parse(row.payload) as ProjectUsageDetail))
         }
 
         return details

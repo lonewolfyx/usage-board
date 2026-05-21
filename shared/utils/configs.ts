@@ -1,14 +1,42 @@
 import type { IConfig, IRuntimeConfig } from '#shared/types/config'
-import { getClaudeCodePaths, getCodexPath, getGeminiPath } from '#shared/utils/paths'
+import {
+    getAmpPaths,
+    getClaudeCodePaths,
+    getCodebuffPaths,
+    getCodexPath,
+    getCopilotPaths,
+    getDroidPaths,
+    getGeminiPath,
+    getGoosePaths,
+    getHermesPaths,
+    getKiloPaths,
+    getKimiPaths,
+    getOpenClawPaths,
+    getOpenCodePaths,
+    getPiPaths,
+    getQwenPaths,
+} from '#shared/utils/paths'
 
 export function resolveConfig(rc: IRuntimeConfig): IConfig {
     const claudeCodePaths = getClaudeCodePaths()
     return {
         version: rc.appVersion,
         home: rc.home,
+        ampPaths: getAmpPaths(),
         claudeCodePath: claudeCodePaths[0]!,
         claudeCodePaths,
+        codebuffPaths: getCodebuffPaths(),
+        copilotPaths: getCopilotPaths(),
         codexPath: getCodexPath(),
+        droidPaths: getDroidPaths(),
         geminiPath: getGeminiPath(),
+        goosePaths: getGoosePaths(),
+        hermesPaths: getHermesPaths(),
+        kiloPaths: getKiloPaths(),
+        kimiPaths: getKimiPaths(),
+        openClawPaths: getOpenClawPaths(),
+        openCodePaths: getOpenCodePaths(),
+        piPaths: getPiPaths(),
+        qwenPaths: getQwenPaths(),
     }
 }

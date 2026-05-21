@@ -1,33 +1,26 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
-import type { AiIconName, NavItem } from '#shared/types/navigation'
+import type { NavItem } from '#shared/types/navigation'
+import { DASHBOARD_VISIBLE_PLATFORM_PAGES } from '#shared/platform/dashboard'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
 export interface DashboardProductDefinition {
-    icon: AiIconName
+    icon: string
     name: string
     payloadKey: ProjectUsagePlatform
     slug: string
 }
 
-const dashboardProducts: DashboardProductDefinition[] = [
-    {
-        icon: 'claude_code',
-        name: 'Claude Code',
-        payloadKey: 'claudeCode',
-        slug: 'claude_code',
-    },
-    {
-        icon: 'codex',
-        name: 'Codex',
-        payloadKey: 'codex',
-        slug: 'codex',
-    },
-    {
-        icon: 'gemini',
-        name: 'Gemini',
-        payloadKey: 'gemini',
-        slug: 'gemini',
-    },
-]
+const visiblePlatformPages = new Set<ProjectUsagePlatform>(DASHBOARD_VISIBLE_PLATFORM_PAGES)
+
+const dashboardProducts: DashboardProductDefinition[] = PROJECT_USAGE_PLATFORMS
+    .filter(platform => visiblePlatformPages.has(platform))
+    .map(platform => ({
+        icon: PROJECT_USAGE_PLATFORM_META[platform].aiIcon,
+        name: PROJECT_USAGE_PLATFORM_META[platform].label,
+        payloadKey: platform,
+        slug: PROJECT_USAGE_PLATFORM_META[platform].slug,
+    }))
 
 export const dashboardProductNavItems: NavItem[] = dashboardProducts.map(product => ({
     icon: product.icon,
