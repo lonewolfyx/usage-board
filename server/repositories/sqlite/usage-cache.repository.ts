@@ -1,11 +1,12 @@
 import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
+import type { SqliteDatabase } from '#server/utils/sqlite'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type { ProjectUsageCatalogItem } from '#shared/types/ws'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { openSqliteDatabase } from '#server/utils/sqlite'
 import { normalizeProjectUsageDetail } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
@@ -17,12 +18,26 @@ interface SnapshotRow {
     updated_at: string
 }
 
+interface ProjectSnapshotRow extends SnapshotRow {
+    label: string
+}
+
+interface IndexedSourceFileRow {
+    mtime_ms: number
+    path: string
+    payload: string
+    platform: IndexedUsageSourceFile['platform']
+    project_names: string
+    size: number
+    updated_at: string
+}
+
 export class UsageCacheRepository {
-    private readonly database: DatabaseSync
+    private readonly database: SqliteDatabase
 
     constructor(databasePath: string) {
         mkdirParentDirectory(databasePath)
-        this.database = new DatabaseSync(databasePath)
+        this.database = openSqliteDatabase(databasePath)
         this.database.exec(`
             CREATE TABLE IF NOT EXISTS cache_snapshots (
                 key TEXT PRIMARY KEY,
@@ -87,11 +102,11 @@ export class UsageCacheRepository {
     }
 
     loadProjectDetails() {
-        const rows = this.database.prepare(`
+        const rows: ProjectSnapshotRow[] = this.database.prepare<[], ProjectSnapshotRow>(`
             SELECT label, payload, payload_hash, updated_at
             FROM project_snapshots
             ORDER BY label ASC
-        `).all() as unknown as Array<SnapshotRow & { label: string }>
+        `).all()
         const details = new Map<string, ProjectUsageDetail>()
 
         for (const row of rows) {
@@ -102,19 +117,11 @@ export class UsageCacheRepository {
     }
 
     loadIndexedSourceFiles() {
-        const rows = this.database.prepare(`
+        const rows: IndexedSourceFileRow[] = this.database.prepare<[], IndexedSourceFileRow>(`
             SELECT path, platform, payload, project_names, size, mtime_ms, updated_at
             FROM indexed_source_files
             ORDER BY path ASC
-        `).all() as unknown as Array<{
-            mtime_ms: number
-            path: string
-            payload: string
-            platform: IndexedUsageSourceFile['platform']
-            project_names: string
-            size: number
-            updated_at: string
-        }>
+        `).all()
 
         return rows.map(row => ({
             mtimeMs: row.mtime_ms,
@@ -222,11 +229,13 @@ export class UsageCacheRepository {
     }
 
     private getSnapshotRow(key: SnapshotKey) {
-        return this.database.prepare(`
+        const row: SnapshotRow | undefined = this.database.prepare<[SnapshotKey], SnapshotRow>(`
             SELECT payload, payload_hash, updated_at
             FROM cache_snapshots
             WHERE key = ?
-        `).get(key) as SnapshotRow | undefined
+        `).get(key)
+
+        return row
     }
 
     private saveSnapshot(key: SnapshotKey, payload: ProjectUsageCatalogItem[] | TokensConsumptionResult) {

@@ -1,5 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
-import { DatabaseSync } from 'node:sqlite'
+import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     addFragmentInteraction,
@@ -39,10 +39,10 @@ export const hermesUsageAdapter = {
         return config.hermesPaths.flatMap(filePath => toDiscoveredUsageFile(filePath, 'hermes'))
     },
     parseFile(filePath, resolvePricing) {
-        const database = new DatabaseSync(filePath, { readOnly: true })
+        const database = openSqliteDatabase(filePath, { readonly: true })
 
         try {
-            const rows = database.prepare(HERMES_SESSION_QUERY).all() as Array<Record<string, unknown>>
+            const rows: Array<Record<string, unknown>> = database.prepare<[], Record<string, unknown>>(HERMES_SESSION_QUERY).all()
             return rows
                 .map(row => parseHermesRow(row, resolvePricing))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
