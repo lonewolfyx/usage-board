@@ -6,6 +6,8 @@ export default defineConfig({
         onlyBundle: false,
         neverBundle: ['esbuild'],
     },
+    target: 'node18',
+    platform: 'node',
     format: 'esm',
     shims: true,
 })
