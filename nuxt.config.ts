@@ -55,6 +55,9 @@ export default defineNuxtConfig({
         experimental: {
             websocket: true,
         },
+        externals: {
+            external: ['better-sqlite3'],
+        },
         output: {
             dir: 'dist',
         },

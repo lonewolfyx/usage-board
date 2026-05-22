@@ -1,6 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { join } from 'node:path'
-import { DatabaseSync } from 'node:sqlite'
+import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { toIsoString } from '#shared/utils/platform'
@@ -29,10 +29,18 @@ export const kiloUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'kilo'))
     },
     parseFile(filePath, resolvePricing) {
-        const database = new DatabaseSync(filePath, { readOnly: true })
+        const database = openSqliteDatabase(filePath, { readonly: true })
 
         try {
-            const rows = database.prepare(KILO_MESSAGE_QUERY).all() as Array<{ data: string, id: string, session_id: string }>
+            const rows: Array<{
+                data: string
+                id: string
+                session_id: string
+            }> = database.prepare<[], {
+                data: string
+                id: string
+                session_id: string
+            }>(KILO_MESSAGE_QUERY).all()
             const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
             for (const row of rows) {

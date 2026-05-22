@@ -1,5 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
-import { DatabaseSync } from 'node:sqlite'
+import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { toIsoString } from '#shared/utils/platform'
@@ -39,10 +39,10 @@ export const gooseUsageAdapter = {
         return config.goosePaths.flatMap(filePath => toDiscoveredUsageFile(filePath, 'goose'))
     },
     parseFile(filePath, resolvePricing) {
-        const database = new DatabaseSync(filePath, { readOnly: true })
+        const database = openSqliteDatabase(filePath, { readonly: true })
 
         try {
-            const rows = database.prepare(GOOSE_SESSION_QUERY).all() as Array<Record<string, unknown>>
+            const rows: Array<Record<string, unknown>> = database.prepare<[], Record<string, unknown>>(GOOSE_SESSION_QUERY).all()
             const fragments = rows
                 .map(row => parseGooseRow(row, resolvePricing))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
