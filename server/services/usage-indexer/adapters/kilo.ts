@@ -29,7 +29,7 @@ export const kiloUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'kilo'))
     },
     parseFile(filePath, resolvePricing) {
-        const database = openSqliteDatabase(filePath, { readonly: true })
+        const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
             const rows: Array<{

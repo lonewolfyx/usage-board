@@ -44,7 +44,7 @@ export const openCodeUsageAdapter = {
     },
     parseFile(filePath, resolvePricing) {
         if (filePath.endsWith('.db')) {
-            const database = openSqliteDatabase(filePath, { readonly: true })
+            const database = openSqliteDatabase(filePath, { readOnly: true })
 
             try {
                 const rows: Array<{

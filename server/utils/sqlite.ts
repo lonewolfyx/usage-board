@@ -1,8 +1,24 @@
-import BetterSqliteDatabase from 'better-sqlite3'
+import type { DatabaseSyncOptions, StatementResultingChanges } from 'node:sqlite'
+import { DatabaseSync } from 'node:sqlite'
 
-export type SqliteDatabase = InstanceType<typeof BetterSqliteDatabase>
-export type SqliteDatabaseOptions = ConstructorParameters<typeof BetterSqliteDatabase>[1]
+type SqliteRow = Record<string, unknown>
+type SqliteStatementParameters = unknown[]
+
+export interface SqliteStatement<Row = SqliteRow> {
+    all: (...parameters: SqliteStatementParameters) => Row[]
+    get: (...parameters: SqliteStatementParameters) => Row | undefined
+    iterate: (...parameters: SqliteStatementParameters) => IterableIterator<Row>
+    run: (...parameters: SqliteStatementParameters) => StatementResultingChanges
+}
+
+export interface SqliteDatabase {
+    close: () => void
+    exec: (sql: string) => void
+    prepare: <Row = SqliteRow>(sql: string) => SqliteStatement<Row>
+}
+
+export type SqliteDatabaseOptions = Pick<DatabaseSyncOptions, 'readOnly'>
 
 export function openSqliteDatabase(location: string, options?: SqliteDatabaseOptions) {
-    return new BetterSqliteDatabase(location, options)
+    return new DatabaseSync(location, options ?? {}) as unknown as SqliteDatabase
 }

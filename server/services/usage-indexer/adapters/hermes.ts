@@ -39,7 +39,7 @@ export const hermesUsageAdapter = {
         return config.hermesPaths.flatMap(filePath => toDiscoveredUsageFile(filePath, 'hermes'))
     },
     parseFile(filePath, resolvePricing) {
-        const database = openSqliteDatabase(filePath, { readonly: true })
+        const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
             const rows: Array<Record<string, unknown>> = database.prepare<[], Record<string, unknown>>(HERMES_SESSION_QUERY).all()
