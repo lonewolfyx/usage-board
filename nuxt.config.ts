@@ -2,8 +2,6 @@ import { homedir } from 'node:os'
 import tailwindcss from '@tailwindcss/vite'
 import { version } from './package.json'
 
-const isDev = process.env.NODE_ENV === 'development'
-
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
     modules: [
@@ -63,7 +61,6 @@ export default defineNuxtConfig({
         },
         preset: 'node',
         serveStatic: 'node',
-        noExternals: !isDev,
         sourceMap: false,
     },
 
