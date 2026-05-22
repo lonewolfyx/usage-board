@@ -1,54 +1,17 @@
-import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { IOptions } from '~~/src/types'
-import { createServer } from 'node:http'
 import { dirname, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
+import { fileURLToPath } from 'node:url'
 import cac from 'cac'
-import { getPort } from 'get-port-please'
+import { createRuntimeServer } from 'nuxt-devkit-server'
 import open from 'open'
 import { name, version } from '../package.json' with { type: 'json' }
 
-type NodeListener = (
-    req: IncomingMessage,
-    res: ServerResponse,
-) => void | Promise<void>
-
-interface NitroEntrypoint {
-    listener?: unknown
-    middleware?: unknown
-    handler?: unknown
-    default?: unknown
-    websocket?: unknown
-}
-
-interface LoadedNitroEntrypoint {
-    listener: NodeListener
-    websocket?: unknown
-}
-
 const cli = cac(name)
 
-function isNodeListener(value: unknown): value is NodeListener {
-    return typeof value === 'function'
-}
-
-async function loadNitroEntrypoint(outputDir: string): Promise<LoadedNitroEntrypoint> {
-    const entryPath = resolve(outputDir, 'server/index.mjs')
-    const mod = await import(pathToFileURL(entryPath).href) as NitroEntrypoint
-    const listener
-        = mod.listener
-            ?? mod.middleware
-            ?? mod.handler
-            ?? mod.default
-
-    if (!isNodeListener(listener)) {
-        throw new TypeError(`Invalid Nitro listener exported from ${entryPath}`)
-    }
-
-    return {
-        listener,
-        websocket: mod.websocket,
-    }
+export interface IOptions {
+    '--': any
+    'host': string
+    'port': number
+    'open': boolean
 }
 
 cli.command('', 'Start tokens usage analysis')
@@ -56,31 +19,19 @@ cli.command('', 'Start tokens usage analysis')
     .option('--port <port>', 'Port', { default: 7777 })
     .option('--open', 'Open browser', { default: true })
     .action(async (option: IOptions) => {
-        const port = await getPort({
-            port: option.port,
-            portRange: [7777, 9000],
-        })
-
         const root = dirname(fileURLToPath(import.meta.url))
         const outputDir = resolve(root, './')
-        const nitro = await loadNitroEntrypoint(outputDir)
 
-        const app = createServer(async (req, res) => {
-            await nitro.listener(req, res)
-        })
-
-        if (nitro.websocket) {
-            const { default: wsAdapter } = await import('crossws/adapters/node')
-            const { handleUpgrade } = wsAdapter(nitro.websocket as never)
-            app.on('upgrade', handleUpgrade)
-        }
-
-        app.listen(port, option.host, async () => {
-            if (option.open) {
-                const url = `http://${option.host}:${port}`
-                console.log(`Usage board is running at ${url}`)
-                await open(url)
-            }
+        await createRuntimeServer({
+            path: outputDir,
+            host: option.host,
+            port: option.port,
+            onReady: async ({ app }) => {
+                if (option.open) {
+                    console.log(`Usage board is running at ${app.url}`)
+                    await open(app.url)
+                }
+            },
         })
     })
 
