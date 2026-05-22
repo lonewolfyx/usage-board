@@ -35,11 +35,11 @@
         "generate": "nuxt generate",
         "preview": "nuxt preview",
         "typecheck": "nuxt typecheck",
-        "lint": "eslint .",
+        "lint": "nuxt prepare && eslint .",
         "lint:fix": "eslint --fix",
         "dev:cli": "tsdown -w",
         "test": "vitest",
-        "prepare": "nuxt prepare && simple-git-hooks",
+        "prepare": "simple-git-hooks",
         "prepublishOnly": "pnpm build"
     },
     "publishConfig": {
