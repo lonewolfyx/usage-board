@@ -209,6 +209,7 @@ export interface SessionUsageSummary extends SessionUsageSummaryLike {
 export interface SessionUsageSummaryLike {
     costUSD: number
     durationMinutes: number
+    id?: string
     inputTokens: number
     lastActivity: string
     models: string[]

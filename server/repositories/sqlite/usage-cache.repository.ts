@@ -55,7 +55,7 @@ import {
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
-const CACHE_SCHEMA_VERSION = 2
+const CACHE_SCHEMA_VERSION = 3
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -305,6 +305,7 @@ const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS indexed_files (
         path TEXT PRIMARY KEY,
         platform TEXT NOT NULL,
+        cache_signature TEXT NOT NULL DEFAULT '',
         size INTEGER NOT NULL,
         mtime_ms INTEGER NOT NULL,
         updated_at TEXT NOT NULL
@@ -479,7 +480,7 @@ export class UsageCacheRepository {
 
     loadIndexedSourceFiles() {
         const files: IndexedFileRow[] = this.database.prepare<[], IndexedFileRow>(`
-            SELECT path, platform, size, mtime_ms, updated_at
+            SELECT path, platform, cache_signature, size, mtime_ms, updated_at
             FROM indexed_files
             ORDER BY path ASC
         `).all()
@@ -553,6 +554,7 @@ export class UsageCacheRepository {
         }
 
         return files.map(file => ({
+            cacheSignature: file.cache_signature,
             mtimeMs: file.mtime_ms,
             path: file.path,
             payload: fragmentsByPath.get(file.path) ?? [],
@@ -570,8 +572,8 @@ export class UsageCacheRepository {
 
         const deleteFileStatement = this.database.prepare('DELETE FROM indexed_files WHERE path = ?')
         const insertFileStatement = this.database.prepare(`
-            INSERT INTO indexed_files (path, platform, size, mtime_ms, updated_at)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO indexed_files (path, platform, cache_signature, size, mtime_ms, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
         `)
         const insertProjectStatement = this.database.prepare(`
             INSERT INTO indexed_file_projects (path, project_name, project_order)
@@ -622,7 +624,7 @@ export class UsageCacheRepository {
         try {
             for (const file of files) {
                 deleteFileStatement.run(file.path)
-                insertFileStatement.run(file.path, file.platform, file.size, file.mtimeMs, file.updatedAt)
+                insertFileStatement.run(file.path, file.platform, file.cacheSignature, file.size, file.mtimeMs, file.updatedAt)
 
                 for (const [projectOrder, projectName] of file.projectNames.entries()) {
                     insertProjectStatement.run(file.path, projectName, projectOrder)
@@ -752,8 +754,11 @@ export class UsageCacheRepository {
 
     private initializeSchema() {
         this.database.exec(CACHE_SCHEMA_SQL)
+        this.ensureIndexedFilesCacheSignatureColumn()
 
-        if (this.getCurrentSchemaVersion() >= CACHE_SCHEMA_VERSION) {
+        const currentSchemaVersion = this.getCurrentSchemaVersion()
+
+        if (currentSchemaVersion >= CACHE_SCHEMA_VERSION) {
             return
         }
 
@@ -779,15 +784,15 @@ export class UsageCacheRepository {
     }
 
     private migrateLegacyDataIfNeeded() {
-        const hasLegacySnapshots = this.hasTable('cache_snapshots')
-        const hasLegacyProjectSnapshots = this.hasTable('project_snapshots')
-        const hasLegacyIndexedFiles = this.hasTable('indexed_source_files')
-
-        if (!hasLegacySnapshots && !hasLegacyProjectSnapshots && !hasLegacyIndexedFiles) {
+        if (!this.hasLegacyData()) {
             return
         }
 
         this.clearNormalizedTables()
+
+        const hasLegacySnapshots = this.hasTable('cache_snapshots')
+        const hasLegacyProjectSnapshots = this.hasTable('project_snapshots')
+        const hasLegacyIndexedFiles = this.hasTable('indexed_source_files')
 
         if (hasLegacySnapshots) {
             const bootstrap = this.loadLegacyBootstrap()
@@ -818,6 +823,26 @@ export class UsageCacheRepository {
         }
 
         this.dropLegacyTables()
+    }
+
+    private hasLegacyData() {
+        return this.hasTable('cache_snapshots')
+            || this.hasTable('project_snapshots')
+            || this.hasTable('indexed_source_files')
+    }
+
+    private ensureIndexedFilesCacheSignatureColumn() {
+        if (!this.hasTable('indexed_files')) {
+            return
+        }
+
+        const columns = this.database.prepare<[], { name: string }>('PRAGMA table_info(indexed_files)').all()
+
+        if (columns.some(column => column.name === 'cache_signature')) {
+            return
+        }
+
+        this.database.exec('ALTER TABLE indexed_files ADD COLUMN cache_signature TEXT NOT NULL DEFAULT \'\'')
     }
 
     private clearNormalizedTables() {
@@ -1603,6 +1628,7 @@ export class UsageCacheRepository {
         `).all()
 
         return rows.map(row => ({
+            cacheSignature: '',
             mtimeMs: row.mtime_ms,
             path: row.path,
             payload: JSON.parse(row.payload) as IndexedUsageSourceFile['payload'],

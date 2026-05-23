@@ -198,6 +198,7 @@ export interface ScopeInteractionRow {
 }
 
 export interface IndexedFileRow {
+    cache_signature: string
     mtime_ms: number
     path: string
     platform: IndexedUsageSourceFile['platform']
