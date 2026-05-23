@@ -17,6 +17,9 @@ importers:
       glob:
         specifier: ^13.0.6
         version: 13.0.6
+      nuxt-devkit-server:
+        specifier: ^0.0.1
+        version: 0.0.1(crossws@0.4.5(srvx@0.11.15))
     devDependencies:
       '@antfu/eslint-config':
         specifier: ^8.2.0
@@ -5080,6 +5083,14 @@ packages:
   nuxt-component-meta@0.17.2:
     resolution: {integrity: sha512-2/mSSqutOX8t+r8cAX1yUYwAPBqicPO5Rfum3XaHVszxKCF4tXEXBiPGfJY9Zn69x/CIeOdw+aM9wmHzQ5Q+lA==}
     hasBin: true
+
+  nuxt-devkit-server@0.0.1:
+    resolution: {integrity: sha512-r6IOspmazahLU+fvO/P7vs8W50jLWDVgZjSX01rYmrusognjiw6+biSA54j5t6abfMmnV1ucHsVlemrWaiCHfQ==}
+    peerDependencies:
+      crossws: '>=0.4'
+    peerDependenciesMeta:
+      crossws:
+        optional: true
 
   nuxt@4.4.2:
     resolution: {integrity: sha512-iWVFpr/YEqVU/CenqIHMnIkvb2HE/9f+q8oxZ+pj2et+60NljGRClCgnmbvGPdmNFE0F1bEhoBCYfqbDOCim3Q==}
@@ -12367,6 +12378,12 @@ snapshots:
       vue-component-meta: 3.2.6(typescript@5.9.3)
     transitivePeerDependencies:
       - magicast
+
+  nuxt-devkit-server@0.0.1(crossws@0.4.5(srvx@0.11.15)):
+    dependencies:
+      get-port-please: 3.2.0
+    optionalDependencies:
+      crossws: 0.4.5(srvx@0.11.15)
 
   nuxt@4.4.2(@babel/core@7.29.0)(@babel/plugin-syntax-jsx@7.28.6(@babel/core@7.29.0))(@emnapi/core@1.9.2)(@emnapi/runtime@1.9.2)(@parcel/watcher@2.5.6)(@types/node@25.6.0)(@vue/compiler-sfc@3.5.32)(better-sqlite3@12.10.0)(cac@7.0.0)(db0@0.3.4(better-sqlite3@12.10.0))(eslint@10.2.0(jiti@2.6.1))(ioredis@5.10.1)(lightningcss@1.32.0)(magicast@0.5.2)(optionator@0.9.4)(rolldown@1.0.0-rc.15)(rollup-plugin-visualizer@7.0.1(rolldown@1.0.0-rc.15)(rollup@4.60.1))(rollup@4.60.1)(srvx@0.11.15)(terser@5.46.1)(typescript@6.0.2)(vite@8.0.8(@types/node@25.6.0)(esbuild@0.27.7)(jiti@2.6.1)(terser@5.46.1)(yaml@2.8.3))(yaml@2.8.3):
     dependencies:
