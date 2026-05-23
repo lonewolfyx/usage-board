@@ -4,6 +4,7 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
     resolve: {
         alias: {
+            '#server': fileURLToPath(new URL('./server', import.meta.url)),
             '#shared': fileURLToPath(new URL('./shared', import.meta.url)),
             '~~': fileURLToPath(new URL('.', import.meta.url)),
         },

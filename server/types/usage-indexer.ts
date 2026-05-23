@@ -29,6 +29,7 @@ export interface IndexedUsageSourceFile {
     platform: ProjectUsagePlatform
     payload: IndexedUsageSessionFragment[]
     projectNames: string[]
+    cacheSignature: string
     size: number
     mtimeMs: number
     updatedAt: string

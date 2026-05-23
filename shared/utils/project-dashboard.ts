@@ -200,7 +200,7 @@ export function toProjectSessionTableRow(
         cacheTokens: formatNumber(session.cachedInputTokens),
         cost: formatCurrency(session.costUSD),
         duration: session.duration || '-',
-        id: `${platform}:${session.sessionId}`,
+        id: `${platform}:${session.id}`,
         inputTokens: formatNumber(session.inputTokens),
         model: session.models?.join(', ') || session.model || 'unknown',
         outputTokens: formatNumber(session.outputTokens),

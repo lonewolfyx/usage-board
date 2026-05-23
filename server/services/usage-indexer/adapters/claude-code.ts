@@ -30,6 +30,8 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 
+const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:message-id-v1'
+
 export const claudeCodeUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -54,7 +56,7 @@ export const claudeCodeUsageAdapter = {
 
         return fileGroups
             .flat()
-            .flatMap(filePath => toDiscoveredUsageFile(filePath, 'claudeCode'))
+            .flatMap(filePath => toDiscoveredUsageFile(filePath, 'claudeCode', CLAUDE_CODE_CACHE_SIGNATURE))
     },
     parseFile(filePath, resolvePricing) {
         const projectPath = extractClaudeProjectFromPath(filePath)
@@ -154,7 +156,7 @@ function getClaudeUniqueHash(line: Record<string, unknown>) {
     const messageId = normalizeStringValue(message?.id)
     const requestId = normalizeStringValue(line.requestId)
 
-    return messageId && requestId ? `${messageId}:${requestId}` : null
+    return messageId ? `${messageId}:${requestId ?? ''}` : null
 }
 
 function extractClaudeMessageText(content: unknown) {

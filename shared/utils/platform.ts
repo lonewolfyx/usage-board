@@ -308,7 +308,7 @@ function buildSessionRows<TSession extends SessionUsageSummaryLike>(
         .map(session => ({
             cachedInputTokens: getCachedInputTokens(session, options),
             costUSD: session.costUSD,
-            id: session.sessionId,
+            id: session.id ?? session.sessionId,
             inputTokens: session.inputTokens,
             label: session.sessionId,
             models: session.models,
@@ -341,7 +341,7 @@ function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
         date: formatDateLabelFromDateKey(getDateKey(startedAtDate)),
         duration: formatDuration(session.durationMinutes),
         durationMinutes: session.durationMinutes,
-        id: session.sessionId,
+        id: session.id ?? session.sessionId,
         inputTokens: session.inputTokens,
         model: session.topModel,
         month: getMonthKey(startedAtDate),
@@ -960,14 +960,22 @@ export function decodeClaudeProjectPath(projectPath: string) {
  */
 export function getClaudeLookupCandidates(model: string) {
     const normalizedModel = model.trim()
+    const withoutFastSuffix = normalizedModel.replace(/-fast$/u, '')
+    const baseModel = withoutFastSuffix.split('/').at(-1) ?? withoutFastSuffix
+    const normalizedBaseModel = baseModel.replace(/[.@]/gu, '-')
+    const baseModelWithoutDate = normalizedBaseModel.replace(/-\d{8}$/u, '')
 
     return [
         normalizedModel,
-        normalizedModel.replace(/-fast$/u, ''),
-        normalizedModel.replace(/^anthropic\//u, ''),
+        withoutFastSuffix,
+        withoutFastSuffix.replace(/^anthropic\//u, ''),
         `anthropic/${normalizedModel}`,
-        normalizedModel.replace(/^claude-3-5-/u, 'claude-'),
-        normalizedModel.replace(/^claude-3-7-/u, 'claude-'),
+        baseModel,
+        normalizedBaseModel,
+        baseModelWithoutDate,
+        `anthropic/${baseModelWithoutDate}`,
+        baseModelWithoutDate.replace(/^claude-3-5-/u, 'claude-'),
+        baseModelWithoutDate.replace(/^claude-3-7-/u, 'claude-'),
     ]
 }
 

@@ -262,7 +262,7 @@ function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[]): Project
                 project: session.project,
                 reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
                 repository: session.repository,
-                sessionId: session.sessionId,
+                sessionId: session.id,
                 timestamp: interaction.timestamp!,
                 totalTokens: interaction.usage!.totalTokens,
             })))

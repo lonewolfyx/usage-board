@@ -26,6 +26,7 @@ interface MutableSessionDetail {
     costUSD: number
     durationEndAt: string
     durationMinutes: number
+    key: string
     inputTokens: number
     interactions: IndexedUsageInteraction[]
     lastActivity: string
@@ -54,6 +55,7 @@ export async function buildIncrementalUsageIndex(
 
         return !cached
             || cached.platform !== file.platform
+            || cached.cacheSignature !== file.cacheSignature
             || cached.size !== file.size
             || cached.mtimeMs !== file.mtimeMs
     })
@@ -143,9 +145,10 @@ function parseUsageFile(
     pricingResolvers: ProjectUsagePlatformRecord<ModelPricingResolver>,
 ): IndexedUsageSourceFile {
     const adapter = usagePlatformAdapters[file.platform]
-    const payload = adapter.parseFile(file.path, pricingResolvers[file.platform])
+    const payload = adapter.parseFile(file.path, pricingResolvers[file.platform], file)
 
     return {
+        cacheSignature: file.cacheSignature,
         mtimeMs: file.mtimeMs,
         path: file.path,
         payload,
@@ -167,34 +170,17 @@ function buildPlatformSessionsFromFiles(
     platform: ProjectUsagePlatform,
 ) {
     const details = new Map<string, MutableSessionDetail>()
-    const seenDedupeKeys = new Set<string>()
+    const selectedInteractions = selectDedupedInteractions(indexedFiles, platform)
 
-    for (const file of indexedFiles) {
-        if (file.platform !== platform) {
-            continue
+    for (const { fragment, interaction } of selectedInteractions) {
+        const detail = details.get(fragment.key) ?? createSessionDetail(fragment)
+
+        if (fragment.durationEndAt && (!detail.durationEndAt || Date.parse(fragment.durationEndAt) > Date.parse(detail.durationEndAt))) {
+            detail.durationEndAt = fragment.durationEndAt
         }
 
-        for (const fragment of file.payload) {
-            const detail = details.get(fragment.key) ?? createSessionDetail(fragment)
-
-            if (fragment.durationEndAt && (!detail.durationEndAt || Date.parse(fragment.durationEndAt) > Date.parse(detail.durationEndAt))) {
-                detail.durationEndAt = fragment.durationEndAt
-            }
-
-            for (const interaction of fragment.interactions) {
-                if (interaction.dedupeKey) {
-                    if (seenDedupeKeys.has(interaction.dedupeKey)) {
-                        continue
-                    }
-
-                    seenDedupeKeys.add(interaction.dedupeKey)
-                }
-
-                addInteraction(detail, interaction)
-            }
-
-            details.set(fragment.key, detail)
-        }
+        addInteraction(detail, interaction)
+        details.set(fragment.key, detail)
     }
 
     return Array.from(details.values())
@@ -204,12 +190,77 @@ function buildPlatformSessionsFromFiles(
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
 
+function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platform: ProjectUsagePlatform) {
+    const interactionsWithoutDedupeKey: Array<{
+        fragment: IndexedUsageSessionFragment
+        interaction: IndexedUsageInteraction
+    }> = []
+    const interactionsByDedupeKey = new Map<string, {
+        fragment: IndexedUsageSessionFragment
+        interaction: IndexedUsageInteraction
+    }>()
+
+    for (const file of indexedFiles) {
+        if (file.platform !== platform) {
+            continue
+        }
+
+        for (const fragment of file.payload) {
+            for (const interaction of fragment.interactions) {
+                if (!interaction.dedupeKey) {
+                    interactionsWithoutDedupeKey.push({ fragment, interaction })
+                    continue
+                }
+
+                const existing = interactionsByDedupeKey.get(interaction.dedupeKey)
+
+                if (!existing) {
+                    interactionsByDedupeKey.set(interaction.dedupeKey, { fragment, interaction })
+                }
+                else if (shouldReplaceDedupedInteraction(interaction, existing.interaction)) {
+                    // Pin attribution to the first-seen fragment so the winning interaction
+                    // doesn't migrate across sessions and silently empty the loser.
+                    interactionsByDedupeKey.set(interaction.dedupeKey, { fragment: existing.fragment, interaction })
+                }
+            }
+        }
+    }
+
+    return [
+        ...interactionsWithoutDedupeKey,
+        ...interactionsByDedupeKey.values(),
+    ]
+}
+
+function shouldReplaceDedupedInteraction(candidate: IndexedUsageInteraction, existing: IndexedUsageInteraction) {
+    const candidateTotal = candidate.usage?.totalTokens ?? 0
+    const existingTotal = existing.usage?.totalTokens ?? 0
+
+    if (candidateTotal !== existingTotal) {
+        return candidateTotal > existingTotal
+    }
+
+    const candidateIsFast = isFastModel(candidate.model)
+    const existingIsFast = isFastModel(existing.model)
+
+    if (candidateIsFast !== existingIsFast) {
+        return candidateIsFast
+    }
+
+    return candidate.costUSD > existing.costUSD
+}
+
+function isFastModel(model: string | null) {
+    return model?.endsWith('-fast') ?? false
+}
+
 function createSessionDetail(fragment: IndexedUsageSessionFragment): MutableSessionDetail {
     return {
         cachedInputTokens: 0,
         costUSD: 0,
         durationEndAt: fragment.durationEndAt,
         durationMinutes: 0,
+        key: fragment.key,
         inputTokens: 0,
         interactions: [],
         lastActivity: fragment.startedAt ?? '',
@@ -294,7 +345,7 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         date: dateKey ? formatDateLabelFromDateKey(dateKey) : '',
         duration: formatDuration(detail.durationMinutes),
         durationMinutes: detail.durationMinutes,
-        id: detail.sessionId,
+        id: detail.key,
         inputTokens: detail.inputTokens,
         interactions: detail.interactions.map(({ dedupeKey: _dedupeKey, ...interaction }) => ({
             ...interaction,

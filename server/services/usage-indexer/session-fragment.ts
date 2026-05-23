@@ -4,11 +4,12 @@ import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type { ProjectInteractionRole } from '#shared/types/usage-dashboard'
 import { statSync } from 'node:fs'
 
-export function toDiscoveredUsageFile(filePath: string, platform: ProjectUsagePlatform) {
+export function toDiscoveredUsageFile(filePath: string, platform: ProjectUsagePlatform, cacheSignature = '') {
     try {
         const stats = statSync(filePath)
 
         return [{
+            cacheSignature,
             mtimeMs: stats.mtimeMs,
             path: filePath,
             platform,
@@ -30,7 +31,7 @@ export function createSessionFragment(options: {
     return {
         durationEndAt: '',
         interactions: [],
-        key: getSessionLookupKey(options.project, options.sessionId),
+        key: getSessionLookupKey(options.repository, options.sessionId),
         project: options.project,
         repository: options.repository,
         sessionId: options.sessionId,

@@ -71,7 +71,7 @@
                     </TableRow>
                 </TableHeader>
                 <TableBody>
-                    <TableRow v-for="session in paginatedItems" :key="session.sessionId">
+                    <TableRow v-for="session in paginatedItems" :key="session.id">
                         <TableCell class="max-w-80 truncate font-mono text-xs">
                             {{ session.sessionId }}
                         </TableCell>

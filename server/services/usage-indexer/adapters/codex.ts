@@ -1,6 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import type { ModelPricingResolver, RawUsage, SessionLogLine } from '#shared/types/platform'
-import { existsSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
     CODEX_FALLBACK_MODEL,
@@ -28,6 +28,9 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 
+const CODEX_DEFAULT_FAST_MULTIPLIER = 2
+const CODEX_SPEED_CACHE_PREFIX = 'codex-speed:'
+
 export const codexUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -48,9 +51,11 @@ export const codexUsageAdapter = {
             cwd: sessionsDir,
         })
 
-        return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'codex'))
+        const cacheSignature = getCodexConfigSignature(config.codexPath)
+
+        return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'codex', cacheSignature))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath, resolvePricing, file) {
         const lines = parseJsonlFile<SessionLogLine>(filePath)
         const sessionMeta = lines.find(line => line.type === 'session_meta')?.payload
         const sessionId = getSessionId(filePath, normalizeStringValue(sessionMeta?.id))
@@ -64,6 +69,7 @@ export const codexUsageAdapter = {
             startedAt,
             threadName: `Session for ${project}`,
         })
+        const speed = getCodexSpeedFromSignature(file.cacheSignature)
         let previousTotals: RawUsage | null = null
         let currentModel: string | undefined
         let currentModelIsFallback = false
@@ -109,7 +115,7 @@ export const codexUsageAdapter = {
             }
 
             const usage = rawUsage
-                ? getCodexInteractionUsage(rawUsage, model ?? CODEX_FALLBACK_MODEL, resolvePricing)
+                ? getCodexInteractionUsage(rawUsage, model ?? CODEX_FALLBACK_MODEL, resolvePricing, speed)
                 : null
 
             addFragmentInteraction(fragment, {
@@ -127,7 +133,10 @@ export const codexUsageAdapter = {
         return [fragment]
     },
     watchPatterns(config) {
-        return [join(config.codexPath, 'sessions', '**', '*.jsonl')]
+        return [
+            join(config.codexPath, 'config.toml'),
+            join(config.codexPath, 'sessions', '**', '*.jsonl'),
+        ]
     },
 } satisfies UsagePlatformAdapter
 
@@ -147,6 +156,7 @@ function getCodexInteractionUsage(
     rawUsage: RawUsage,
     model: string,
     resolvePricing: ModelPricingResolver,
+    speed: 'fast' | 'standard',
 ) {
     const usage = convertCodexRawUsage(rawUsage)
 
@@ -156,8 +166,101 @@ function getCodexInteractionUsage(
 
     return {
         ...usage,
-        costUSD: calculateUsageCostUSD(usage, resolvePricing(model)),
+        costUSD: calculateUsageCostUSD(usage, resolvePricing(model), {
+            defaultFastMultiplier: CODEX_DEFAULT_FAST_MULTIPLIER,
+            speed,
+        }),
     }
+}
+
+function getCodexConfigSignature(codexPath: string) {
+    return `${CODEX_SPEED_CACHE_PREFIX}${readCodexConfigSpeed(getCodexConfigPath(codexPath))}`
+}
+
+function getCodexConfigPath(codexPath: string) {
+    return join(codexPath, 'config.toml')
+}
+
+function readCodexConfigSpeed(configPath: string): 'fast' | 'standard' {
+    try {
+        return parseCodexConfigSpeed(readFileSync(configPath, 'utf8')) ?? 'standard'
+    }
+    catch {
+        return 'standard'
+    }
+}
+
+function getCodexSpeedFromSignature(cacheSignature: string): 'fast' | 'standard' {
+    return cacheSignature === `${CODEX_SPEED_CACHE_PREFIX}fast` ? 'fast' : 'standard'
+}
+
+const CODEX_CONFIG_ASSIGNMENT_REGEX = /^\s*([a-z_][\w-]*)\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/i
+const CODEX_CONFIG_SECTION_REGEX = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/
+
+function parseCodexConfigSpeed(content: string): 'fast' | 'standard' | undefined {
+    let activeProfile: string | undefined
+    let currentSection: string | null = null
+    let topLevelSpeed: 'fast' | 'standard' | undefined
+    const profileSpeeds = new Map<string, 'fast' | 'standard'>()
+
+    for (const rawLine of content.split('\n')) {
+        const sectionMatch = rawLine.match(CODEX_CONFIG_SECTION_REGEX)
+
+        if (sectionMatch) {
+            currentSection = sectionMatch[1]!.trim()
+            continue
+        }
+
+        const match = rawLine.match(CODEX_CONFIG_ASSIGNMENT_REGEX)
+
+        if (!match) {
+            continue
+        }
+
+        const key = match[1]!
+        const value = match[2]!.trim()
+
+        if (!currentSection) {
+            if (key === 'profile') {
+                activeProfile = value
+            }
+            else if (key === 'service_tier') {
+                topLevelSpeed = toCodexSpeed(value)
+            }
+
+            continue
+        }
+
+        const profileName = getCodexProfileName(currentSection)
+
+        if (profileName && key === 'service_tier') {
+            profileSpeeds.set(profileName, toCodexSpeed(value))
+        }
+    }
+
+    return (activeProfile ? profileSpeeds.get(activeProfile) : undefined) ?? topLevelSpeed
+}
+
+function getCodexProfileName(section: string) {
+    if (!section.startsWith('profiles.')) {
+        return null
+    }
+
+    return stripTomlQuotes(section.slice('profiles.'.length).trim())
+}
+
+function stripTomlQuotes(value: string) {
+    const quote = value[0]
+
+    return quote && (quote === '"' || quote === '\'') && value.endsWith(quote)
+        ? value.slice(1, -1)
+        : value
+}
+
+function toCodexSpeed(value: string): 'fast' | 'standard' {
+    const normalized = value.trim().toLowerCase()
+
+    return normalized === 'priority' || normalized === 'fast' ? 'fast' : 'standard'
 }
 
 function extractCodexContent(line: SessionLogLine) {

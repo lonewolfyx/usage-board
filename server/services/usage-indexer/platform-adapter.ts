@@ -4,6 +4,7 @@ import type { IConfig } from '#shared/types/config'
 import type { ModelPricingResolver } from '#shared/types/platform'
 
 export interface DiscoveredUsageFile {
+    cacheSignature: string
     mtimeMs: number
     path: string
     platform: ProjectUsagePlatform
@@ -13,6 +14,6 @@ export interface DiscoveredUsageFile {
 export interface UsagePlatformAdapter {
     createPricingResolver: () => Promise<ModelPricingResolver>
     discoverFiles: (config: IConfig) => Promise<DiscoveredUsageFile[]>
-    parseFile: (filePath: string, resolvePricing: ModelPricingResolver) => IndexedUsageSessionFragment[]
+    parseFile: (filePath: string, resolvePricing: ModelPricingResolver, file: DiscoveredUsageFile) => IndexedUsageSessionFragment[]
     watchPatterns: (config: IConfig) => string[]
 }

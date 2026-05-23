@@ -19,6 +19,17 @@ const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
 /** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 
+const FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
+    'gpt-5.3-codex': 2,
+    'gpt-5.4': 2,
+    'gpt-5.5': 2.5,
+}
+
+const FAST_MULTIPLIER_PREFIX_OVERRIDES: Record<string, number> = {
+    'claude-opus-4-6': 6,
+    'claude-opus-4-7': 6,
+}
+
 /** Built-in fallback prices so common models can still be estimated offline or when remote data is missing. */
 const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5': {
@@ -39,6 +50,13 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
         inputCostPerMTokens: 2.5,
         outputCostPerMTokens: 15,
     },
+    'gpt-5.5': {
+        cachedInputCostPerMTokens: 0.5,
+        cacheCreationInputCostPerMTokens: 5,
+        fastMultiplier: FAST_MULTIPLIER_EXACT_OVERRIDES['gpt-5.5'],
+        inputCostPerMTokens: 5,
+        outputCostPerMTokens: 30,
+    },
     'claude-haiku-4-5': {
         cachedInputCostPerMTokens: 0.1,
         cacheCreationInputCostPerMTokens: 1.25,
@@ -54,6 +72,20 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
         inputCostPerMTokensAbove200K: 30,
         outputCostPerMTokens: 75,
         outputCostPerMTokensAbove200K: 112.5,
+    },
+    'claude-opus-4-6': {
+        cachedInputCostPerMTokens: 0.5,
+        cacheCreationInputCostPerMTokens: 6.25,
+        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-6'],
+        inputCostPerMTokens: 5,
+        outputCostPerMTokens: 25,
+    },
+    'claude-opus-4-7': {
+        cachedInputCostPerMTokens: 0.5,
+        cacheCreationInputCostPerMTokens: 6.25,
+        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-7'],
+        inputCostPerMTokens: 5,
+        outputCostPerMTokens: 25,
     },
     'claude-sonnet-4-5': {
         cachedInputCostPerMTokens: 0.3,
@@ -207,8 +239,8 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
  * }, pricing)
  * ```
  */
-export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing, options: { speed?: 'fast' | 'standard' } = {}): number {
-    const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? 1) : 1
+export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing, options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {}): number {
+    const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? options.defaultFastMultiplier ?? 1) : 1
     const inputCost = calculateTieredCost(usage.inputTokens, pricing.inputCostPerMTokens, pricing.inputCostPerMTokensAbove200K)
     const cachedCost = calculateTieredCost(usage.cachedInputTokens, pricing.cachedInputCostPerMTokens, pricing.cachedInputCostPerMTokensAbove200K)
     const cacheCreationCost = calculateTieredCost(usage.cacheCreationTokens ?? 0, pricing.cacheCreationInputCostPerMTokens, pricing.cacheCreationInputCostPerMTokensAbove200K)
@@ -245,6 +277,15 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
             cache_creation_input_token_cost: 2.5e-6,
             cache_read_input_token_cost: 2.5e-7,
         },
+        'gpt-5.5': {
+            input_cost_per_token: 5e-6,
+            output_cost_per_token: 30e-6,
+            cache_creation_input_token_cost: 5e-6,
+            cache_read_input_token_cost: 0.5e-6,
+            provider_specific_entry: {
+                fast: 2.5,
+            },
+        },
         'claude-haiku-4-5': {
             input_cost_per_token: 1e-6,
             output_cost_per_token: 5e-6,
@@ -260,6 +301,24 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
             output_cost_per_token_above_200k_tokens: 112.5e-6,
             cache_creation_input_token_cost_above_200k_tokens: 37.5e-6,
             cache_read_input_token_cost_above_200k_tokens: 3e-6,
+        },
+        'claude-opus-4-6': {
+            input_cost_per_token: 5e-6,
+            output_cost_per_token: 25e-6,
+            cache_creation_input_token_cost: 6.25e-6,
+            cache_read_input_token_cost: 0.5e-6,
+            provider_specific_entry: {
+                fast: 6,
+            },
+        },
+        'claude-opus-4-7': {
+            input_cost_per_token: 5e-6,
+            output_cost_per_token: 25e-6,
+            cache_creation_input_token_cost: 6.25e-6,
+            cache_read_input_token_cost: 0.5e-6,
+            provider_specific_entry: {
+                fast: 6,
+            },
         },
         'claude-sonnet-4-5': {
             input_cost_per_token: 3e-6,
@@ -354,7 +413,7 @@ function resolveDatasetPricing(dataset: LiteLLMPricingDataset, candidates: strin
             continue
         }
 
-        return toModelPricing(pricing)
+        return toModelPricing(pricing, candidates)
     }
 
     return null
@@ -373,7 +432,11 @@ function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricin
         const pricing = fallbackPricingTable[candidate]
 
         if (pricing) {
-            return pricing
+            const fastMultiplier = pricing.fastMultiplier ?? resolveFastMultiplierOverride(candidates)
+
+            return fastMultiplier == null
+                ? pricing
+                : { ...pricing, fastMultiplier }
         }
     }
 
@@ -404,7 +467,7 @@ function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
  * const pricing = toModelPricing({ input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 })
  * ```
  */
-function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
+function toModelPricing(pricing: LiteLLMModelPricing, candidates: string[]): ModelPricing {
     const inputCostPerToken = pricing.input_cost_per_token ?? 0
     const cachedInputCostPerToken = pricing.cache_read_input_token_cost ?? inputCostPerToken
     const cacheCreationInputCostPerToken = pricing.cache_creation_input_token_cost ?? inputCostPerToken
@@ -419,7 +482,7 @@ function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
         cacheCreationInputCostPerMTokensAbove200K: pricing.cache_creation_input_token_cost_above_200k_tokens != null
             ? pricing.cache_creation_input_token_cost_above_200k_tokens * MILLION
             : undefined,
-        fastMultiplier: pricing.provider_specific_entry?.fast,
+        fastMultiplier: pricing.provider_specific_entry?.fast ?? resolveFastMultiplierOverride(candidates),
         inputCostPerMTokens: inputCostPerToken * MILLION,
         inputCostPerMTokensAbove200K: pricing.input_cost_per_token_above_200k_tokens != null
             ? pricing.input_cost_per_token_above_200k_tokens * MILLION
@@ -429,6 +492,42 @@ function toModelPricing(pricing: LiteLLMModelPricing): ModelPricing {
             ? pricing.output_cost_per_token_above_200k_tokens * MILLION
             : undefined,
     }
+}
+
+function resolveFastMultiplierOverride(candidates: string[]): number | undefined {
+    for (const candidate of candidates) {
+        const multiplier = FAST_MULTIPLIER_EXACT_OVERRIDES[candidate]
+
+        if (multiplier != null) {
+            return multiplier
+        }
+    }
+
+    for (const candidate of candidates) {
+        const normalized = candidate.replace(/[.@]/gu, '-')
+
+        for (const part of normalized.split(/[/:]/u)) {
+            for (const [base, multiplier] of Object.entries(FAST_MULTIPLIER_PREFIX_OVERRIDES)) {
+                if (matchesModelSuffix(part, base)) {
+                    return multiplier
+                }
+            }
+        }
+    }
+
+    return undefined
+}
+
+function matchesModelSuffix(part: string, base: string) {
+    const index = part.lastIndexOf(base)
+
+    if (index < 0) {
+        return false
+    }
+
+    const suffix = part.slice(index)
+
+    return suffix === base || suffix[base.length] === '-'
 }
 
 /**
