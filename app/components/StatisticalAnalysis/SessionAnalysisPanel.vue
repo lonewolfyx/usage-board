@@ -51,8 +51,8 @@
                         cursor="pointer"
                         orientation="horizontal"
                         :rounded-corners="3"
-                        :x="getProjectIndex"
-                        :y="[getTokenScore, getDurationScore, getCostScore]"
+                        :x="item => item.index"
+                        :y="[item => item.tokenScore, item => item.durationScore, item => item.costScore]"
                     />
                     <VisAxis
                         :grid-line="false"
@@ -224,22 +224,6 @@ function formatDuration(minutes: number) {
 
 function normalizeScore(value: number, maxValue: number) {
     return maxValue > 0 ? (value / maxValue) * 100 : 0
-}
-
-function getProjectIndex(item: SessionProjectDatum) {
-    return item.index
-}
-
-function getTokenScore(item: SessionProjectDatum) {
-    return item.tokenScore
-}
-
-function getDurationScore(item: SessionProjectDatum) {
-    return item.durationScore
-}
-
-function getCostScore(item: SessionProjectDatum) {
-    return item.costScore
 }
 
 function getSegmentColor(_: SessionProjectDatum, index: number) {

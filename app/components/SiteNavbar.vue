@@ -15,57 +15,61 @@
         <Separator />
         <div class="container mx-auto flex items-center justify-between pt-3 pb-1">
             <NuxtLink
-                v-for="item in navItems"
+                v-for="item in primaryNavItems"
                 :key="item.label"
                 :class="getNavItemClass(item)"
                 :to="item.link"
             >
-                <Icon v-if="item.iconType === 'icon'" :name="item.icon" class="size-5" mode="svg" />
-                <IconAi v-else :name="item.icon as string" />
+                <Icon :name="item.icon" class="size-5" mode="svg" />
                 <span class="capitalize text-xs font-medium font-mono">{{ item.label }}</span>
             </nuxtlink>
+            <NuxtLink
+                v-for="platform in PROJECT_USAGE_PLATFORMS"
+                :key="platform"
+                :class="getNavItemClass({
+                    icon: PROJECT_USAGE_PLATFORM_META[platform].aiIcon,
+                    iconType: 'ai',
+                    label: PROJECT_USAGE_PLATFORM_META[platform].label,
+                    link: `/${PROJECT_USAGE_PLATFORM_META[platform].slug}`,
+                })"
+                :to="`/${PROJECT_USAGE_PLATFORM_META[platform].slug}`"
+            >
+                <Icon :name="PROJECT_USAGE_PLATFORM_META[platform].aiIcon" class="size-5" />
+                <span class="capitalize text-xs font-medium font-mono">{{ PROJECT_USAGE_PLATFORM_META[platform].label }}</span>
+            </NuxtLink>
+            <NuxtLink
+                v-for="item in trailingNavItems"
+                :key="item.label"
+                :class="getNavItemClass(item)"
+                :to="item.link"
+            >
+                <Icon :name="item.icon" class="size-5" mode="svg" />
+                <span class="capitalize text-xs font-medium font-mono">{{ item.label }}</span>
+            </NuxtLink>
         </div>
     </header>
 </template>
 
 <script lang="ts" setup>
 import type { NavItem } from '#shared/types/navigation'
-import { dashboardProductNavItems } from '~/lib/dashboard-products'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { cn } from '~/lib/utils'
 
 defineOptions({
     name: 'SiteNavbar',
 })
 
-const navItems = [
+const primaryNavItems = [
     {
         icon: 'solar:home-bold-duotone',
         iconType: 'icon',
         label: 'home',
         link: '/',
     },
-    ...dashboardProductNavItems,
-    // {
-    //     icon: 'kimi_code',
-    //     iconFillClass: '[&_svg]:fill-foreground/50',
-    //     iconType: 'ai',
-    //     label: 'Kimi',
-    //     link: '/kimi',
-    // },
-    // {
-    //     icon: 'antigravity',
-    //     iconFillClass: '[&_svg]:fill-foreground/50',
-    //     iconType: 'ai',
-    //     label: 'antigravity',
-    //     link: '/antigravity',
-    // },
-    // {
-    //     icon: 'amp',
-    //     iconFillClass: '[&_path]:fill-current!',
-    //     iconType: 'ai',
-    //     label: 'amp',
-    //     link: '/amp',
-    // },
+] satisfies NavItem[]
+
+const trailingNavItems = [
     {
         icon: 'ri:apps-ai-line',
         iconType: 'icon',

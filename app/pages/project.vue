@@ -46,7 +46,7 @@
                                     {{ project.name }}
                                 </p>
                                 <p class="max-w-full truncate text-xs text-muted-foreground">
-                                    {{ getProjectPlatformsLabel(project.platforms) }}
+                                    {{ project.platforms.length > 0 ? project.platforms.map(platform => PROJECT_USAGE_PLATFORM_META[platform].label).join(' / ') : 'No platforms detected' }}
                                 </p>
                             </div>
 
@@ -348,8 +348,7 @@
 </template>
 
 <script lang="ts" setup>
-import type { ProjectUsagePlatform } from '#shared/types/ai'
-import { getProjectPlatform } from '#shared/utils/project-dashboard'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { cn } from '~/lib/utils'
 
@@ -404,13 +403,5 @@ function getProjectInitials(name: string) {
         .slice(0, 2)
         .map(segment => segment[0]?.toUpperCase() ?? '')
         .join('')
-}
-
-function getProjectPlatformsLabel(platforms: ProjectUsagePlatform[]) {
-    if (platforms.length === 0) {
-        return 'No platforms detected'
-    }
-
-    return platforms.map(platform => getProjectPlatform(platform).label).join(' / ')
 }
 </script>

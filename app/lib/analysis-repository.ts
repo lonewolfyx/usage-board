@@ -11,7 +11,7 @@ import type {
 } from '#shared/types/analysis'
 import type { UsageAnalyticsTokenUsageRow } from '#shared/types/usage-analytics'
 import type { DailyTokenUsage, MonthlyModelUsage, ProjectUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
-import { getProjectUsagePlatformSlug } from '#shared/platform/metadata'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
 
 const analysisRouteMap = {
@@ -142,7 +142,7 @@ function buildAnalysisQuery(options: {
     const query: Record<string, string> = {}
 
     if (options.agent) {
-        query.agent = getProjectUsagePlatformSlug(options.agent)
+        query.agent = PROJECT_USAGE_PLATFORM_META[options.agent].slug
     }
 
     if (options.type) {

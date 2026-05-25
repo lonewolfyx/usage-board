@@ -1,7 +1,5 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
-    ProjectDashboardPlatformMeta,
-    ProjectDashboardPlatformTab,
     ProjectLineSeries,
     ProjectSessionListItem,
     ProjectSessionSummary,
@@ -10,8 +8,6 @@ import type {
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
-import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
-import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
     buildPercentTrend,
@@ -26,25 +22,6 @@ import {
 import { formatNumber } from '@lonewolfyx/utils'
 
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
-
-const projectPlatformMetaMap = PROJECT_USAGE_PLATFORM_META satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
-
-export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
-    ...projectPlatformMetaMap[value],
-    value,
-})) satisfies ProjectDashboardPlatformTab[]
-
-const projectPlatformTabMap = PROJECT_USAGE_PLATFORMS.reduce<Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>>((result, platform) => {
-    result[platform] = {
-        ...projectPlatformMetaMap[platform],
-        value: platform,
-    }
-    return result
-}, {} as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>)
-
-export function getProjectPlatform(platform: ProjectUsagePlatform): ProjectDashboardPlatformTab {
-    return projectPlatformTabMap[platform]
-}
 
 export function buildRecentDateLabels(days: number) {
     const today = new Date()

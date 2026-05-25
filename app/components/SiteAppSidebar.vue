@@ -46,14 +46,15 @@
                 <SidebarGroupLabel>Agent</SidebarGroupLabel>
                 <SidebarGroupContent>
                     <SidebarMenu>
-                        <SidebarMenuItem v-for="item in dashboardProductNavItems" :key="item.label">
-                            <SidebarMenuButton as-child :is-active="path === item.link" :tooltip="item.label">
-                                <NuxtLink :to="item.link">
-                                    <Icon
-                                        :name="item.icon"
-                                        class="size-5"
-                                    />
-                                    <span>{{ item.label }}</span>
+                        <SidebarMenuItem v-for="platform in PROJECT_USAGE_PLATFORMS" :key="platform">
+                            <SidebarMenuButton
+                                as-child
+                                :is-active="path === `/${PROJECT_USAGE_PLATFORM_META[platform].slug}`"
+                                :tooltip="PROJECT_USAGE_PLATFORM_META[platform].label"
+                            >
+                                <NuxtLink :to="`/${PROJECT_USAGE_PLATFORM_META[platform].slug}`">
+                                    <Icon :name="PROJECT_USAGE_PLATFORM_META[platform].aiIcon" class="size-5" />
+                                    <span>{{ PROJECT_USAGE_PLATFORM_META[platform].label }}</span>
                                 </NuxtLink>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
@@ -78,8 +79,9 @@
 
 <script lang="ts" setup>
 import type { SidebarProps } from '@/components/ui/sidebar'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader } from '@/components/ui/sidebar'
-import { dashboardProductNavItems } from '~/lib/dashboard-products'
 import { cn } from '~/lib/utils'
 
 defineOptions({

@@ -99,10 +99,10 @@ export function buildHomeDashboardModules(
 ): HomeDashboardModules {
     const sessionUsage = buildSessionUsage(dashboardsByPlatform)
     const dailyTokenUsage = mergeDailyTokenUsage(
-        PROJECT_USAGE_PLATFORMS.flatMap(platform => getPlatformDashboard(dashboardsByPlatform, platform).dailyTokenUsage),
+        PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].dailyTokenUsage),
     )
     const monthlyModelUsage = mergeMonthlyModelUsage(
-        PROJECT_USAGE_PLATFORMS.flatMap(platform => getPlatformDashboard(dashboardsByPlatform, platform).monthlyModelUsage),
+        PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].monthlyModelUsage),
     )
     const projectUsage = buildProjectUsage(sessionUsage)
     const totalCost = dailyTokenUsage.reduce((sum, item) => sum + item.costUSD, 0)
@@ -155,16 +155,9 @@ export function buildHomeDashboardModules(
     }
 }
 
-function getPlatformDashboard(
-    dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
-    platform: typeof PROJECT_USAGE_PLATFORMS[number],
-) {
-    return dashboardsByPlatform[platform]
-}
-
 function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>) {
     return PROJECT_USAGE_PLATFORMS
-        .flatMap(platform => getPlatformDashboard(dashboardsByPlatform, platform).sessionUsage.map(session => ({
+        .flatMap(platform => dashboardsByPlatform[platform].sessionUsage.map(session => ({
             ...session,
             id: `${platform}:${session.id}`,
             sessionId: `${platform}:${session.sessionId}`,

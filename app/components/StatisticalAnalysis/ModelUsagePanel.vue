@@ -26,7 +26,7 @@
                         :line-color="getLineColor"
                         :line-width="2.5"
                         :opacity="0.82"
-                        :x="getMonthIndex"
+                        :x="item => item.monthIndex"
                         :y="modelTokenAccessors"
                     />
                     <VisAxis
@@ -45,7 +45,7 @@
                         v-if="hasChartData"
                         :color="getCrosshairColor"
                         :template="formatTooltip"
-                        :x="getMonthIndex"
+                        :x="item => item.monthIndex"
                         :y-stacked="modelTokenAccessors"
                     />
                 </VisXYContainer>
@@ -225,10 +225,6 @@ const hoverGuide = computed(() => {
         yLabel: formatCompactNumber(yValue),
     }
 })
-
-function getMonthIndex(item: ModelSeriesDatum) {
-    return item.monthIndex
-}
 
 function getAreaColor(_: ModelSeriesDatum[], index: number) {
     const series = modelSeries.value[index]
