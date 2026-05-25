@@ -21,7 +21,7 @@
                 :to="item.link"
             >
                 <Icon v-if="item.iconType === 'icon'" :name="item.icon" class="size-5" mode="svg" />
-                <IconAi v-else :name="item.icon as AiIconName" />
+                <IconAi v-else :name="item.icon as string" />
                 <span class="capitalize text-xs font-medium font-mono">{{ item.label }}</span>
             </nuxtlink>
         </div>
@@ -29,7 +29,7 @@
 </template>
 
 <script lang="ts" setup>
-import type { AiIconName, NavItem } from '#shared/types/navigation'
+import type { NavItem } from '#shared/types/navigation'
 import { dashboardProductNavItems } from '~/lib/dashboard-products'
 import { cn } from '~/lib/utils'
 

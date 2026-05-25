@@ -1,5 +1,4 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
-import type { AiIconName } from '#shared/types/navigation'
 import type {
     DailyTokenUsage,
     MonthlyModelUsage,
@@ -10,16 +9,14 @@ import type {
 
 export type ProjectDashboardScope = 'all' | ProjectUsagePlatform
 
-export type ProjectUsageCatalogType = ProjectUsagePlatform | 'mixed'
-
 export interface ProjectDashboardPlatformMeta {
-    aiIcon: AiIconName
+    aiIcon: string
     color: string
     label: string
 }
 
 export interface ProjectDashboardTab {
-    aiIcon?: AiIconName
+    aiIcon?: string
     color?: string
     label: string
     value: ProjectDashboardScope
@@ -75,7 +72,8 @@ export type ProjectSessionListItem = Omit<ProjectSessionUsageItem, 'interactions
 export interface ProjectSelectItem {
     id: string
     name: string
-    type: ProjectUsageCatalogType
+    platforms: ProjectUsagePlatform[]
+    totalTokens: number
 }
 
 export interface ProjectDailyTrendModulePayload {

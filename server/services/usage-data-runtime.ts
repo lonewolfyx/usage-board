@@ -133,16 +133,23 @@ class UsageDataRuntime {
 
     private async hydrateFromRepository() {
         const bootstrap = this.repository.loadBootstrap()
-        const projectCatalog = this.repository.loadProjectCatalog()
+        const cachedProjectCatalog = this.repository.loadProjectCatalog()
         const projectDetails = this.repository.loadProjectDetails()
+        const projectCatalog = projectDetails.size > 0
+            ? buildProjectUsageCatalogItemsFromDetails(projectDetails.entries())
+            : (cachedProjectCatalog?.payload ?? [])
 
         this.state.bootstrap = bootstrap?.payload ?? null
-        this.state.projectCatalog = projectCatalog?.payload ?? []
+        this.state.projectCatalog = projectCatalog
         this.state.projectDetails = projectDetails
         this.state.hydratedAt = Math.max(
             bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
-            projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
+            cachedProjectCatalog ? Date.parse(cachedProjectCatalog.updatedAt) : 0,
         )
+
+        if (projectDetails.size > 0 && !isSameProjectCatalog(projectCatalog, cachedProjectCatalog?.payload ?? [])) {
+            this.repository.saveProjectCatalog(projectCatalog)
+        }
     }
 
     private async refreshNow() {
@@ -297,6 +304,10 @@ function isWritableDirectory(directoryPath: string) {
 
 function getUsageWatchPatterns(config: IConfig) {
     return PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(config))
+}
+
+function isSameProjectCatalog(nextCatalog: ProjectUsageCatalogItem[], currentCatalog: ProjectUsageCatalogItem[]) {
+    return JSON.stringify(nextCatalog) === JSON.stringify(currentCatalog)
 }
 
 function patchProjectDetails(

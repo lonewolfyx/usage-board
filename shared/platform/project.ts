@@ -2,7 +2,7 @@ import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/t
 import type {
     UsageAggregateEvent,
 } from '#shared/types/platform'
-import type { ProjectDashboardScope, ProjectUsageCatalogType } from '#shared/types/project-dashboard'
+import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
 import type {
     LoadUsageResult,
     ProjectInteractionUsage,
@@ -100,7 +100,8 @@ export function buildProjectUsageCatalogItemsFromDetails(
         .map(([label, detail]) => {
             return {
                 label,
-                type: getProjectCatalogType(getProjectDetailPlatforms(detail)),
+                platforms: getProjectDetailPlatforms(detail),
+                totalTokens: getProjectDetailTotalTokens(detail),
             }
         })
         .sort((a, b) => a.label.localeCompare(b.label))
@@ -199,8 +200,8 @@ function getProjectDetailPlatforms(detail: ProjectUsageDetail): ProjectUsagePlat
     return PROJECT_USAGE_PLATFORMS.filter(platform => (detail.analyzing[platform] ?? createEmptyProjectPlatformUsage()).sessions.length > 0)
 }
 
-function getProjectCatalogType(platforms: ProjectUsagePlatform[]): ProjectUsageCatalogType {
-    return platforms.length === 1 ? platforms[0]! : 'mixed'
+function getProjectDetailTotalTokens(detail: ProjectUsageDetail) {
+    return getProjectDetailSessions(detail).reduce((sum, session) => sum + session.tokenTotal, 0)
 }
 
 function buildSessionListModulePayload(
