@@ -41,8 +41,8 @@
                     </TableCell>
                     <TableCell>
                         <div class="flex items-center gap-2">
-                            <IconAi :name="getProjectPlatform(item.platform).aiIcon" />
-                            <span>{{ getProjectPlatform(item.platform).label }}</span>
+                            <Icon :name="PROJECT_USAGE_PLATFORM_META[item.platform].aiIcon" class="size-5" />
+                            <span>{{ PROJECT_USAGE_PLATFORM_META[item.platform].label }}</span>
                         </div>
                     </TableCell>
                     <TableCell class="max-w-56 truncate" translate="no">
@@ -91,7 +91,7 @@
 
 <script setup lang="ts">
 import type { ProjectSessionTableRow } from '#shared/types/project-dashboard'
-import { getProjectPlatform } from '#shared/utils/project-dashboard'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 
 const props = withDefaults(defineProps<{
     items: ProjectSessionTableRow[]

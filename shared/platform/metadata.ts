@@ -101,16 +101,10 @@ export const PROJECT_USAGE_PLATFORM_META: Record<ProjectUsagePlatform, ProjectUs
     },
 } as const
 
-const platformSlugEntries = PROJECT_USAGE_PLATFORMS.map(platform => [
+const platformBySlug = new Map<string, ProjectUsagePlatform>(PROJECT_USAGE_PLATFORMS.map(platform => [
     PROJECT_USAGE_PLATFORM_META[platform].slug,
     platform,
-] as const)
-
-const platformBySlug = new Map<string, ProjectUsagePlatform>(platformSlugEntries)
-
-export function getProjectUsagePlatformSlug(platform: ProjectUsagePlatform) {
-    return PROJECT_USAGE_PLATFORM_META[platform].slug
-}
+] as const))
 
 export function resolveProjectUsagePlatform(value: string | null | undefined) {
     const normalizedValue = value?.trim()

@@ -12,10 +12,10 @@
                             :arc-width="26"
                             :central-label="cacheHitRateLabel"
                             central-sub-label="Hit Rate"
-                            :color="getSegmentColor"
+                            :color="item => item.color"
                             :corner-radius="4"
                             :pad-angle="0.04"
-                            :value="getSegmentValue"
+                            :value="item => item.value"
                         />
                         <VisTooltip :triggers="tooltipTriggers" />
                     </VisSingleContainer>
@@ -92,14 +92,6 @@ const chartConfig = computed<ChartConfig>(() => Object.fromEntries(
 const tooltipTriggers = computed(() => ({
     [VisDonutSelectors.segment]: formatSegmentTooltip,
 }))
-
-function getSegmentValue(item: CacheSegment) {
-    return item.value
-}
-
-function getSegmentColor(item: CacheSegment) {
-    return item.color
-}
 
 function formatSegmentTooltip(item: DonutTooltipDatum) {
     const segment = item.data

@@ -1,22 +1,22 @@
 <template>
     <DashboardProductPage
-        :product-key="product.platformKey"
-        :product-name="product.name"
+        :product-key="platform"
+        :product-name="PROJECT_USAGE_PLATFORM_META[platform].label"
     />
 </template>
 
 <script setup lang="ts">
-import { getDashboardProductBySlug } from '~/lib/dashboard-products'
+import { PROJECT_USAGE_PLATFORM_META, resolveProjectUsagePlatform } from '#shared/platform/metadata'
 
 definePageMeta({
     validate: route => typeof route.params.product === 'string'
-        && Boolean(getDashboardProductBySlug(route.params.product)),
+        && Boolean(resolveProjectUsagePlatform(route.params.product)),
 })
 
 const route = useRoute()
-const product = getDashboardProductBySlug(route.params.product as string)
+const platform = resolveProjectUsagePlatform(route.params.product as string)
 
-if (!product) {
+if (!platform) {
     throw createError({
         status: 404,
         message: 'Page not found',

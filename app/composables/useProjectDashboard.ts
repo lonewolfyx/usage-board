@@ -1,6 +1,7 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
     ProjectDailyTrendModulePayload,
+    ProjectDashboardPlatformTab,
     ProjectDashboardScope,
     ProjectLineSeries,
     ProjectModelUsageModulePayload,
@@ -20,9 +21,10 @@ import type {
     ProjectWebSocketResponse,
 } from '#shared/types/ws'
 import type { ShallowRef } from 'vue'
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import {
-    projectPlatformTabs as allProjectPlatformTabs,
     buildMonthlyTickIndexes,
     buildProjectDailyModelUsageChart,
     buildProjectOverviewCards,
@@ -145,18 +147,19 @@ export function useProjectDashboard() {
     const isProjectModuleLoading = computed(() => PROJECT_USAGE_DATA_MODULES.some(module => loadingModules[module]))
     const isProjectSelectDisabled = computed(() => catalogLoading.value || isProjectModuleLoading.value || projects.value.length === 0)
     const isScopeReady = computed(() => isModuleLoaded('session_list'))
-    const platformTabs = computed(() => {
-        if (isModuleLoaded('session_list')) {
-            return allProjectPlatformTabs.filter(tab => getPlatformModulePayload('session_list', tab.value).sessions.length > 0)
+    const platformTabs = computed<ProjectDashboardPlatformTab[]>(() => {
+        const visiblePlatforms = isModuleLoaded('session_list')
+            ? PROJECT_USAGE_PLATFORMS.filter(platform => getPlatformModulePayload('session_list', platform).sessions.length > 0)
+            : selectedProject.value?.platforms ?? []
+
+        if (visiblePlatforms.length === 0) {
+            return []
         }
 
-        const selectedProjectPlatforms = selectedProject.value?.platforms ?? []
-
-        if (selectedProjectPlatforms.length > 0) {
-            return allProjectPlatformTabs.filter(tab => selectedProjectPlatforms.includes(tab.value))
-        }
-
-        return []
+        return visiblePlatforms.map(platform => ({
+            ...PROJECT_USAGE_PLATFORM_META[platform],
+            value: platform,
+        }))
     })
     const tabs = computed(() => [
         { label: 'All', value: 'all' as const },
@@ -230,15 +233,15 @@ export function useProjectDashboard() {
         recentDayLabels.value,
     ))
     const platformViews = computed<Record<ProjectUsagePlatform, ProjectPlatformView>>(() => Object.fromEntries(
-        allProjectPlatformTabs.map((tab) => {
+        PROJECT_USAGE_PLATFORMS.map((platform) => {
             const trendLabels = yearlyDayLabels.value
-            const dailyTrendPayload = getPlatformModulePayload('daily_trend', tab.value)
-            const modelUsagePayload = getPlatformModulePayload('model_usage', tab.value)
-            const tokenUsagePayload = getPlatformModulePayload('token_usage', tab.value)
-            const sessionListPayload = getPlatformModulePayload('session_list', tab.value)
+            const dailyTrendPayload = getPlatformModulePayload('daily_trend', platform)
+            const modelUsagePayload = getPlatformModulePayload('model_usage', platform)
+            const tokenUsagePayload = getPlatformModulePayload('token_usage', platform)
+            const sessionListPayload = getPlatformModulePayload('session_list', platform)
             const modelChart = buildProjectDailyModelUsageChart(modelUsagePayload.dailyTokenUsage, trendLabels)
 
-            return [tab.value, {
+            return [platform, {
                 modelLabels: modelChart.labels,
                 modelSeries: modelChart.series,
                 modelTickIndexes: yearlyTickIndexes.value,
@@ -249,12 +252,12 @@ export function useProjectDashboard() {
                     dailyTrendPayload.dailyTokenUsage,
                 ),
                 sessionRows: tokenUsagePayload.sessionRows,
-                sessionTableRows: toProjectSessionTableRows(sessionListPayload.sessions, tab.value),
+                sessionTableRows: toProjectSessionTableRows(sessionListPayload.sessions, platform),
                 trendLabels,
                 trendSeries: [{
-                    color: tab.color,
-                    label: tab.label,
-                    points: getDailySeriesPoints(tab.value, trendLabels),
+                    color: PROJECT_USAGE_PLATFORM_META[platform].color,
+                    label: PROJECT_USAGE_PLATFORM_META[platform].label,
+                    points: getDailySeriesPoints(platform, trendLabels),
                 }],
                 trendTickIndexes: yearlyTickIndexes.value,
                 trendTooltipLabels: trendLabels,
@@ -484,7 +487,8 @@ export function useProjectDashboard() {
 
     function resetProjectModules() {
         for (const module of PROJECT_USAGE_DATA_MODULES) {
-            getProjectModuleState(module).value = null
+            const projectModule = projectModules[module] as ProjectModuleStateMap[typeof module]
+            projectModule.value = null
             loadingModules[module] = false
         }
     }
@@ -493,24 +497,21 @@ export function useProjectDashboard() {
         for (const module of PROJECT_USAGE_DATA_MODULES) {
             const payload = response.modules[module]
             if (payload) {
-                getProjectModuleState(module).value = payload as ProjectModuleStateMap[typeof module]['value']
+                const projectModule = projectModules[module] as ProjectModuleStateMap[typeof module]
+                projectModule.value = payload as ProjectModuleStateMap[typeof module]['value']
             }
         }
     }
 
     function isModuleLoaded(module: ProjectUsageDataModule) {
-        return getProjectModuleState(module).value !== null
+        return (projectModules[module] as ProjectModuleStateMap[typeof module]).value !== null
     }
 
     function getPlatformModulePayload<TModule extends keyof ProjectModulePayloadMap>(
         module: TModule,
         platform: ProjectDashboardScope,
     ): ProjectModulePayloadMap[TModule] {
-        return getProjectModuleState(module).value?.[platform] ?? projectModuleDefaults[module]
-    }
-
-    function getProjectModuleState<TModule extends keyof ProjectModulePayloadMap>(module: TModule) {
-        return projectModules[module] as ProjectModuleStateMap[TModule]
+        return (projectModules[module] as ProjectModuleStateMap[TModule]).value?.[platform] ?? projectModuleDefaults[module]
     }
 
     function getDailySeriesPoints(platform: ProjectUsagePlatform, labels: string[]) {
