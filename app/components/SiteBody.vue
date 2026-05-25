@@ -1,5 +1,5 @@
 <template>
-    <Body class="antialiased flex h-full text-base text-foreground bg-background">
+    <Body class="antialiased flex h-full text-base text-foreground bg-background overflow-hidden">
         <slot />
     </Body>
 </template>
