@@ -148,13 +148,7 @@
     }
 
     html {
-        height: 100%;
-        overflow: hidden;
-    }
-
-    body {
-        @apply bg-background text-foreground overflow-hidden;
-        height: 100%;
+        @apply h-full overflow-hidden;
     }
 
     #__nuxt {
