@@ -152,7 +152,8 @@
     }
 
     #__nuxt {
-        @apply relative flex min-h-0 h-dvh grow flex-col bg-sidebar overflow-x-hidden overflow-y-auto overscroll-y-none touch-auto;
+        /*@apply relative flex min-h-0 h-dvh grow flex-col bg-sidebar overflow-x-hidden overflow-y-auto overscroll-y-none touch-auto;*/
+        @apply flex h-full min-h-0 grow;
     }
 }
 

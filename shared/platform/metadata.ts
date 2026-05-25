@@ -1,9 +1,8 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
-import type { AiIconName } from '#shared/types/navigation'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
 export interface ProjectUsagePlatformMeta {
-    aiIcon: AiIconName
+    aiIcon: string
     color: string
     label: string
     slug: string
@@ -11,91 +10,91 @@ export interface ProjectUsagePlatformMeta {
 
 export const PROJECT_USAGE_PLATFORM_META: Record<ProjectUsagePlatform, ProjectUsagePlatformMeta> = {
     amp: {
-        aiIcon: 'amp',
+        aiIcon: 'ai:amp',
         color: '#f34e3f',
         label: 'Amp',
         slug: 'amp',
     },
     claudeCode: {
-        aiIcon: 'claude_code',
+        aiIcon: 'ai:claude-code',
         color: '#d97757',
         label: 'Claude Code',
         slug: 'claude_code',
     },
     codebuff: {
-        aiIcon: 'codebuff',
+        aiIcon: 'ai:codebuff',
         color: '#14b8a6',
         label: 'Codebuff',
         slug: 'codebuff',
     },
     codex: {
-        aiIcon: 'codex',
+        aiIcon: 'ai:codex',
         color: '#111827',
         label: 'Codex',
         slug: 'codex',
     },
     copilot: {
-        aiIcon: 'copilot',
+        aiIcon: 'ai:copilot',
         color: '#0f766e',
         label: 'GitHub Copilot',
         slug: 'copilot',
     },
     droid: {
-        aiIcon: 'droid',
+        aiIcon: 'ai:droid',
         color: '#06b6d4',
         label: 'Droid',
         slug: 'droid',
     },
     gemini: {
-        aiIcon: 'gemini',
+        aiIcon: 'ai:gemini',
         color: '#0ea5e9',
         label: 'Gemini',
         slug: 'gemini',
     },
     goose: {
-        aiIcon: 'goose',
+        aiIcon: 'ai:goose',
         color: '#22c55e',
         label: 'Goose',
         slug: 'goose',
     },
     hermes: {
-        aiIcon: 'hermes',
+        aiIcon: 'ai:hermesagent',
         color: '#8b5cf6',
         label: 'Hermes',
         slug: 'hermes',
     },
     kilo: {
-        aiIcon: 'kilo',
+        aiIcon: 'ai:kilo',
         color: '#f97316',
         label: 'Kilo',
         slug: 'kilo',
     },
     kimi: {
-        aiIcon: 'kimi_code',
+        aiIcon: 'ai:kimi',
         color: '#2563eb',
         label: 'Kimi',
         slug: 'kimi',
     },
     openclaw: {
-        aiIcon: 'openclaw',
+        aiIcon: 'ai:openclaw',
         color: '#ec4899',
         label: 'OpenClaw',
         slug: 'openclaw',
     },
     opencode: {
-        aiIcon: 'open_code',
+        aiIcon: 'ai:open-code',
         color: '#4f46e5',
         label: 'OpenCode',
         slug: 'opencode',
     },
     pi: {
-        aiIcon: 'pi',
+        aiIcon: 'ai:pi',
         color: '#a855f7',
         label: 'Pi',
         slug: 'pi',
     },
     qwen: {
-        aiIcon: 'qwen_code',
+        aiIcon: 'ai:qwen',
         color: '#623ae7',
         label: 'Qwen',
         slug: 'qwen',

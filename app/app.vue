@@ -1,9 +1,11 @@
 <template>
     <SiteBody>
         <TooltipProvider>
-            <NuxtLayout>
-                <NuxtPage />
-            </NuxtLayout>
+            <SidebarProvider>
+                <NuxtLayout>
+                    <NuxtPage />
+                </NuxtLayout>
+            </SidebarProvider>
         </TooltipProvider>
     </SiteBody>
 </template>

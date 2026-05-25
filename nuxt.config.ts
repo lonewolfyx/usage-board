@@ -1,6 +1,9 @@
 import { homedir } from 'node:os'
 import tailwindcss from '@tailwindcss/vite'
+import { createResolver } from 'nuxt/kit'
 import { version } from './package.json'
+
+const { resolve } = createResolver(import.meta.url)
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -20,6 +23,12 @@ export default defineNuxtConfig({
 
     icon: {
         mode: 'svg',
+        customCollections: [
+            {
+                prefix: 'ai',
+                dir: resolve('./app/assets/icon'),
+            },
+        ],
     },
 
     app: {

@@ -22,13 +22,12 @@ import type {
 import type { ShallowRef } from 'vue'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import {
+    projectPlatformTabs as allProjectPlatformTabs,
     buildMonthlyTickIndexes,
     buildProjectDailyModelUsageChart,
     buildProjectOverviewCards,
     buildProjectPlatformOverviewCards,
     buildRecentDateLabels,
-    projectDashboardTabs,
-    projectPlatformTabs,
     summarizeProjectSessions,
     toProjectDisplayDailyUsageRows,
     toProjectSessionTableRow,
@@ -45,9 +44,6 @@ const yearlyProjectDays = 365
 const projectSelectionDebounceMs = 180
 const projectSelectionMaxWaitMs = 600
 const websocketRequestTimeoutMs = 45_000
-
-const tabs = projectDashboardTabs
-const platformTabs = projectPlatformTabs
 
 const emptyDailyTrendPayload: ProjectDailyTrendModulePayload = {
     dailyRows: [],
@@ -140,22 +136,43 @@ export function useProjectDashboard() {
     const projects = computed<ProjectSelectItem[]>(() => projectCatalog.value.map(project => ({
         id: project.label,
         name: project.label,
-        type: project.type,
+        platforms: project.platforms,
+        totalTokens: project.totalTokens,
     })))
+    const selectedProject = computed(() =>
+        projects.value.find(project => project.id === selectedProjectId.value) ?? null,
+    )
     const isProjectModuleLoading = computed(() => PROJECT_USAGE_DATA_MODULES.some(module => loadingModules[module]))
     const isProjectSelectDisabled = computed(() => catalogLoading.value || isProjectModuleLoading.value || projects.value.length === 0)
     const isScopeReady = computed(() => isModuleLoaded('session_list'))
-    const visiblePlatformSessions = computed(() => platformTabs
+    const platformTabs = computed(() => {
+        if (isModuleLoaded('session_list')) {
+            return allProjectPlatformTabs.filter(tab => getPlatformModulePayload('session_list', tab.value).sessions.length > 0)
+        }
+
+        const selectedProjectPlatforms = selectedProject.value?.platforms ?? []
+
+        if (selectedProjectPlatforms.length > 0) {
+            return allProjectPlatformTabs.filter(tab => selectedProjectPlatforms.includes(tab.value))
+        }
+
+        return []
+    })
+    const tabs = computed(() => [
+        { label: 'All', value: 'all' as const },
+        ...platformTabs.value,
+    ])
+    const visiblePlatformSessions = computed(() => platformTabs.value
         .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions)
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
     const visiblePlatformDailyUsage = computed(() => mergeDailyTokenUsage(
-        platformTabs.flatMap(tab => getPlatformModulePayload('daily_trend', tab.value).dailyTokenUsage),
+        platformTabs.value.flatMap(tab => getPlatformModulePayload('daily_trend', tab.value).dailyTokenUsage),
     ))
     const visiblePlatformModelUsage = computed(() => mergeDailyTokenUsage(
-        platformTabs.flatMap(tab => getPlatformModulePayload('model_usage', tab.value).dailyTokenUsage),
+        platformTabs.value.flatMap(tab => getPlatformModulePayload('model_usage', tab.value).dailyTokenUsage),
     ))
     const tabSummaries = computed<Record<ProjectDashboardScope, ProjectTabSummary>>(() => Object.fromEntries(
-        tabs.map((tab) => {
+        tabs.value.map((tab) => {
             const summary = summarizeProjectSessions(
                 tab.value === 'all'
                     ? visiblePlatformSessions.value
@@ -194,6 +211,7 @@ export function useProjectDashboard() {
         visiblePlatformSessions.value,
     ))
     const allSessionRows = computed(() => platformTabs
+        .value
         .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions.map(session => ({
             platform: tab.value,
             session,
@@ -202,7 +220,7 @@ export function useProjectDashboard() {
         .map(({ platform, session }) => toProjectSessionTableRow(session, platform)))
     const dailyTrendLabels = computed(() => recentDayLabels.value)
     const dailyTooltipLabels = computed(() => dailyTrendLabels.value)
-    const dailySeries = computed<ProjectLineSeries[]>(() => platformTabs.map(tab => ({
+    const dailySeries = computed<ProjectLineSeries[]>(() => platformTabs.value.map(tab => ({
         color: tab.color,
         label: tab.label,
         points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
@@ -212,7 +230,7 @@ export function useProjectDashboard() {
         recentDayLabels.value,
     ))
     const platformViews = computed<Record<ProjectUsagePlatform, ProjectPlatformView>>(() => Object.fromEntries(
-        platformTabs.map((tab) => {
+        allProjectPlatformTabs.map((tab) => {
             const trendLabels = yearlyDayLabels.value
             const dailyTrendPayload = getPlatformModulePayload('daily_trend', tab.value)
             const modelUsagePayload = getPlatformModulePayload('model_usage', tab.value)
@@ -259,6 +277,18 @@ export function useProjectDashboard() {
         if (!projectId) {
             resetProjectModules()
         }
+    })
+
+    watch(tabs, (nextTabs) => {
+        if (activeTab.value === 'all') {
+            return
+        }
+
+        if (!nextTabs.some(tab => tab.value === activeTab.value)) {
+            activeTab.value = 'all'
+        }
+    }, {
+        immediate: true,
     })
 
     watchDebounced(selectedProjectId, (projectId) => {

@@ -6,7 +6,6 @@ import type {
     ProjectSessionUsageItem,
     UsageOverviewCard,
 } from '#shared/types/usage-dashboard'
-import type { ProjectUsageCatalogItem } from '#shared/types/ws'
 
 export type SnapshotKey = 'bootstrap' | 'project_catalog'
 export type UsageScopeKind = 'bootstrap' | 'project'
@@ -20,9 +19,23 @@ export interface CacheStateRow {
     version: string | null
 }
 
+export interface SchemaVersionRow {
+    schema_version: number
+}
+
+export interface SqliteNameRow {
+    name: string
+}
+
 export interface ProjectCatalogEntryRow {
     label: string
-    type: ProjectUsageCatalogItem['type']
+    platforms_json: string
+    total_tokens: number
+}
+
+export interface LegacyProjectCatalogTypeRow {
+    label: string
+    type: string
 }
 
 export interface ProjectRow {

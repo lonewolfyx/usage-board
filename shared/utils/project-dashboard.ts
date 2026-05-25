@@ -2,7 +2,6 @@ import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
     ProjectDashboardPlatformMeta,
     ProjectDashboardPlatformTab,
-    ProjectDashboardTab,
     ProjectLineSeries,
     ProjectSessionListItem,
     ProjectSessionSummary,
@@ -11,7 +10,6 @@ import type {
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
-import { DASHBOARD_VISIBLE_PLATFORM_PAGES } from '#shared/platform/dashboard'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
@@ -31,7 +29,7 @@ const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a'
 
 const projectPlatformMetaMap = PROJECT_USAGE_PLATFORM_META satisfies Record<ProjectUsagePlatform, ProjectDashboardPlatformMeta>
 
-export const projectPlatformTabs = DASHBOARD_VISIBLE_PLATFORM_PAGES.map(value => ({
+export const projectPlatformTabs = PROJECT_USAGE_PLATFORMS.map(value => ({
     ...projectPlatformMetaMap[value],
     value,
 })) satisfies ProjectDashboardPlatformTab[]
@@ -44,18 +42,8 @@ const projectPlatformTabMap = PROJECT_USAGE_PLATFORMS.reduce<Record<ProjectUsage
     return result
 }, {} as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>)
 
-const visibleProjectPlatformTabMap = projectPlatformTabs.reduce<Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>>((result, tab) => {
-    result[tab.value] = tab
-    return result
-}, {} as Record<ProjectUsagePlatform, ProjectDashboardPlatformTab>)
-
-export const projectDashboardTabs = [
-    { label: 'All', value: 'all' },
-    ...projectPlatformTabs,
-] satisfies ProjectDashboardTab[]
-
 export function getProjectPlatform(platform: ProjectUsagePlatform): ProjectDashboardPlatformTab {
-    return visibleProjectPlatformTabMap[platform] ?? projectPlatformTabMap[platform]
+    return projectPlatformTabMap[platform]
 }
 
 export function buildRecentDateLabels(days: number) {

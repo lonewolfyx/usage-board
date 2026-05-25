@@ -24,6 +24,7 @@ import type {
     IndexedFragmentRow,
     IndexedInteractionRow,
     LegacyIndexedSourceFileRow,
+    LegacyProjectCatalogTypeRow,
     LegacyProjectSnapshotRow,
     LegacySnapshotRow,
     MonthlyModelUsageRow,
@@ -33,10 +34,12 @@ import type {
     ProjectModelRow,
     ProjectRow,
     ProjectUsageRow,
+    SchemaVersionRow,
     ScopeInteractionRow,
     SessionModelRow,
     SessionRow,
     SnapshotKey,
+    SqliteNameRow,
     TokenRowBucket,
     TokenRowModelRow,
     TokenRowProjectRow,
@@ -55,7 +58,7 @@ import {
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
-const CACHE_SCHEMA_VERSION = 3
+const CACHE_SCHEMA_VERSION = 5
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -72,7 +75,8 @@ const CACHE_SCHEMA_SQL = `
 
     CREATE TABLE IF NOT EXISTS project_catalog_entries (
         label TEXT PRIMARY KEY,
-        type TEXT NOT NULL,
+        platforms_json TEXT NOT NULL,
+        total_tokens INTEGER NOT NULL,
         updated_at TEXT NOT NULL
     );
 
@@ -409,8 +413,8 @@ export class UsageCacheRepository {
             return null
         }
 
-        const rows: ProjectCatalogEntryRow[] = this.database.prepare<[], ProjectCatalogEntryRow>(`
-            SELECT label, type
+        const rows: ProjectCatalogEntryRow[] = this.database.prepare<ProjectCatalogEntryRow>(`
+            SELECT label, platforms_json, total_tokens
             FROM project_catalog_entries
             ORDER BY label ASC
         `).all()
@@ -418,7 +422,8 @@ export class UsageCacheRepository {
         return {
             payload: rows.map(row => ({
                 label: row.label,
-                type: row.type,
+                platforms: parseProjectCatalogPlatforms(row.platforms_json),
+                totalTokens: row.total_tokens,
             })),
             payloadHash: meta.payload_hash,
             updatedAt: meta.updated_at,
@@ -430,7 +435,7 @@ export class UsageCacheRepository {
     }
 
     loadProjectDetails() {
-        const projects: ProjectRow[] = this.database.prepare<[], ProjectRow>(`
+        const projects: ProjectRow[] = this.database.prepare<ProjectRow>(`
             SELECT label, create_time, session_count
             FROM projects
             ORDER BY label ASC
@@ -440,7 +445,7 @@ export class UsageCacheRepository {
             return new Map<string, ProjectUsageDetail>()
         }
 
-        const projectModels = groupProjectModels(this.database.prepare<[], ProjectModelRow>(`
+        const projectModels = groupProjectModels(this.database.prepare<ProjectModelRow>(`
             SELECT project_label, model, model_order
             FROM project_models
             ORDER BY project_label ASC, model_order ASC
@@ -479,7 +484,7 @@ export class UsageCacheRepository {
     }
 
     loadIndexedSourceFiles() {
-        const files: IndexedFileRow[] = this.database.prepare<[], IndexedFileRow>(`
+        const files: IndexedFileRow[] = this.database.prepare<IndexedFileRow>(`
             SELECT path, platform, cache_signature, size, mtime_ms, updated_at
             FROM indexed_files
             ORDER BY path ASC
@@ -489,12 +494,12 @@ export class UsageCacheRepository {
             return []
         }
 
-        const projectNamesByPath = groupIndexedFileProjects(this.database.prepare<[], IndexedFileProjectRow>(`
+        const projectNamesByPath = groupIndexedFileProjects(this.database.prepare<IndexedFileProjectRow>(`
             SELECT path, project_name, project_order
             FROM indexed_file_projects
             ORDER BY path ASC, project_order ASC
         `).all())
-        const fragments = this.database.prepare<[], IndexedFragmentRow>(`
+        const fragments = this.database.prepare<IndexedFragmentRow>(`
             SELECT
                 fragment_id,
                 path,
@@ -509,7 +514,7 @@ export class UsageCacheRepository {
             FROM indexed_file_fragments
             ORDER BY path ASC, fragment_order ASC
         `).all()
-        const interactions = this.database.prepare<[], IndexedInteractionRow>(`
+        const interactions = this.database.prepare<IndexedInteractionRow>(`
             SELECT
                 fragment_id,
                 interaction_order,
@@ -755,6 +760,7 @@ export class UsageCacheRepository {
     private initializeSchema() {
         this.database.exec(CACHE_SCHEMA_SQL)
         this.ensureIndexedFilesCacheSignatureColumn()
+        this.ensureProjectCatalogColumns()
 
         const currentSchemaVersion = this.getCurrentSchemaVersion()
 
@@ -767,7 +773,7 @@ export class UsageCacheRepository {
     }
 
     private getCurrentSchemaVersion() {
-        return this.database.prepare<[], { schema_version: number }>(`
+        return this.database.prepare<SchemaVersionRow>(`
             SELECT schema_version
             FROM cache_schema_meta
             WHERE id = 1
@@ -836,13 +842,48 @@ export class UsageCacheRepository {
             return
         }
 
-        const columns = this.database.prepare<[], { name: string }>('PRAGMA table_info(indexed_files)').all()
+        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(indexed_files)').all()
 
         if (columns.some(column => column.name === 'cache_signature')) {
             return
         }
 
         this.database.exec('ALTER TABLE indexed_files ADD COLUMN cache_signature TEXT NOT NULL DEFAULT \'\'')
+    }
+
+    private ensureProjectCatalogColumns() {
+        if (!this.hasTable('project_catalog_entries')) {
+            return
+        }
+
+        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(project_catalog_entries)').all()
+
+        if (!columns.some(column => column.name === 'platforms_json')) {
+            this.database.exec('ALTER TABLE project_catalog_entries ADD COLUMN platforms_json TEXT NOT NULL DEFAULT \'[]\'')
+        }
+
+        if (!columns.some(column => column.name === 'total_tokens')) {
+            this.database.exec('ALTER TABLE project_catalog_entries ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0')
+        }
+
+        if (!columns.some(column => column.name === 'type')) {
+            return
+        }
+
+        const legacyRows = this.database.prepare<LegacyProjectCatalogTypeRow>(`
+            SELECT label, type
+            FROM project_catalog_entries
+        `).all()
+        const updateStatement = this.database.prepare(`
+            UPDATE project_catalog_entries
+            SET platforms_json = ?, total_tokens = 0
+            WHERE label = ?
+        `)
+
+        for (const row of legacyRows) {
+            const platforms = row.type === 'mixed' ? [] : [row.type]
+            updateStatement.run(JSON.stringify(platforms), row.label)
+        }
     }
 
     private clearNormalizedTables() {
@@ -871,7 +912,7 @@ export class UsageCacheRepository {
     }
 
     private hasTable(tableName: string) {
-        const row = this.database.prepare<[string], { name: string }>(`
+        const row = this.database.prepare<SqliteNameRow>(`
             SELECT name
             FROM sqlite_master
             WHERE type = 'table' AND name = ?
@@ -881,7 +922,7 @@ export class UsageCacheRepository {
     }
 
     private getCacheState(key: SnapshotKey) {
-        return this.database.prepare<[SnapshotKey], CacheStateRow>(`
+        return this.database.prepare<CacheStateRow>(`
             SELECT key, payload_hash, updated_at, version
             FROM cache_state
             WHERE key = ?
@@ -934,8 +975,8 @@ export class UsageCacheRepository {
         const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
         const deleteStatement = this.database.prepare('DELETE FROM project_catalog_entries')
         const insertStatement = this.database.prepare(`
-            INSERT INTO project_catalog_entries (label, type, updated_at)
-            VALUES (?, ?, ?)
+            INSERT INTO project_catalog_entries (label, platforms_json, total_tokens, updated_at)
+            VALUES (?, ?, ?, ?)
         `)
 
         this.database.exec('BEGIN')
@@ -944,7 +985,7 @@ export class UsageCacheRepository {
             deleteStatement.run()
 
             for (const item of payload) {
-                insertStatement.run(item.label, item.type, updatedAt)
+                insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
             }
 
             this.upsertCacheState('project_catalog', payloadHash, updatedAt)
@@ -1337,7 +1378,7 @@ export class UsageCacheRepository {
     }
 
     private loadHydratedUsageScopes(kind: UsageScopeKind) {
-        const scopes: UsageScopeRow[] = this.database.prepare<[UsageScopeKind], UsageScopeRow>(`
+        const scopes: UsageScopeRow[] = this.database.prepare<UsageScopeRow>(`
             SELECT
                 scope_key,
                 scope_kind,
@@ -1361,7 +1402,7 @@ export class UsageCacheRepository {
         }
 
         const scopeSet = new Set(scopes.map(scope => scope.scope_key))
-        const overviewCards = groupOverviewCards(this.database.prepare<[UsageScopeKind], OverviewCardRow>(`
+        const overviewCards = groupOverviewCards(this.database.prepare<OverviewCardRow>(`
             SELECT card.scope_key, card.position, card.icon, card.name, card.value, card.detail, card.trend, card.trend_tone
             FROM usage_scope_overview_cards AS card
             JOIN usage_scopes AS scope ON scope.scope_key = card.scope_key
@@ -1369,7 +1410,7 @@ export class UsageCacheRepository {
             ORDER BY card.scope_key ASC, card.position ASC
         `).all(kind))
         const tokenRows = groupTokenRows(
-            this.database.prepare<[UsageScopeKind], TokenRowRow>(`
+            this.database.prepare<TokenRowRow>(`
                 SELECT
                     row.scope_key,
                     row.bucket,
@@ -1389,14 +1430,14 @@ export class UsageCacheRepository {
                 WHERE scope.scope_kind = ?
                 ORDER BY row.scope_key ASC, row.bucket ASC, row.row_order ASC
             `).all(kind),
-            this.database.prepare<[UsageScopeKind], TokenRowModelRow>(`
+            this.database.prepare<TokenRowModelRow>(`
                 SELECT model.scope_key, model.bucket, model.row_id, model.model, model.model_order
                 FROM usage_scope_token_row_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
                 WHERE scope.scope_kind = ?
                 ORDER BY model.scope_key ASC, model.bucket ASC, model.row_id ASC, model.model_order ASC
             `).all(kind),
-            this.database.prepare<[UsageScopeKind], TokenRowProjectRow>(`
+            this.database.prepare<TokenRowProjectRow>(`
                 SELECT project.scope_key, project.bucket, project.row_id, project.project, project.project_order
                 FROM usage_scope_token_row_projects AS project
                 JOIN usage_scopes AS scope ON scope.scope_key = project.scope_key
@@ -1405,7 +1446,7 @@ export class UsageCacheRepository {
             `).all(kind),
         )
         const dailyUsage = groupDailyUsage(
-            this.database.prepare<[UsageScopeKind], DailyUsageRow>(`
+            this.database.prepare<DailyUsageRow>(`
                 SELECT
                     daily.scope_key,
                     daily.row_order,
@@ -1421,7 +1462,7 @@ export class UsageCacheRepository {
                 WHERE scope.scope_kind = ?
                 ORDER BY daily.scope_key ASC, daily.row_order ASC
             `).all(kind),
-            this.database.prepare<[UsageScopeKind], DailyUsageModelRow>(`
+            this.database.prepare<DailyUsageModelRow>(`
                 SELECT
                     model.scope_key,
                     model.date,
@@ -1439,14 +1480,14 @@ export class UsageCacheRepository {
                 ORDER BY model.scope_key ASC, model.date ASC, model.model_order ASC
             `).all(kind),
         )
-        const monthlyUsage = groupMonthlyModelUsage(this.database.prepare<[UsageScopeKind], MonthlyModelUsageRow>(`
+        const monthlyUsage = groupMonthlyModelUsage(this.database.prepare<MonthlyModelUsageRow>(`
             SELECT monthly.scope_key, monthly.row_order, monthly.month, monthly.model, monthly.token_total
             FROM usage_scope_monthly_model_usage AS monthly
             JOIN usage_scopes AS scope ON scope.scope_key = monthly.scope_key
             WHERE scope.scope_kind = ?
             ORDER BY monthly.scope_key ASC, monthly.row_order ASC
         `).all(kind))
-        const projectUsage = groupProjectUsage(this.database.prepare<[UsageScopeKind], ProjectUsageRow>(`
+        const projectUsage = groupProjectUsage(this.database.prepare<ProjectUsageRow>(`
             SELECT
                 usage.scope_key,
                 usage.row_order,
@@ -1465,7 +1506,7 @@ export class UsageCacheRepository {
             ORDER BY usage.scope_key ASC, usage.row_order ASC
         `).all(kind))
         const sessions = groupSessions(
-            this.database.prepare<[UsageScopeKind], SessionRow>(`
+            this.database.prepare<SessionRow>(`
                 SELECT
                     session.scope_key,
                     session.session_key,
@@ -1494,14 +1535,14 @@ export class UsageCacheRepository {
                 WHERE scope.scope_kind = ?
                 ORDER BY session.scope_key ASC, session.session_order ASC
             `).all(kind),
-            this.database.prepare<[UsageScopeKind], SessionModelRow>(`
+            this.database.prepare<SessionModelRow>(`
                 SELECT model.scope_key, model.session_key, model.model, model.model_order
                 FROM usage_scope_session_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
                 WHERE scope.scope_kind = ?
                 ORDER BY model.scope_key ASC, model.session_key ASC, model.model_order ASC
             `).all(kind),
-            this.database.prepare<[UsageScopeKind], ScopeInteractionRow>(`
+            this.database.prepare<ScopeInteractionRow>(`
                 SELECT
                     interaction.scope_key,
                     interaction.session_key,
@@ -1570,7 +1611,7 @@ export class UsageCacheRepository {
     }
 
     private loadLegacyBootstrap() {
-        const row: LegacySnapshotRow | undefined = this.database.prepare<['bootstrap'], LegacySnapshotRow>(`
+        const row: LegacySnapshotRow | undefined = this.database.prepare<LegacySnapshotRow>(`
             SELECT payload, payload_hash, updated_at
             FROM cache_snapshots
             WHERE key = ?
@@ -1588,7 +1629,7 @@ export class UsageCacheRepository {
     }
 
     private loadLegacyProjectCatalog() {
-        const row: LegacySnapshotRow | undefined = this.database.prepare<['project_catalog'], LegacySnapshotRow>(`
+        const row: LegacySnapshotRow | undefined = this.database.prepare<LegacySnapshotRow>(`
             SELECT payload, payload_hash, updated_at
             FROM cache_snapshots
             WHERE key = ?
@@ -1599,14 +1640,14 @@ export class UsageCacheRepository {
         }
 
         return {
-            payload: JSON.parse(row.payload) as ProjectUsageCatalogItem[],
+            payload: normalizeProjectCatalogItems(JSON.parse(row.payload) as unknown),
             payloadHash: row.payload_hash,
             updatedAt: row.updated_at,
         }
     }
 
     private loadLegacyProjectDetails() {
-        const rows: LegacyProjectSnapshotRow[] = this.database.prepare<[], LegacyProjectSnapshotRow>(`
+        const rows: LegacyProjectSnapshotRow[] = this.database.prepare<LegacyProjectSnapshotRow>(`
             SELECT label, payload, payload_hash, updated_at
             FROM project_snapshots
             ORDER BY label ASC
@@ -1621,7 +1662,7 @@ export class UsageCacheRepository {
     }
 
     private loadLegacyIndexedSourceFiles() {
-        const rows: LegacyIndexedSourceFileRow[] = this.database.prepare<[], LegacyIndexedSourceFileRow>(`
+        const rows: LegacyIndexedSourceFileRow[] = this.database.prepare<LegacyIndexedSourceFileRow>(`
             SELECT path, platform, payload, project_names, size, mtime_ms, updated_at
             FROM indexed_source_files
             ORDER BY path ASC
@@ -2015,6 +2056,65 @@ function createCompositeKey(...parts: Array<string | number>) {
 
 function createPayloadHash(value: string) {
     return createHash('sha1').update(value).digest('hex')
+}
+
+function normalizeProjectCatalogItems(value: unknown): ProjectUsageCatalogItem[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+
+    return value.flatMap((item) => {
+        if (!item || typeof item !== 'object') {
+            return []
+        }
+
+        const record = item as Record<string, unknown>
+
+        if (typeof record.label !== 'string') {
+            return []
+        }
+
+        if (Array.isArray(record.platforms)) {
+            return [{
+                label: record.label,
+                platforms: normalizeProjectCatalogPlatforms(record.platforms),
+                totalTokens: normalizeProjectCatalogTotalTokens(record.totalTokens),
+            }]
+        }
+
+        if (typeof record.type === 'string') {
+            return [{
+                label: record.label,
+                platforms: normalizeProjectCatalogPlatforms(record.type === 'mixed' ? [] : [record.type]),
+                totalTokens: normalizeProjectCatalogTotalTokens(record.totalTokens),
+            }]
+        }
+
+        return []
+    })
+}
+
+function parseProjectCatalogPlatforms(value: string) {
+    try {
+        return normalizeProjectCatalogPlatforms(JSON.parse(value) as unknown)
+    }
+    catch {
+        return []
+    }
+}
+
+function normalizeProjectCatalogPlatforms(value: unknown): ProjectUsagePlatform[] {
+    if (!Array.isArray(value)) {
+        return []
+    }
+
+    return value.filter((platform): platform is ProjectUsagePlatform =>
+        typeof platform === 'string' && PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform),
+    )
+}
+
+function normalizeProjectCatalogTotalTokens(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
 function mkdirParentDirectory(filePath: string) {

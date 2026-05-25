@@ -1,3 +1,4 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
     ProjectDailyTrendModulePayload,
     ProjectDashboardScope,
@@ -5,12 +6,12 @@ import type {
     ProjectPlatformModulePayload,
     ProjectSessionListModulePayload,
     ProjectTokenUsageModulePayload,
-    ProjectUsageCatalogType,
 } from '#shared/types/project-dashboard'
 
 export interface ProjectUsageCatalogItem {
     label: string
-    type: ProjectUsageCatalogType
+    platforms: ProjectUsagePlatform[]
+    totalTokens: number
 }
 
 export const PROJECT_USAGE_DATA_MODULES = [
