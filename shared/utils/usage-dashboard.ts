@@ -6,6 +6,7 @@ import type {
     ProjectUsageItem,
     TrendTone,
     UsageOverviewCard,
+    UsageOverviewCardSubvalue,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
 
@@ -115,6 +116,39 @@ export function buildGrowthTrend(
         trend: formatSignedPercent(ratio),
         trendTone: getTrendTone(ratio),
     }
+}
+
+export function buildInputOutputTokenSubvalue(
+    usage?: Pick<DailyTokenUsage, 'inputTokens' | 'outputTokens'> | null,
+): UsageOverviewCardSubvalue {
+    return {
+        items: [
+            {
+                label: 'In',
+                value: formatCompactNumber(usage?.inputTokens ?? 0),
+            },
+            {
+                label: 'Out',
+                value: formatCompactNumber(usage?.outputTokens ?? 0),
+            },
+        ],
+    }
+}
+
+export function buildOverviewCardsWithTodayTokenBreakdown(
+    overviewCards: UsageOverviewCard[],
+    dailyTokenUsage: Pick<DailyTokenUsage, 'date' | 'inputTokens' | 'outputTokens'>[],
+) {
+    const todayDateKey = getDateKey(new Date())
+
+    return overviewCards.map(card => card.name === 'Today Tokens'
+        ? {
+                ...card,
+                subvalue: buildInputOutputTokenSubvalue(
+                    dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey),
+                ),
+            }
+        : card)
 }
 
 export function getDateKey(date: Date) {

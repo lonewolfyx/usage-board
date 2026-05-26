@@ -10,6 +10,7 @@ import type {
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import {
     buildGrowthTrend,
+    buildInputOutputTokenSubvalue,
     buildPercentTrend,
     formatCompactNumber,
     formatCurrency,
@@ -89,6 +90,7 @@ export function buildProjectPlatformOverviewCards(
             detail: `${formatNumber(todayUsage?.totalTokens ?? 0)} tokens used today`,
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
+            subvalue: buildInputOutputTokenSubvalue(todayUsage),
             trend: tokenTrend.trend,
             trendTone: tokenTrend.trendTone,
             value: formatCompactNumber(todayUsage?.totalTokens ?? 0),

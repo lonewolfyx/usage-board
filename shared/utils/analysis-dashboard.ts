@@ -14,6 +14,7 @@ import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
+    buildInputOutputTokenSubvalue,
     buildPercentTrend,
     buildProjectUsage,
     formatCompactNumber,
@@ -210,18 +211,7 @@ function buildHomeOverviewCards(options: {
             detail: `${formatNumber(options.todayUsage?.totalTokens ?? 0)} tokens today. Yesterday: ${formatNumber(options.previousUsage?.totalTokens ?? 0)}.`,
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
-            subvalue: {
-                items: [
-                    {
-                        label: 'In',
-                        value: formatCompactNumber(options.todayUsage?.inputTokens ?? 0),
-                    },
-                    {
-                        label: 'Out',
-                        value: formatCompactNumber(options.todayUsage?.outputTokens ?? 0),
-                    },
-                ],
-            },
+            subvalue: buildInputOutputTokenSubvalue(options.todayUsage),
             trend: tokenTrend.trend,
             trendTone: tokenTrend.trendTone,
             value: formatCompactNumber(options.todayUsage?.totalTokens ?? 0),

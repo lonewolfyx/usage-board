@@ -58,7 +58,7 @@ import {
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
-const CACHE_SCHEMA_VERSION = 7
+const CACHE_SCHEMA_VERSION = 8
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -121,6 +121,7 @@ const CACHE_SCHEMA_SQL = `
         name TEXT NOT NULL,
         value TEXT NOT NULL,
         detail TEXT,
+        subvalue_json TEXT,
         trend TEXT NOT NULL,
         trend_tone TEXT NOT NULL,
         PRIMARY KEY (scope_key, position),
@@ -767,6 +768,7 @@ export class UsageCacheRepository {
         this.database.exec(CACHE_SCHEMA_SQL)
         this.ensureIndexedFilesCacheSignatureColumn()
         this.ensureDailyUsageModelCostColumn()
+        this.ensureOverviewCardSubvalueColumn()
         this.ensureProjectCatalogColumns()
         this.ensureInteractionExtraTotalTokenColumns()
 
@@ -906,6 +908,20 @@ export class UsageCacheRepository {
         }
 
         this.database.exec('ALTER TABLE usage_scope_daily_usage_models ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0')
+    }
+
+    private ensureOverviewCardSubvalueColumn() {
+        if (!this.hasTable('usage_scope_overview_cards')) {
+            return
+        }
+
+        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_overview_cards)').all()
+
+        if (columns.some(column => column.name === 'subvalue_json')) {
+            return
+        }
+
+        this.database.exec('ALTER TABLE usage_scope_overview_cards ADD COLUMN subvalue_json TEXT')
     }
 
     private ensureInteractionExtraTotalTokenColumns() {
@@ -1087,10 +1103,11 @@ export class UsageCacheRepository {
                 name,
                 value,
                 detail,
+                subvalue_json,
                 trend,
                 trend_tone
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertTokenRowStatement = this.database.prepare(`
             INSERT INTO usage_scope_token_rows (
@@ -1272,6 +1289,7 @@ export class UsageCacheRepository {
                 card.name,
                 card.value,
                 card.detail ?? null,
+                card.subvalue ? JSON.stringify(card.subvalue) : null,
                 card.trend,
                 card.trendTone,
             )
@@ -1447,7 +1465,7 @@ export class UsageCacheRepository {
 
         const scopeSet = new Set(scopes.map(scope => scope.scope_key))
         const overviewCards = groupOverviewCards(this.database.prepare<OverviewCardRow>(`
-            SELECT card.scope_key, card.position, card.icon, card.name, card.value, card.detail, card.trend, card.trend_tone
+            SELECT card.scope_key, card.position, card.icon, card.name, card.value, card.detail, card.subvalue_json, card.trend, card.trend_tone
             FROM usage_scope_overview_cards AS card
             JOIN usage_scopes AS scope ON scope.scope_key = card.scope_key
             WHERE scope.scope_kind = ?
@@ -1795,6 +1813,7 @@ function groupOverviewCards(rows: OverviewCardRow[]) {
             detail: row.detail ?? undefined,
             icon: row.icon,
             name: row.name,
+            subvalue: parseOverviewCardSubvalue(row.subvalue_json),
             trend: row.trend,
             trendTone: row.trend_tone,
             value: row.value,
@@ -1803,6 +1822,21 @@ function groupOverviewCards(rows: OverviewCardRow[]) {
     }
 
     return grouped
+}
+
+function parseOverviewCardSubvalue(value: string | null): UsageOverviewCard['subvalue'] | undefined {
+    if (!value) {
+        return undefined
+    }
+
+    try {
+        const subvalue = JSON.parse(value) as UsageOverviewCard['subvalue']
+
+        return Array.isArray(subvalue?.items) ? subvalue : undefined
+    }
+    catch {
+        return undefined
+    }
 }
 
 function groupTokenRows(

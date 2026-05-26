@@ -28,6 +28,7 @@ import { dirname, sep } from 'node:path'
 import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import {
     buildGrowthTrend,
+    buildInputOutputTokenSubvalue,
     buildProjectUsage,
     formatCompactNumber,
     formatCurrency,
@@ -390,6 +391,8 @@ function getSessionSortTimestamp(session: SessionUsageSummaryLike) {
 function buildOverviewCards(options: {
     previousDayCost: number
     previousDayTokens: number
+    todayInputTokens: number
+    todayOutputTokens: number
     todayTopModel: UsageTopModel | null
     todayTopProject: UsageTopProject | null
     todayTotalCost: number
@@ -403,6 +406,10 @@ function buildOverviewCards(options: {
             detail: `${formatNumber(options.todayTotalTokens)} tokens used today`,
             icon: 'solar:cpu-line-duotone',
             name: 'Today Tokens',
+            subvalue: buildInputOutputTokenSubvalue({
+                inputTokens: options.todayInputTokens,
+                outputTokens: options.todayOutputTokens,
+            }),
             trend: tokenTrend.trend,
             trendTone: tokenTrend.trendTone,
             value: formatCompactNumber(options.todayTotalTokens),
@@ -480,6 +487,8 @@ export function buildLoadUsageResult<
         overviewCards: buildOverviewCards({
             previousDayCost: roundCurrency(previousDayDailyGroup?.costUSD ?? 0),
             previousDayTokens: previousDayDailyGroup?.totalTokens ?? 0,
+            todayInputTokens: todayDailyGroup?.inputTokens ?? 0,
+            todayOutputTokens: todayDailyGroup?.outputTokens ?? 0,
             todayTopModel,
             todayTopProject,
             todayTotalCost,
