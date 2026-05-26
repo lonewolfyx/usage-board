@@ -71,6 +71,7 @@ export interface OverviewCardRow {
     name: string
     position: number
     scope_key: string
+    subvalue_json: string | null
     trend: string
     trend_tone: UsageOverviewCard['trendTone']
     value: string
