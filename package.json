@@ -36,7 +36,7 @@
         "preview": "nuxt preview",
         "typecheck": "nuxt typecheck",
         "lint": "nuxt prepare && eslint .",
-        "lint:fix": "eslint --fix",
+        "lint:fix": "nuxt prepare && eslint --fix",
         "dev:cli": "tsdown -w",
         "test": "vitest",
         "prepare": "simple-git-hooks",
