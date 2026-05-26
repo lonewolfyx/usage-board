@@ -20,5 +20,20 @@ export interface SqliteDatabase {
 export type SqliteDatabaseOptions = Pick<DatabaseSyncOptions, 'readOnly'>
 
 export function openSqliteDatabase(location: string, options?: SqliteDatabaseOptions) {
-    return new DatabaseSync(location, options ?? {}) as unknown as SqliteDatabase
+    const database = new DatabaseSync(location, options ?? {}) as unknown as SqliteDatabase
+
+    try {
+        database.exec('PRAGMA journal_mode = WAL')
+        database.exec('PRAGMA synchronous = NORMAL')
+    }
+    catch {
+    }
+
+    try {
+        database.exec('PRAGMA busy_timeout = 15000')
+    }
+    catch {
+    }
+
+    return database
 }

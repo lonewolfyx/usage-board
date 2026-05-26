@@ -388,7 +388,7 @@ export class UsageCacheRepository {
             return null
         }
 
-        const scopes = this.loadHydratedUsageScopes('bootstrap')
+        const scopes = this.loadHydratedUsageScopes('bootstrap', false)
         const payload = Object.fromEntries(
             PROJECT_USAGE_PLATFORMS.map(platform => [
                 platform,
@@ -1439,7 +1439,7 @@ export class UsageCacheRepository {
         }
     }
 
-    private loadHydratedUsageScopes(kind: UsageScopeKind) {
+    private loadHydratedUsageScopes(kind: UsageScopeKind, includeInteractions = true) {
         const scopes: UsageScopeRow[] = this.database.prepare<UsageScopeRow>(`
             SELECT
                 scope_key,
@@ -1605,34 +1605,36 @@ export class UsageCacheRepository {
                 WHERE scope.scope_kind = ?
                 ORDER BY model.scope_key ASC, model.session_key ASC, model.model_order ASC
             `).all(kind),
-            this.database.prepare<ScopeInteractionRow>(`
-                SELECT
-                    interaction.scope_key,
-                    interaction.session_key,
-                    interaction.interaction_order,
-                    interaction.interaction_index,
-                    interaction.content,
-                    interaction.cost_usd,
-                    interaction.model,
-                    interaction.role,
-                    interaction.timestamp,
-                    interaction.type,
-                    interaction.input_tokens,
-                    interaction.cached_input_tokens,
-                    interaction.output_tokens,
-                    interaction.reasoning_output_tokens,
-                    interaction.extra_total_tokens,
-                    interaction.total_tokens,
-                    interaction.usage_cost_usd,
-                    interaction.cache_creation_tokens,
-                    interaction.cache_read_tokens,
-                    interaction.tool_tokens,
-                    interaction.is_fallback_model
-                FROM usage_scope_interactions AS interaction
-                JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
-                WHERE scope.scope_kind = ?
-                ORDER BY interaction.scope_key ASC, interaction.session_key ASC, interaction.interaction_order ASC
-            `).all(kind),
+            includeInteractions
+                ? this.database.prepare<ScopeInteractionRow>(`
+                    SELECT
+                        interaction.scope_key,
+                        interaction.session_key,
+                        interaction.interaction_order,
+                        interaction.interaction_index,
+                        interaction.content,
+                        interaction.cost_usd,
+                        interaction.model,
+                        interaction.role,
+                        interaction.timestamp,
+                        interaction.type,
+                        interaction.input_tokens,
+                        interaction.cached_input_tokens,
+                        interaction.output_tokens,
+                        interaction.reasoning_output_tokens,
+                        interaction.extra_total_tokens,
+                        interaction.total_tokens,
+                        interaction.usage_cost_usd,
+                        interaction.cache_creation_tokens,
+                        interaction.cache_read_tokens,
+                        interaction.tool_tokens,
+                        interaction.is_fallback_model
+                    FROM usage_scope_interactions AS interaction
+                    JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
+                    WHERE scope.scope_kind = ?
+                    ORDER BY interaction.scope_key ASC, interaction.session_key ASC, interaction.interaction_order ASC
+                `).all(kind)
+                : [],
         )
         const hydrated = new Map<string, PersistedUsageScope>()
 

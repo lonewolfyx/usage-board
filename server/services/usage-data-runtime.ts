@@ -30,7 +30,7 @@ interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
     hydratedAt: number
     projectCatalog: ProjectUsageCatalogItem[]
-    projectDetails: Map<string, ProjectUsageDetail>
+    projectDetails: Map<string, ProjectUsageDetail> | null
     refreshStartedAt: number
 }
 
@@ -40,7 +40,7 @@ class UsageDataRuntime {
         bootstrap: null,
         hydratedAt: 0,
         projectCatalog: [],
-        projectDetails: new Map<string, ProjectUsageDetail>(),
+        projectDetails: null,
         refreshStartedAt: 0,
     }
 
@@ -60,7 +60,6 @@ class UsageDataRuntime {
             this.initializePromise = this.hydrateFromRepository()
                 .finally(() => {
                     this.startWatcher()
-                    void this.refreshInBackground()
                 })
         }
 
@@ -83,7 +82,7 @@ class UsageDataRuntime {
     async getProjectCatalog() {
         await this.initialize()
 
-        if (this.state.projectCatalog.length === 0 && this.state.projectDetails.size === 0) {
+        if (this.state.projectCatalog.length === 0) {
             await this.refreshNow()
         }
         else {
@@ -107,6 +106,10 @@ class UsageDataRuntime {
 
         if (!projectLabel) {
             throw new Error('Missing project name for project data request.')
+        }
+
+        if (this.state.projectDetails === null) {
+            this.state.projectDetails = this.repository.loadProjectDetails()
         }
 
         const detail = this.state.projectDetails.get(projectLabel)
@@ -133,23 +136,14 @@ class UsageDataRuntime {
 
     private async hydrateFromRepository() {
         const bootstrap = this.repository.loadBootstrap()
-        const cachedProjectCatalog = this.repository.loadProjectCatalog()
-        const projectDetails = this.repository.loadProjectDetails()
-        const projectCatalog = projectDetails.size > 0
-            ? buildProjectUsageCatalogItemsFromDetails(projectDetails.entries())
-            : (cachedProjectCatalog?.payload ?? [])
+        const projectCatalog = this.repository.loadProjectCatalog()
 
         this.state.bootstrap = bootstrap?.payload ?? null
-        this.state.projectCatalog = projectCatalog
-        this.state.projectDetails = projectDetails
+        this.state.projectCatalog = projectCatalog?.payload ?? []
         this.state.hydratedAt = Math.max(
             bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
-            cachedProjectCatalog ? Date.parse(cachedProjectCatalog.updatedAt) : 0,
+            projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
         )
-
-        if (projectDetails.size > 0 && !isSameProjectCatalog(projectCatalog, cachedProjectCatalog?.payload ?? [])) {
-            this.repository.saveProjectCatalog(projectCatalog)
-        }
     }
 
     private async refreshNow() {
@@ -200,10 +194,9 @@ class UsageDataRuntime {
             ),
             version: this.config.version,
         } as TokensConsumptionResult
-        const projectDetails = this.state.projectDetails.size > 0
+        const projectDetails = this.state.projectDetails
             ? patchProjectDetails(this.state.projectDetails, indexed.removedProjects, indexed.affectedProjects, bootstrapByPlatform)
             : buildAllProjectDetails(bootstrapByPlatform)
-
         const projectCatalog = buildProjectUsageCatalogItemsFromDetails(projectDetails.entries())
 
         this.repository.saveBootstrap(bootstrap)
@@ -212,7 +205,9 @@ class UsageDataRuntime {
 
         this.state.bootstrap = bootstrap
         this.state.projectCatalog = projectCatalog
-        this.state.projectDetails = projectDetails
+        if (this.state.projectDetails) {
+            this.state.projectDetails = projectDetails
+        }
         this.state.hydratedAt = Date.now()
     }
 
@@ -304,10 +299,6 @@ function isWritableDirectory(directoryPath: string) {
 
 function getUsageWatchPatterns(config: IConfig) {
     return PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(config))
-}
-
-function isSameProjectCatalog(nextCatalog: ProjectUsageCatalogItem[], currentCatalog: ProjectUsageCatalogItem[]) {
-    return JSON.stringify(nextCatalog) === JSON.stringify(currentCatalog)
 }
 
 function patchProjectDetails(
