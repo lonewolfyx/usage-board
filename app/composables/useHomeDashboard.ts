@@ -11,6 +11,9 @@ import {
 } from '~/lib/analysis-repository'
 
 export function useHomeDashboard() {
+    const defaultCoreModules = createEmptyHomeDashboardCoreModules()
+    const defaultUsageModules = createEmptyHomeDashboardUsageModules()
+    const defaultSessionAnalysis = createEmptyHomeDashboardSessionModules().sessionAnalysis
     const {
         data: coreData,
         error: coreError,
@@ -44,9 +47,6 @@ export function useHomeDashboard() {
         server: false,
     })
 
-    const coreDashboard = computed(() => coreData.value ?? createEmptyHomeDashboardCoreModules())
-    const usageDashboard = computed(() => usageData.value ?? createEmptyHomeDashboardUsageModules())
-    const sessionDashboard = computed(() => sessionAnalysisData.value ?? createEmptyHomeDashboardSessionModules().sessionAnalysis)
     const { refresh } = useDeferredDashboardLoader({
         clearDeferred: () => {
             clearUsage()
@@ -65,18 +65,19 @@ export function useHomeDashboard() {
     })
 
     return {
-        dailyTokenUsage: computed(() => usageDashboard.value.dailyTokenUsage),
-        efficiencyMetrics: computed(() => usageDashboard.value.efficiencyMetrics),
+        dailyTokenUsage: computed(() => usageData.value?.dailyTokenUsage ?? defaultUsageModules.dailyTokenUsage),
+        efficiencyMetrics: computed(() => usageData.value?.efficiencyMetrics ?? defaultUsageModules.efficiencyMetrics),
         error: coreError,
-        monthlyModelUsage: computed(() => coreDashboard.value.modelUsage),
-        overviewCards: computed(() => coreDashboard.value.overviewCards),
-        projectUsage: computed(() => coreDashboard.value.hotProjects),
+        monthlyModelUsage: computed(() => coreData.value?.modelUsage ?? defaultCoreModules.modelUsage),
+        overviewCards: computed(() => coreData.value?.overviewCards ?? defaultCoreModules.overviewCards),
+        projectUsage: computed(() => coreData.value?.hotProjects ?? defaultCoreModules.hotProjects),
         refresh,
         sessionAnalysisError,
         sessionAnalysisStatus,
-        sessionUsage: computed(() => sessionDashboard.value.items),
+        sessionUsage: computed(() => sessionAnalysisData.value?.items ?? defaultSessionAnalysis.items),
         status: coreStatus,
-        totalSessions: computed(() => sessionDashboard.value.totalSessions),
+        todayHourlyUsage: computed(() => usageData.value?.todayHourlyUsage ?? defaultUsageModules.todayHourlyUsage),
+        totalSessions: computed(() => sessionAnalysisData.value?.totalSessions ?? defaultSessionAnalysis.totalSessions),
         usageError,
         usageStatus,
     }

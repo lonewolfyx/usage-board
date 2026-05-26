@@ -1,5 +1,5 @@
 import type { UsageAnalyticsSessionUsageItem } from './usage-analytics'
-import type { DailyTokenUsage, LoadUsageResult, MonthlyModelUsage, ProjectUsageItem, RankedUsageItem, UsageOverviewCard } from './usage-dashboard'
+import type { DailyTokenUsage, HourlyUsagePoint, LoadUsageResult, MonthlyModelUsage, ProjectUsageItem, RankedUsageItem, UsageOverviewCard } from './usage-dashboard'
 
 export const ANALYSIS_AGENT_TOKEN_TYPES = ['day', 'week', 'month', 'session'] as const
 
@@ -31,6 +31,7 @@ export interface HomeDashboardCoreModules {
 export interface HomeDashboardUsageModules {
     dailyTokenUsage: DailyTokenUsage[]
     efficiencyMetrics: RankedUsageItem[]
+    todayHourlyUsage: HourlyUsagePoint[]
 }
 
 export interface HomeDashboardSessionModules {
