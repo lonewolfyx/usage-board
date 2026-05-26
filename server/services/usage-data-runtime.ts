@@ -1,4 +1,5 @@
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { HomeDashboardModules } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
 import type { ProjectSessionUsageItem, ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type {
@@ -21,6 +22,7 @@ import {
     buildProjectUsageDetailFromPlatformSessions,
 } from '#shared/platform/project'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import chokidar from 'chokidar'
 
 const RUNTIME_STALE_AFTER_MS = 1000 * 60
@@ -96,6 +98,10 @@ class UsageDataRuntime {
         const bootstrap = await this.getBootstrap()
 
         return bootstrap[platform] ?? createEmptyLoadUsageResult()
+    }
+
+    async getHomeDashboardModules(): Promise<HomeDashboardModules> {
+        return buildHomeDashboardModules(await this.getBootstrap(), this.repository.loadHomeDashboardTodayInsights())
     }
 
     async getProjectDataModules(

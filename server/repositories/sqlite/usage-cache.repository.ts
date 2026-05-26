@@ -1,8 +1,10 @@
 import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
 import type { SqliteDatabase } from '#server/utils/sqlite'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { HomeDashboardTodayInsights } from '#shared/types/analysis'
 import type {
     DailyTokenUsage,
+    HourlyUsagePoint,
     LoadUsageResult,
     MonthlyModelUsage,
     ProjectInteractionUsage,
@@ -57,8 +59,9 @@ import {
     normalizeProjectUsageDetail,
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { roundCurrency } from '#shared/utils/usage-dashboard'
 
-const CACHE_SCHEMA_VERSION = 8
+const CACHE_SCHEMA_VERSION = 9
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -269,6 +272,8 @@ const CACHE_SCHEMA_SQL = `
 
     CREATE INDEX IF NOT EXISTS idx_usage_scope_sessions_order
         ON usage_scope_sessions(scope_key, session_order);
+    CREATE INDEX IF NOT EXISTS idx_usage_scope_sessions_started_at
+        ON usage_scope_sessions(scope_key, started_at);
 
     CREATE TABLE IF NOT EXISTS usage_scope_session_models (
         scope_key TEXT NOT NULL,
@@ -308,6 +313,10 @@ const CACHE_SCHEMA_SQL = `
             REFERENCES usage_scope_sessions(scope_key, session_key)
             ON DELETE CASCADE
     );
+    CREATE INDEX IF NOT EXISTS idx_usage_scope_interactions_role_timestamp
+        ON usage_scope_interactions(scope_key, role, timestamp);
+    CREATE INDEX IF NOT EXISTS idx_usage_scope_interactions_timestamp
+        ON usage_scope_interactions(scope_key, timestamp);
 
     CREATE TABLE IF NOT EXISTS indexed_files (
         path TEXT PRIMARY KEY,
@@ -408,6 +417,63 @@ export class UsageCacheRepository {
 
     saveBootstrap(payload: TokensConsumptionResult) {
         this.persistBootstrap(payload)
+    }
+
+    loadHomeDashboardTodayInsights(): HomeDashboardTodayInsights {
+        const { previousDayStartAt, todayStartAt, tomorrowStartAt } = getHomeInsightRange()
+        const promptCount = groupTodayInsightCounts(this.database.prepare<TodayInsightCountRow>(`
+            SELECT
+                CASE
+                    WHEN interaction.timestamp >= ? AND interaction.timestamp < ? THEN 'today'
+                    ELSE 'previous'
+                END AS period,
+                COUNT(*) AS total
+            FROM usage_scope_interactions AS interaction
+            JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
+            WHERE scope.scope_kind = 'bootstrap'
+              AND interaction.role = 'user'
+              AND interaction.timestamp IS NOT NULL
+              AND interaction.timestamp >= ?
+              AND interaction.timestamp < ?
+            GROUP BY period
+        `).all(todayStartAt, tomorrowStartAt, previousDayStartAt, tomorrowStartAt))
+        const sessionCount = groupTodayInsightCounts(this.database.prepare<TodayInsightCountRow>(`
+            SELECT
+                CASE
+                    WHEN session.started_at >= ? AND session.started_at < ? THEN 'today'
+                    ELSE 'previous'
+                END AS period,
+                COUNT(*) AS total
+            FROM usage_scope_sessions AS session
+            JOIN usage_scopes AS scope ON scope.scope_key = session.scope_key
+            WHERE scope.scope_kind = 'bootstrap'
+              AND session.started_at >= ?
+              AND session.started_at < ?
+            GROUP BY period
+        `).all(todayStartAt, tomorrowStartAt, previousDayStartAt, tomorrowStartAt))
+
+        return {
+            previousPromptCount: promptCount.previous,
+            previousSessionCount: sessionCount.previous,
+            promptCount: promptCount.today,
+            sessionCount: sessionCount.today,
+            todayHourlyUsage: buildTodayHourlyUsage(this.database.prepare<TodayHourlyUsageRow>(`
+                SELECT
+                    scope.platform AS platform,
+                    CAST(strftime('%H', interaction.timestamp, 'localtime') AS INTEGER) AS hour,
+                    ROUND(SUM(COALESCE(interaction.usage_cost_usd, 0)), 6) AS cost_usd,
+                    SUM(COALESCE(interaction.total_tokens, 0)) AS total_tokens
+                FROM usage_scope_interactions AS interaction
+                JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
+                WHERE scope.scope_kind = 'bootstrap'
+                  AND interaction.timestamp IS NOT NULL
+                  AND interaction.total_tokens IS NOT NULL
+                  AND interaction.timestamp >= ?
+                  AND interaction.timestamp < ?
+                GROUP BY scope.platform, hour
+                ORDER BY hour ASC, scope.platform ASC
+            `).all(todayStartAt, tomorrowStartAt)),
+        }
     }
 
     loadProjectCatalog() {
@@ -1760,6 +1826,57 @@ function getTokenRowsByBucket(usage: PersistedUsageScope, bucket: TokenRowBucket
     }
 }
 
+function buildTodayHourlyUsage(rows: TodayHourlyUsageRow[]): HourlyUsagePoint[] {
+    const grouped = new Map<number, HourlyUsagePoint>()
+
+    for (const row of rows) {
+        const item = grouped.get(row.hour) ?? {
+            agents: {},
+            costUSD: 0,
+            hour: row.hour,
+            label: `${String(row.hour).padStart(2, '0')}:00`,
+            totalTokens: 0,
+        }
+
+        item.agents[row.platform] = {
+            costUSD: row.cost_usd,
+            totalTokens: row.total_tokens,
+        }
+        item.costUSD = roundCurrency(item.costUSD + row.cost_usd)
+        item.totalTokens += row.total_tokens
+        grouped.set(row.hour, item)
+    }
+
+    return Array.from({ length: 24 }, (_, hour) => grouped.get(hour) ?? {
+        agents: {},
+        costUSD: 0,
+        hour,
+        label: `${String(hour).padStart(2, '0')}:00`,
+        totalTokens: 0,
+    })
+}
+
+function groupTodayInsightCounts(rows: TodayInsightCountRow[]) {
+    return rows.reduce((result, row) => {
+        result[row.period] = row.total
+        return result
+    }, {
+        previous: 0,
+        today: 0,
+    })
+}
+
+function getHomeInsightRange() {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    return {
+        previousDayStartAt: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+        todayStartAt: today.toISOString(),
+        tomorrowStartAt: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
+    }
+}
+
 function groupProjectModels(rows: ProjectModelRow[]) {
     const grouped = new Map<string, string[]>()
 
@@ -2144,6 +2261,18 @@ function createCompositeKey(...parts: Array<string | number>) {
 
 function createPayloadHash(value: string) {
     return createHash('sha1').update(value).digest('hex')
+}
+
+interface TodayInsightCountRow {
+    period: 'previous' | 'today'
+    total: number
+}
+
+interface TodayHourlyUsageRow {
+    cost_usd: number
+    hour: number
+    platform: ProjectUsagePlatform
+    total_tokens: number
 }
 
 function normalizeProjectCatalogItems(value: unknown): ProjectUsageCatalogItem[] {

@@ -38,6 +38,14 @@ export interface HomeDashboardSessionModules {
     sessionAnalysis: AnalysisSessionResponse
 }
 
+export interface HomeDashboardTodayInsights {
+    previousPromptCount: number
+    previousSessionCount: number
+    promptCount: number
+    sessionCount: number
+    todayHourlyUsage: HourlyUsagePoint[]
+}
+
 export type HomeDashboardModules = HomeDashboardCoreModules & HomeDashboardUsageModules & HomeDashboardSessionModules
 
 export type AgentDashboardCoreModules = Pick<

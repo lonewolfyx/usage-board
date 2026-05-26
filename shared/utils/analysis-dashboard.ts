@@ -7,6 +7,7 @@ import type {
     HomeDashboardCoreModules,
     HomeDashboardModules,
     HomeDashboardSessionModules,
+    HomeDashboardTodayInsights,
     HomeDashboardUsageModules,
 } from '#shared/types/analysis'
 import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, RankedUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
@@ -100,6 +101,7 @@ export function createEmptyAgentDashboardSessionModules(): AgentDashboardSession
 
 export function buildHomeDashboardModules(
     dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
+    todayInsights: HomeDashboardTodayInsights | undefined = undefined,
 ): HomeDashboardModules {
     const sessionUsage = buildSessionUsage(dashboardsByPlatform)
     const dailyTokenUsage = mergeDailyTokenUsage(
@@ -140,7 +142,11 @@ export function buildHomeDashboardModules(
         reasoningOutputTokens,
         totalTokens,
     })
-    const todayInsights = buildHomeTodayInsights(dashboardsByPlatform, dailyTokenUsage)
+    const homeTodayInsights = todayInsights ?? buildHomeTodayInsights(dashboardsByPlatform)
+    const todayDateKey = getDateKey(new Date())
+    const previousDayDateKey = getPreviousDateKey(todayDateKey)
+    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey)
+    const previousUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
 
     return {
         dailyTokenUsage,
@@ -150,13 +156,13 @@ export function buildHomeDashboardModules(
         overviewCards: buildHomeOverviewCards({
             cachedInputTokens,
             inputTokens,
-            previousPromptCount: todayInsights.previousPromptCount,
-            previousSessionCount: todayInsights.previousSessionCount,
-            previousUsage: todayInsights.previousUsage,
-            promptCount: todayInsights.promptCount,
-            sessionCount: todayInsights.sessionCount,
-            todayHourlyUsage: todayInsights.todayHourlyUsage,
-            todayUsage: todayInsights.todayUsage,
+            previousPromptCount: homeTodayInsights.previousPromptCount,
+            previousSessionCount: homeTodayInsights.previousSessionCount,
+            previousUsage,
+            promptCount: homeTodayInsights.promptCount,
+            sessionCount: homeTodayInsights.sessionCount,
+            todayHourlyUsage: homeTodayInsights.todayHourlyUsage,
+            todayUsage,
             totalCost,
             totalSessions,
             totalTokens,
@@ -165,7 +171,7 @@ export function buildHomeDashboardModules(
             items: sessionUsage,
             totalSessions,
         },
-        todayHourlyUsage: todayInsights.todayHourlyUsage,
+        todayHourlyUsage: homeTodayInsights.todayHourlyUsage,
     }
 }
 
@@ -284,7 +290,6 @@ function buildHomeOverviewCards(options: {
 
 function buildHomeTodayInsights(
     dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
-    dailyTokenUsage: LoadUsageResult['dailyTokenUsage'],
 ) {
     const todayDateKey = getDateKey(new Date())
     const previousDayDateKey = getPreviousDateKey(todayDateKey)
@@ -358,8 +363,6 @@ function buildHomeTodayInsights(
         }
     }
 
-    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey)
-    const previousUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
     const todayHourlyUsage = Array.from({ length: 24 }, (_, hour) => ({
         agents: Object.fromEntries(hourlyUsage.get(hour)?.agents.entries() ?? []),
         costUSD: hourlyUsage.get(hour)?.costUSD ?? 0,
@@ -371,11 +374,9 @@ function buildHomeTodayInsights(
     return {
         previousPromptCount,
         previousSessionCount,
-        previousUsage,
         promptCount,
         sessionCount,
         todayHourlyUsage,
-        todayUsage,
     }
 }
 
