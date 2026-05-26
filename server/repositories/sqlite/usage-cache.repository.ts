@@ -50,7 +50,7 @@ import type {
     UsageScopeRow,
 } from './usage-cache.types'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync } from 'node:fs'
+import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import {
@@ -381,14 +381,16 @@ const CACHE_SCHEMA_SQL = `
 `
 
 export class UsageCacheRepository {
-    private readonly database: SqliteDatabase
+    private database: SqliteDatabase
 
     constructor(databasePath: string) {
         mkdirParentDirectory(databasePath)
-        this.database = openSqliteDatabase(databasePath)
-        this.database.exec('PRAGMA foreign_keys = ON')
+        this.databasePath = databasePath
+        this.database = this.openDatabase()
         this.initializeSchema()
     }
+
+    private readonly databasePath: string
 
     loadBootstrap() {
         const meta = this.getCacheState('bootstrap')
@@ -648,15 +650,15 @@ export class UsageCacheRepository {
 
         const deleteFileStatement = this.database.prepare('DELETE FROM indexed_files WHERE path = ?')
         const insertFileStatement = this.database.prepare(`
-            INSERT INTO indexed_files (path, platform, cache_signature, size, mtime_ms, updated_at)
+            INSERT OR REPLACE INTO indexed_files (path, platform, cache_signature, size, mtime_ms, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
         `)
         const insertProjectStatement = this.database.prepare(`
-            INSERT INTO indexed_file_projects (path, project_name, project_order)
+            INSERT OR REPLACE INTO indexed_file_projects (path, project_name, project_order)
             VALUES (?, ?, ?)
         `)
         const insertFragmentStatement = this.database.prepare(`
-            INSERT INTO indexed_file_fragments (
+            INSERT OR REPLACE INTO indexed_file_fragments (
                 path,
                 fragment_order,
                 fragment_key,
@@ -670,7 +672,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertInteractionStatement = this.database.prepare(`
-            INSERT INTO indexed_fragment_interactions (
+            INSERT OR REPLACE INTO indexed_fragment_interactions (
                 fragment_id,
                 interaction_order,
                 interaction_index,
@@ -780,11 +782,11 @@ export class UsageCacheRepository {
 
     replaceProjectDetails(details: Map<string, ProjectUsageDetail>) {
         const insertProjectStatement = this.database.prepare(`
-            INSERT INTO projects (label, create_time, session_count, updated_at)
+            INSERT OR REPLACE INTO projects (label, create_time, session_count, updated_at)
             VALUES (?, ?, ?, ?)
         `)
         const insertProjectModelStatement = this.database.prepare(`
-            INSERT INTO project_models (project_label, model, model_order)
+            INSERT OR REPLACE INTO project_models (project_label, model, model_order)
             VALUES (?, ?, ?)
         `)
         const now = new Date().toISOString()
@@ -832,19 +834,14 @@ export class UsageCacheRepository {
 
     private initializeSchema() {
         this.database.exec(CACHE_SCHEMA_SQL)
-        this.ensureIndexedFilesCacheSignatureColumn()
-        this.ensureDailyUsageModelCostColumn()
-        this.ensureOverviewCardSubvalueColumn()
-        this.ensureProjectCatalogColumns()
-        this.ensureInteractionExtraTotalTokenColumns()
 
         const currentSchemaVersion = this.getCurrentSchemaVersion()
 
-        if (currentSchemaVersion >= CACHE_SCHEMA_VERSION) {
-            return
+        if (this.shouldResetCache(currentSchemaVersion)) {
+            this.resetCacheDatabase()
+            this.database.exec(CACHE_SCHEMA_SQL)
         }
 
-        this.migrateLegacyDataIfNeeded()
         this.setSchemaVersion(CACHE_SCHEMA_VERSION)
     }
 
@@ -854,6 +851,67 @@ export class UsageCacheRepository {
             FROM cache_schema_meta
             WHERE id = 1
         `).get()?.schema_version ?? 0
+    }
+
+    private openDatabase() {
+        const database = openSqliteDatabase(this.databasePath)
+        database.exec('PRAGMA foreign_keys = ON')
+        return database
+    }
+
+    private shouldResetCache(currentSchemaVersion: number) {
+        if (this.hasLegacyData() || !this.hasCompatibleNormalizedSchema()) {
+            return true
+        }
+
+        if (currentSchemaVersion === CACHE_SCHEMA_VERSION) {
+            return false
+        }
+
+        return currentSchemaVersion !== 0 || this.hasCachedData()
+    }
+
+    private hasCompatibleNormalizedSchema() {
+        return this.hasTableColumns('indexed_files', ['cache_signature'])
+            && this.hasTableColumns('project_catalog_entries', ['platforms_json', 'total_tokens'])
+            && !this.hasTableColumns('project_catalog_entries', ['type'])
+            && this.hasTableColumns('usage_scope_daily_usage_models', ['cost_usd'])
+            && this.hasTableColumns('usage_scope_overview_cards', ['subvalue_json'])
+            && this.hasTableColumns('usage_scope_interactions', ['extra_total_tokens'])
+            && this.hasTableColumns('indexed_fragment_interactions', ['extra_total_tokens'])
+    }
+
+    private hasTableColumns(tableName: string, columnNames: string[]) {
+        if (!this.hasTable(tableName)) {
+            return false
+        }
+
+        const columns = this.database.prepare<SqliteNameRow>(`PRAGMA table_info(${tableName})`).all()
+        return columnNames.every(columnName => columns.some(column => column.name === columnName))
+    }
+
+    private hasCachedData() {
+        return ['cache_state', 'indexed_files', 'project_catalog_entries', 'projects', 'usage_scopes']
+            .some((tableName) => {
+                if (!this.hasTable(tableName)) {
+                    return false
+                }
+
+                return (this.database.prepare<{ total: number }>(`SELECT COUNT(*) AS total FROM ${tableName}`).get()?.total ?? 0) > 0
+            })
+    }
+
+    private resetCacheDatabase() {
+        this.database.close()
+
+        for (const path of [this.databasePath, `${this.databasePath}-shm`, `${this.databasePath}-wal`]) {
+            rmSync(path, {
+                force: true,
+                recursive: false,
+            })
+        }
+
+        this.database = this.openDatabase()
     }
 
     private setSchemaVersion(version: number) {
@@ -1097,7 +1155,7 @@ export class UsageCacheRepository {
         const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
         const deleteStatement = this.database.prepare('DELETE FROM project_catalog_entries')
         const insertStatement = this.database.prepare(`
-            INSERT INTO project_catalog_entries (label, platforms_json, total_tokens, updated_at)
+            INSERT OR REPLACE INTO project_catalog_entries (label, platforms_json, total_tokens, updated_at)
             VALUES (?, ?, ?, ?)
         `)
 
@@ -1145,7 +1203,7 @@ export class UsageCacheRepository {
         const scopeKey = createUsageScopeKey(options.kind, options.platform, options.projectLabel)
         const payloadHash = createPayloadHash(JSON.stringify(options.usage))
         const insertScopeStatement = this.database.prepare(`
-            INSERT INTO usage_scopes (
+            INSERT OR REPLACE INTO usage_scopes (
                 scope_key,
                 scope_kind,
                 project_label,
@@ -1162,7 +1220,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertOverviewCardStatement = this.database.prepare(`
-            INSERT INTO usage_scope_overview_cards (
+            INSERT OR REPLACE INTO usage_scope_overview_cards (
                 scope_key,
                 position,
                 icon,
@@ -1176,7 +1234,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertTokenRowStatement = this.database.prepare(`
-            INSERT INTO usage_scope_token_rows (
+            INSERT OR REPLACE INTO usage_scope_token_rows (
                 scope_key,
                 bucket,
                 row_order,
@@ -1194,7 +1252,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertTokenRowModelStatement = this.database.prepare(`
-            INSERT INTO usage_scope_token_row_models (
+            INSERT OR REPLACE INTO usage_scope_token_row_models (
                 scope_key,
                 bucket,
                 row_id,
@@ -1204,7 +1262,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?)
         `)
         const insertTokenRowProjectStatement = this.database.prepare(`
-            INSERT INTO usage_scope_token_row_projects (
+            INSERT OR REPLACE INTO usage_scope_token_row_projects (
                 scope_key,
                 bucket,
                 row_id,
@@ -1214,7 +1272,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?)
         `)
         const insertDailyUsageStatement = this.database.prepare(`
-            INSERT INTO usage_scope_daily_usage (
+            INSERT OR REPLACE INTO usage_scope_daily_usage (
                 scope_key,
                 row_order,
                 date,
@@ -1228,7 +1286,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertDailyUsageModelStatement = this.database.prepare(`
-            INSERT INTO usage_scope_daily_usage_models (
+            INSERT OR REPLACE INTO usage_scope_daily_usage_models (
                 scope_key,
                 date,
                 model,
@@ -1244,7 +1302,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertMonthlyModelStatement = this.database.prepare(`
-            INSERT INTO usage_scope_monthly_model_usage (
+            INSERT OR REPLACE INTO usage_scope_monthly_model_usage (
                 scope_key,
                 row_order,
                 month,
@@ -1254,7 +1312,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?)
         `)
         const insertProjectUsageStatement = this.database.prepare(`
-            INSERT INTO usage_scope_project_usage (
+            INSERT OR REPLACE INTO usage_scope_project_usage (
                 scope_key,
                 row_order,
                 label,
@@ -1270,7 +1328,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertSessionStatement = this.database.prepare(`
-            INSERT INTO usage_scope_sessions (
+            INSERT OR REPLACE INTO usage_scope_sessions (
                 scope_key,
                 session_key,
                 session_order,
@@ -1297,7 +1355,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertSessionModelStatement = this.database.prepare(`
-            INSERT INTO usage_scope_session_models (
+            INSERT OR REPLACE INTO usage_scope_session_models (
                 scope_key,
                 session_key,
                 model,
@@ -1306,7 +1364,7 @@ export class UsageCacheRepository {
             VALUES (?, ?, ?, ?)
         `)
         const insertInteractionStatement = this.database.prepare(`
-            INSERT INTO usage_scope_interactions (
+            INSERT OR REPLACE INTO usage_scope_interactions (
                 scope_key,
                 session_key,
                 interaction_order,
