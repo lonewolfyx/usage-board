@@ -9,7 +9,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     createZeroPricingResolver,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -54,7 +54,7 @@ export const piUsageAdapter = {
             }
 
             const usage = toInteractionUsage({
-                ...applyTotalUsageFallback({
+                ...applyTotalUsageAsExtra({
                     cacheCreationTokens: getNumber(usageRecord.cacheWrite),
                     cacheReadTokens: getNumber(usageRecord.cacheRead),
                     inputTokens: getNumber(usageRecord.input),
@@ -73,6 +73,19 @@ export const piUsageAdapter = {
             addFragmentInteraction(fragment, {
                 content: '',
                 costUSD: usage.costUSD,
+                dedupeKey: [
+                    'pi',
+                    project,
+                    sessionId,
+                    timestamp,
+                    rawModel || '',
+                    String(usage.inputTokens),
+                    String(usage.outputTokens),
+                    String(usage.cacheCreationTokens ?? 0),
+                    String(usage.cacheReadTokens ?? 0),
+                    String(usage.extraTotalTokens ?? 0),
+                    String(usage.costUSD),
+                ].join(':'),
                 index,
                 model: rawModel ? `[pi] ${rawModel}` : null,
                 role: 'assistant',

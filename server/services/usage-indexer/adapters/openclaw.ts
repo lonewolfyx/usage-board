@@ -10,7 +10,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     createZeroPricingResolver,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
@@ -73,7 +73,7 @@ export const openClawUsageAdapter = {
             }
 
             const usage = toInteractionUsage({
-                ...applyTotalUsageFallback({
+                ...applyTotalUsageAsExtra({
                     cacheCreationTokens: getNumber(usageRecord.cacheWrite),
                     cacheReadTokens: getNumber(usageRecord.cacheRead),
                     inputTokens: getNumber(usageRecord.input),
@@ -104,8 +104,9 @@ export const openClawUsageAdapter = {
                     rawModel,
                     String(usage.inputTokens),
                     String(usage.outputTokens),
-                    String(usage.cachedInputTokens),
-                    String(usage.reasoningOutputTokens),
+                    String(usage.cacheCreationTokens ?? 0),
+                    String(usage.cacheReadTokens ?? 0),
+                    String(usage.extraTotalTokens ?? 0),
                     String(usage.costUSD),
                 ].join(':'),
                 index,

@@ -58,7 +58,7 @@ import {
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
-const CACHE_SCHEMA_VERSION = 5
+const CACHE_SCHEMA_VERSION = 6
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -294,6 +294,7 @@ const CACHE_SCHEMA_SQL = `
         cached_input_tokens INTEGER,
         output_tokens INTEGER,
         reasoning_output_tokens INTEGER,
+        extra_total_tokens INTEGER,
         total_tokens INTEGER,
         usage_cost_usd REAL,
         cache_creation_tokens INTEGER,
@@ -356,6 +357,7 @@ const CACHE_SCHEMA_SQL = `
         cached_input_tokens INTEGER,
         output_tokens INTEGER,
         reasoning_output_tokens INTEGER,
+        extra_total_tokens INTEGER,
         total_tokens INTEGER,
         usage_cost_usd REAL,
         cache_creation_tokens INTEGER,
@@ -530,6 +532,7 @@ export class UsageCacheRepository {
                 cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens,
+                extra_total_tokens,
                 total_tokens,
                 usage_cost_usd,
                 cache_creation_tokens,
@@ -614,6 +617,7 @@ export class UsageCacheRepository {
                 cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens,
+                extra_total_tokens,
                 total_tokens,
                 usage_cost_usd,
                 cache_creation_tokens,
@@ -621,7 +625,7 @@ export class UsageCacheRepository {
                 tool_tokens,
                 is_fallback_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         this.database.exec('BEGIN')
@@ -665,6 +669,7 @@ export class UsageCacheRepository {
                             interaction.usage?.cachedInputTokens ?? null,
                             interaction.usage?.outputTokens ?? null,
                             interaction.usage?.reasoningOutputTokens ?? null,
+                            interaction.usage?.extraTotalTokens ?? null,
                             interaction.usage?.totalTokens ?? null,
                             interaction.usage?.costUSD ?? null,
                             interaction.usage?.cacheCreationTokens ?? null,
@@ -761,6 +766,7 @@ export class UsageCacheRepository {
         this.database.exec(CACHE_SCHEMA_SQL)
         this.ensureIndexedFilesCacheSignatureColumn()
         this.ensureProjectCatalogColumns()
+        this.ensureInteractionExtraTotalTokenColumns()
 
         const currentSchemaVersion = this.getCurrentSchemaVersion()
 
@@ -883,6 +889,24 @@ export class UsageCacheRepository {
         for (const row of legacyRows) {
             const platforms = row.type === 'mixed' ? [] : [row.type]
             updateStatement.run(JSON.stringify(platforms), row.label)
+        }
+    }
+
+    private ensureInteractionExtraTotalTokenColumns() {
+        if (this.hasTable('usage_scope_interactions')) {
+            const usageScopeInteractionColumns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_interactions)').all()
+
+            if (!usageScopeInteractionColumns.some(column => column.name === 'extra_total_tokens')) {
+                this.database.exec('ALTER TABLE usage_scope_interactions ADD COLUMN extra_total_tokens INTEGER')
+            }
+        }
+
+        if (this.hasTable('indexed_fragment_interactions')) {
+            const indexedInteractionColumns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(indexed_fragment_interactions)').all()
+
+            if (!indexedInteractionColumns.some(column => column.name === 'extra_total_tokens')) {
+                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN extra_total_tokens INTEGER')
+            }
         }
     }
 
@@ -1197,6 +1221,7 @@ export class UsageCacheRepository {
                 cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens,
+                extra_total_tokens,
                 total_tokens,
                 usage_cost_usd,
                 cache_creation_tokens,
@@ -1204,7 +1229,7 @@ export class UsageCacheRepository {
                 tool_tokens,
                 is_fallback_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         insertScopeStatement.run(
@@ -1366,6 +1391,7 @@ export class UsageCacheRepository {
                     interaction.usage?.cachedInputTokens ?? null,
                     interaction.usage?.outputTokens ?? null,
                     interaction.usage?.reasoningOutputTokens ?? null,
+                    interaction.usage?.extraTotalTokens ?? null,
                     interaction.usage?.totalTokens ?? null,
                     interaction.usage?.costUSD ?? null,
                     interaction.usage?.cacheCreationTokens ?? null,
@@ -1558,6 +1584,7 @@ export class UsageCacheRepository {
                     interaction.cached_input_tokens,
                     interaction.output_tokens,
                     interaction.reasoning_output_tokens,
+                    interaction.extra_total_tokens,
                     interaction.total_tokens,
                     interaction.usage_cost_usd,
                     interaction.cache_creation_tokens,
@@ -1959,6 +1986,7 @@ function buildInteractionUsage(row: {
     cache_creation_tokens: number | null
     cache_read_tokens: number | null
     cached_input_tokens: number | null
+    extra_total_tokens: number | null
     input_tokens: number | null
     is_fallback_model: number | null
     output_tokens: number | null
@@ -1985,6 +2013,10 @@ function buildInteractionUsage(row: {
         outputTokens: row.output_tokens,
         reasoningOutputTokens: row.reasoning_output_tokens,
         totalTokens: row.total_tokens,
+    }
+
+    if (row.extra_total_tokens !== null) {
+        usage.extraTotalTokens = row.extra_total_tokens
     }
 
     if (row.cache_creation_tokens !== null) {

@@ -1,6 +1,7 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { basename, join } from 'node:path'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -9,14 +10,16 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
-    createZeroPricingResolver,
+    applyTotalUsageAsExtra,
+    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
 
 export const ampUsageAdapter = {
-    createPricingResolver: createZeroPricingResolver,
+    async createPricingResolver() {
+        return createLiteLLMPricingResolver()
+    },
     async discoverFiles(config) {
         const groups = await Promise.all(config.ampPaths.map(path => glob(join(path, 'threads', '**', '*.json'), {
             absolute: true,
@@ -26,7 +29,7 @@ export const ampUsageAdapter = {
             .flat()
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'amp'))
     },
-    parseFile(filePath) {
+    parseFile(filePath, resolvePricing) {
         const data = parseJsonFile(filePath)
         const record = normalizeUnknownRecord(data)
         const sessionId = normalizeStringValue(record?.id) || basename(filePath, '.json')
@@ -67,29 +70,35 @@ export const ampUsageAdapter = {
                 ? (cacheTokensByMessageId.get(messageId) ?? [0, 0])
                 : [0, 0]
             const usage = toInteractionUsage({
-                ...applyTotalUsageFallback({
+                ...applyTotalUsageAsExtra({
                     cacheCreationTokens,
                     cacheReadTokens,
                     inputTokens: getNumber(tokens.input),
                     outputTokens: getNumber(tokens.output),
                     totalTokens: getNumber(tokens.total),
                 }),
-                costUSD: normalizeFiniteNumberOrNull(event.credits) ?? 0,
             })
 
             if (isZeroInteractionUsage(usage)) {
                 continue
             }
 
+            const costUSD = calculateUsageCostFromCandidates(usage, [model], resolvePricing, {
+                includeExtraTotalAsOutput: true,
+            })
+
             addFragmentInteraction(fragment, {
                 content: '',
-                costUSD: usage.costUSD,
+                costUSD,
                 index,
                 model,
                 role: 'usage',
                 timestamp,
                 type: 'usage_ledger',
-                usage,
+                usage: toInteractionUsage({
+                    ...usage,
+                    costUSD,
+                }),
             })
         }
 

@@ -91,9 +91,9 @@ function parseHermesRow(row: Record<string, unknown>, resolvePricing: Parameters
     const usage = toInteractionUsage({
         cacheCreationTokens: toNumber(row.cache_write_tokens),
         cacheReadTokens: toNumber(row.cache_read_tokens),
+        extraTotalTokens: toNumber(row.reasoning_tokens),
         inputTokens: toNumber(row.input_tokens),
         outputTokens: toNumber(row.output_tokens),
-        reasoningOutputTokens: toNumber(row.reasoning_tokens),
     })
 
     if (isZeroInteractionUsage(usage) && !toOptionalNumber(row.actual_cost_usd) && !toOptionalNumber(row.estimated_cost_usd)) {

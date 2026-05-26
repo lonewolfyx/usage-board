@@ -33,7 +33,6 @@ export const geminiUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
             aliases: GEMINI_MODEL_ALIASES,
-            fallbackModel: GEMINI_FALLBACK_MODEL,
             fallbackPricingTable: GEMINI_FALLBACK_PRICING_TABLE,
             getLookupCandidates: getGeminiLookupCandidates,
         })
@@ -114,23 +113,28 @@ function getGeminiInteractionUsage(
     model: string,
     resolvePricing: ModelPricingResolver,
 ) {
-    const usage = convertGeminiTokenUsage(tokens)
+    const baseUsage = convertGeminiTokenUsage(tokens)
+    const extraTotalTokens = normalizeNumber(tokens.thoughts)
+    const usage = {
+        ...baseUsage,
+        inputTokens: baseUsage.inputTokens + normalizeNumber(tokens.tool),
+        reasoningOutputTokens: 0,
+    }
 
     if (isZeroUsage(usage)) {
         return null
     }
 
-    const toolTokens = normalizeNumber(tokens.tool)
     const costUSD = calculateUsageCostUSD({
         cachedInputTokens: usage.cachedInputTokens,
         inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens + usage.reasoningOutputTokens + toolTokens,
+        outputTokens: usage.outputTokens,
     }, resolvePricing(model))
 
     return {
         ...usage,
         costUSD,
-        toolTokens,
+        extraTotalTokens,
     }
 }
 

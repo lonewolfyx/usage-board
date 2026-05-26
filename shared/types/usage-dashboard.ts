@@ -93,6 +93,7 @@ export interface ProjectInteractionUsage {
     cacheCreationTokens?: number
     cacheReadTokens?: number
     costUSD: number
+    extraTotalTokens?: number
     inputTokens: number
     isFallbackModel?: boolean
     outputTokens: number

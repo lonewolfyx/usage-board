@@ -57,14 +57,15 @@ export const qwenUsageAdapter = {
                 continue
             }
 
+            const extraTotalTokens = getNumber(usageRecord.thoughtsTokenCount)
             const usage = toInteractionUsage({
                 ...applyTotalUsageFallback({
                     cacheReadTokens: getNumber(usageRecord.cachedContentTokenCount),
                     inputTokens: getNumber(usageRecord.promptTokenCount),
                     outputTokens: getNumber(usageRecord.candidatesTokenCount),
-                    reasoningOutputTokens: getNumber(usageRecord.thoughtsTokenCount),
-                    totalTokens: getNumber(usageRecord.totalTokenCount),
+                    totalTokens: Math.max(getNumber(usageRecord.totalTokenCount) - extraTotalTokens, 0),
                 }),
+                extraTotalTokens,
             })
 
             if (isZeroInteractionUsage(usage)) {

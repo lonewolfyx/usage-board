@@ -695,11 +695,27 @@ export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
  * ```
  */
 export function toIsoString(value: unknown) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        const timestamp = value > 10_000_000_000 ? value : value * 1000
+
+        return new Date(timestamp).toISOString()
+    }
+
+    if (value instanceof Date) {
+        return Number.isFinite(value.getTime()) ? value.toISOString() : null
+    }
+
     if (typeof value !== 'string') {
         return null
     }
 
-    const timestamp = Date.parse(value)
+    const normalizedValue = value.trim()
+
+    if (!normalizedValue) {
+        return null
+    }
+
+    const timestamp = Date.parse(normalizedValue)
 
     return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
 }
@@ -806,7 +822,7 @@ export function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined):
         input_tokens: input,
         output_tokens: output,
         reasoning_output_tokens: reasoning,
-        total_tokens: total > 0 ? total : input + output,
+        total_tokens: total > 0 ? total : input + output + reasoning,
     }
 }
 
