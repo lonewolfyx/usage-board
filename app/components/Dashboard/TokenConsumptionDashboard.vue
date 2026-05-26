@@ -1,6 +1,18 @@
 <template>
     <div class="bg-background border border-input rounded-xl shadow-xs min-h-0 flex-1 overflow-y-auto">
         <div class="grid content-start p-4 space-y-3">
+            <div
+                :class="cn(
+                    'relative flex items-center gap-2 mb-4 text-foreground font-medium',
+                    'after:content-\[ \]',
+                    'after:absolute after:w-px after:h-full after:rounded-2xl',
+                    'after:border-l-2 after:border-amber-500/50 after:-ml-2 ml-2',
+                )"
+            >
+                <span class="capitalize">agent:</span>
+                <span>{{ productName }}</span>
+            </div>
+
             <p v-if="errorMessage" class="text-xs text-destructive">
                 {{ errorMessage }}
             </p>
@@ -101,6 +113,8 @@
 </template>
 
 <script setup lang="ts">
+import { cn } from '~/lib/utils'
+
 defineOptions({
     name: 'DashboardTokenConsumptionDashboard',
 })
