@@ -1,12 +1,23 @@
-import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 
 export interface ModelTokenUsage {
+    costUSD: number
     inputTokens: number
     cachedInputTokens: number
     outputTokens: number
     reasoningOutputTokens: number
     totalTokens: number
     isFallback: boolean
+}
+
+export interface DailyPlatformTokenUsage {
+    costUSD: number
+    inputTokens: number
+    cachedInputTokens: number
+    outputTokens: number
+    reasoningOutputTokens: number
+    totalTokens: number
+    models: Record<string, ModelTokenUsage>
 }
 
 export type TrendTone = 'down' | 'neutral' | 'up'
@@ -35,6 +46,7 @@ export interface DailyTokenUsage {
     totalTokens: number
     costUSD: number
     models: Record<string, ModelTokenUsage>
+    platforms?: Partial<Record<ProjectUsagePlatform, DailyPlatformTokenUsage>>
 }
 
 export interface RankedUsageItem {

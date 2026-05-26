@@ -1,4 +1,5 @@
 import type {
+    DailyPlatformTokenUsage,
     DailyTokenUsage,
     ModelTokenUsage,
     MonthlyModelUsage,
@@ -200,6 +201,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
         inputTokens: number
         models: Map<string, ModelTokenUsage>
         outputTokens: number
+        platforms: Map<string, DailyPlatformTokenUsage>
         reasoningOutputTokens: number
         totalTokens: number
     }>()
@@ -213,6 +215,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
             inputTokens: 0,
             models: new Map<string, ModelTokenUsage>(),
             outputTokens: 0,
+            platforms: new Map<string, DailyPlatformTokenUsage>(),
             reasoningOutputTokens: 0,
             totalTokens: 0,
         }
@@ -227,12 +230,37 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
         for (const [modelName, usage] of Object.entries(item.models)) {
             const model = group.models.get(modelName) ?? createEmptyModelUsage()
             model.cachedInputTokens += usage.cachedInputTokens
+            model.costUSD += usage.costUSD
             model.inputTokens += usage.inputTokens
             model.isFallback = model.isFallback || usage.isFallback
             model.outputTokens += usage.outputTokens
             model.reasoningOutputTokens += usage.reasoningOutputTokens
             model.totalTokens += usage.totalTokens
             group.models.set(modelName, model)
+        }
+
+        for (const [platform, platformUsage] of Object.entries(item.platforms ?? {})) {
+            const currentPlatformUsage = group.platforms.get(platform) ?? createEmptyDailyPlatformTokenUsage()
+            currentPlatformUsage.cachedInputTokens += platformUsage.cachedInputTokens
+            currentPlatformUsage.costUSD += platformUsage.costUSD
+            currentPlatformUsage.inputTokens += platformUsage.inputTokens
+            currentPlatformUsage.outputTokens += platformUsage.outputTokens
+            currentPlatformUsage.reasoningOutputTokens += platformUsage.reasoningOutputTokens
+            currentPlatformUsage.totalTokens += platformUsage.totalTokens
+
+            for (const [modelName, usage] of Object.entries(platformUsage.models)) {
+                const model = currentPlatformUsage.models[modelName] ?? createEmptyModelUsage()
+                model.cachedInputTokens += usage.cachedInputTokens
+                model.costUSD += usage.costUSD
+                model.inputTokens += usage.inputTokens
+                model.isFallback = model.isFallback || usage.isFallback
+                model.outputTokens += usage.outputTokens
+                model.reasoningOutputTokens += usage.reasoningOutputTokens
+                model.totalTokens += usage.totalTokens
+                currentPlatformUsage.models[modelName] = model
+            }
+
+            group.platforms.set(platform, currentPlatformUsage)
         }
 
         groups.set(dateKey, group)
@@ -247,6 +275,16 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
             inputTokens: group.inputTokens,
             models: Object.fromEntries(group.models.entries()),
             outputTokens: group.outputTokens,
+            platforms: group.platforms.size > 0
+                ? Object.fromEntries(Array.from(group.platforms.entries()).map(([platform, usage]) => [platform, {
+                        ...usage,
+                        costUSD: roundCurrency(usage.costUSD),
+                        models: Object.fromEntries(Object.entries(usage.models).map(([modelName, modelUsage]) => [modelName, {
+                            ...modelUsage,
+                            costUSD: roundCurrency(modelUsage.costUSD),
+                        }])),
+                    }]))
+                : undefined,
             reasoningOutputTokens: group.reasoningOutputTokens,
             totalTokens: group.totalTokens,
         }))
@@ -292,8 +330,21 @@ function getTrendTone(value: number): TrendTone {
 function createEmptyModelUsage(): ModelTokenUsage {
     return {
         cachedInputTokens: 0,
+        costUSD: 0,
         inputTokens: 0,
         isFallback: false,
+        outputTokens: 0,
+        reasoningOutputTokens: 0,
+        totalTokens: 0,
+    }
+}
+
+function createEmptyDailyPlatformTokenUsage(): DailyPlatformTokenUsage {
+    return {
+        cachedInputTokens: 0,
+        costUSD: 0,
+        inputTokens: 0,
+        models: {},
         outputTokens: 0,
         reasoningOutputTokens: 0,
         totalTokens: 0,

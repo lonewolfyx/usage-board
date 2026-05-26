@@ -99,7 +99,24 @@ export function buildHomeDashboardModules(
 ): HomeDashboardModules {
     const sessionUsage = buildSessionUsage(dashboardsByPlatform)
     const dailyTokenUsage = mergeDailyTokenUsage(
-        PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].dailyTokenUsage),
+        PROJECT_USAGE_PLATFORMS.flatMap(platform =>
+            dashboardsByPlatform[platform].dailyTokenUsage.map((item) => {
+                return {
+                    ...item,
+                    platforms: {
+                        [platform]: {
+                            cachedInputTokens: item.cachedInputTokens,
+                            costUSD: item.costUSD,
+                            inputTokens: item.inputTokens,
+                            models: item.models,
+                            outputTokens: item.outputTokens,
+                            reasoningOutputTokens: item.reasoningOutputTokens,
+                            totalTokens: item.totalTokens,
+                        },
+                    },
+                }
+            }),
+        ),
     )
     const monthlyModelUsage = mergeMonthlyModelUsage(
         PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].monthlyModelUsage),
@@ -217,9 +234,9 @@ function buildEfficiencyMetrics(options: {
     reasoningOutputTokens: number
     totalTokens: number
 }): RankedUsageItem[] {
-    const cacheHitRate = safeRatio(options.cachedInputTokens, options.inputTokens)
-    const reasoningShare = safeRatio(options.reasoningOutputTokens, options.totalTokens)
-    const outputShare = safeRatio(options.outputTokens, options.totalTokens)
+    const cacheHitRate = options.cachedInputTokens > 0 ? options.inputTokens / options.cachedInputTokens : 0
+    const reasoningShare = options.reasoningOutputTokens > 0 ? options.totalTokens / options.reasoningOutputTokens : 0
+    const outputShare = options.outputTokens > 0 ? options.totalTokens / options.outputTokens : 0
 
     return [
         {
@@ -244,8 +261,4 @@ function buildEfficiencyMetrics(options: {
             value: formatPercent(outputShare),
         },
     ]
-}
-
-function safeRatio(numerator: number, denominator: number) {
-    return denominator > 0 ? numerator / denominator : 0
 }
