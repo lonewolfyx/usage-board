@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
     addFragmentInteraction,
@@ -10,7 +11,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
@@ -34,7 +35,6 @@ interface CopilotCandidate {
     inputTokens: number
     model: string
     outputTokens: number
-    reasoningOutputTokens: number
     responseId: string | undefined
     sessionId: string
     source: CopilotSource
@@ -80,7 +80,10 @@ export const copilotUsageAdapter = {
         const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
         for (const candidate of selectedCandidates) {
-            const costUSD = calculateUsageCostFromCandidates(candidate.usage, [candidate.model], resolvePricing)
+            const costUSD = calculateUsageCostFromCandidates(candidate.usage, [candidate.model], resolvePricing, {
+                includeExtraTotalAsOutput: true,
+                includeReasoningAsOutput: false,
+            })
             const fragment = fragments.get(candidate.sessionId) ?? createSessionFragment({
                 project: 'copilot',
                 repository: 'local/copilot',
@@ -166,22 +169,23 @@ function getCopilotCandidate(
         return null
     }
 
-    const rawUsage = applyTotalUsageFallback({
-        cacheCreationTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.cache_creation.input_tokens']),
-        cacheReadTokens: getCopilotAttributeNumber(attributes, 'gen_ai.usage.cache_read.input_tokens'),
-        inputTokens: Math.max(
-            0,
-            getCopilotAttributeNumber(attributes, 'gen_ai.usage.input_tokens')
-            - Math.min(
-                getCopilotAttributeNumber(attributes, 'gen_ai.usage.input_tokens'),
-                getCopilotAttributeNumber(attributes, 'gen_ai.usage.cache_read.input_tokens'),
+    const usage = toInteractionUsage({
+        ...applyTotalUsageAsExtra({
+            cacheCreationTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.cache_write.input_tokens', 'gen_ai.usage.cache_creation.input_tokens']),
+            cacheReadTokens: getCopilotAttributeNumber(attributes, 'gen_ai.usage.cache_read.input_tokens'),
+            extraTotalTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.reasoning_tokens']),
+            inputTokens: Math.max(
+                0,
+                getCopilotAttributeNumber(attributes, 'gen_ai.usage.input_tokens')
+                - Math.min(
+                    getCopilotAttributeNumber(attributes, 'gen_ai.usage.input_tokens'),
+                    getCopilotAttributeNumber(attributes, 'gen_ai.usage.cache_read.input_tokens'),
+                ),
             ),
-        ),
-        outputTokens: getCopilotAttributeNumber(attributes, 'gen_ai.usage.output_tokens'),
-        reasoningOutputTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.reasoning.output_tokens', 'gen_ai.usage.reasoning_tokens']),
-        totalTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.total_tokens', 'gen_ai.usage.total.token_count']),
+            outputTokens: getCopilotAttributeNumber(attributes, 'gen_ai.usage.output_tokens'),
+            totalTokens: getCopilotAttributeNumberFirst(attributes, ['gen_ai.usage.total_tokens', 'gen_ai.usage.total.token_count']),
+        }),
     })
-    const usage = toInteractionUsage(rawUsage)
 
     if (isZeroInteractionUsage(usage)) {
         return null
@@ -206,7 +210,6 @@ function getCopilotCandidate(
         inputTokens: usage.inputTokens,
         model,
         outputTokens: usage.outputTokens,
-        reasoningOutputTokens: usage.reasoningOutputTokens,
         responseId,
         sessionId,
         source,

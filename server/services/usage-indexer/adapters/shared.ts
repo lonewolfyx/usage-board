@@ -24,12 +24,7 @@ export function applyTotalUsageFallback(usage: {
     reasoningOutputTokens?: number
     totalTokens?: number
 }) {
-    const cacheCreationTokens = normalizeUsageNumber(usage.cacheCreationTokens)
-    const cacheReadTokens = normalizeUsageNumber(usage.cacheReadTokens)
-    const inputTokens = normalizeUsageNumber(usage.inputTokens)
-    const outputTokens = normalizeUsageNumber(usage.outputTokens)
-    const totalTokens = normalizeUsageNumber(usage.totalTokens)
-    const baseTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens
+    const { baseTokens, cacheCreationTokens, cacheReadTokens, inputTokens, outputTokens, totalTokens } = readUsageParts(usage)
 
     if (baseTokens === 0 && totalTokens > 0) {
         return {
@@ -55,10 +50,45 @@ export function applyTotalUsageFallback(usage: {
     }
 }
 
+export function applyTotalUsageAsExtra(usage: {
+    cacheCreationTokens?: number
+    cacheReadTokens?: number
+    extraTotalTokens?: number
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+}) {
+    const { baseTokens, cacheCreationTokens, cacheReadTokens, inputTokens, outputTokens, totalTokens } = readUsageParts(usage)
+
+    if (baseTokens === 0 && totalTokens > 0) {
+        return {
+            cacheCreationTokens,
+            cacheReadTokens,
+            inputTokens,
+            outputTokens: totalTokens,
+            extraTotalTokens: 0,
+        }
+    }
+
+    const extraTotalTokens = Math.max(
+        normalizeUsageNumber(usage.extraTotalTokens),
+        totalTokens > baseTokens ? totalTokens - baseTokens : 0,
+    )
+
+    return {
+        cacheCreationTokens,
+        cacheReadTokens,
+        inputTokens,
+        outputTokens,
+        extraTotalTokens,
+    }
+}
+
 export function toInteractionUsage(usage: {
     cacheCreationTokens?: number
     cacheReadTokens?: number
     costUSD?: number
+    extraTotalTokens?: number
     inputTokens?: number
     isFallbackModel?: boolean
     outputTokens?: number
@@ -70,14 +100,16 @@ export function toInteractionUsage(usage: {
     const inputTokens = normalizeUsageNumber(usage.inputTokens)
     const outputTokens = normalizeUsageNumber(usage.outputTokens)
     const reasoningOutputTokens = normalizeUsageNumber(usage.reasoningOutputTokens)
+    const extraTotalTokens = normalizeUsageNumber(usage.extraTotalTokens)
     const toolTokens = normalizeUsageNumber(usage.toolTokens)
-    const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + reasoningOutputTokens + toolTokens
+    const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + reasoningOutputTokens + extraTotalTokens + toolTokens
 
     return {
         cacheCreationTokens,
         cacheReadTokens,
         cachedInputTokens: cacheCreationTokens + cacheReadTokens,
         costUSD: usage.costUSD ?? 0,
+        extraTotalTokens: extraTotalTokens > 0 ? extraTotalTokens : undefined,
         inputTokens,
         isFallbackModel: usage.isFallbackModel,
         outputTokens,
@@ -87,22 +119,24 @@ export function toInteractionUsage(usage: {
     } satisfies ProjectInteractionUsage
 }
 
-export function isZeroInteractionUsage(usage: Pick<ProjectInteractionUsage, 'cachedInputTokens' | 'inputTokens' | 'outputTokens' | 'reasoningOutputTokens' | 'toolTokens' | 'totalTokens'>) {
+export function isZeroInteractionUsage(usage: Pick<ProjectInteractionUsage, 'cachedInputTokens' | 'extraTotalTokens' | 'inputTokens' | 'outputTokens' | 'reasoningOutputTokens' | 'toolTokens' | 'totalTokens'>) {
     return usage.totalTokens <= 0
         && usage.inputTokens <= 0
         && usage.cachedInputTokens <= 0
         && usage.outputTokens <= 0
         && usage.reasoningOutputTokens <= 0
+        && (usage.extraTotalTokens ?? 0) <= 0
         && (usage.toolTokens ?? 0) <= 0
 }
 
 export function calculateUsageCostFromCandidates(
-    usage: Pick<ProjectInteractionUsage, 'cacheCreationTokens' | 'cachedInputTokens' | 'inputTokens' | 'outputTokens' | 'reasoningOutputTokens' | 'toolTokens'>,
+    usage: Pick<ProjectInteractionUsage, 'cacheCreationTokens' | 'cachedInputTokens' | 'extraTotalTokens' | 'inputTokens' | 'outputTokens' | 'reasoningOutputTokens' | 'toolTokens'>,
     candidates: string[],
     resolvePricing: ModelPricingResolver,
-    options: { includeReasoningAsOutput?: boolean } = {},
+    options: { includeExtraTotalAsOutput?: boolean, includeReasoningAsOutput?: boolean } = {},
 ) {
     const outputTokens = usage.outputTokens
+        + (options.includeExtraTotalAsOutput === false ? 0 : (usage.extraTotalTokens ?? 0))
         + (usage.toolTokens ?? 0)
         + (options.includeReasoningAsOutput === false ? 0 : usage.reasoningOutputTokens)
 
@@ -137,4 +171,27 @@ export function getSessionIdFromFileName(filePath: string, extension: `.${string
 
 function normalizeUsageNumber(value: number | undefined) {
     return Number.isFinite(value) && value! > 0 ? Math.trunc(value!) : 0
+}
+
+function readUsageParts(usage: {
+    cacheCreationTokens?: number
+    cacheReadTokens?: number
+    inputTokens?: number
+    outputTokens?: number
+    totalTokens?: number
+}) {
+    const cacheCreationTokens = normalizeUsageNumber(usage.cacheCreationTokens)
+    const cacheReadTokens = normalizeUsageNumber(usage.cacheReadTokens)
+    const inputTokens = normalizeUsageNumber(usage.inputTokens)
+    const outputTokens = normalizeUsageNumber(usage.outputTokens)
+    const totalTokens = normalizeUsageNumber(usage.totalTokens)
+
+    return {
+        baseTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,
+        cacheCreationTokens,
+        cacheReadTokens,
+        inputTokens,
+        outputTokens,
+        totalTokens,
+    }
 }

@@ -11,7 +11,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -66,46 +66,42 @@ export const codebuffUsageAdapter = {
 
             const model = extracted.model || CODEBUFF_DEFAULT_MODEL
             const usage = toInteractionUsage({
-                ...applyTotalUsageFallback({
+                ...applyTotalUsageAsExtra({
                     cacheCreationTokens: extracted.cacheCreationTokens,
                     cacheReadTokens: extracted.cacheReadTokens,
+                    extraTotalTokens: extracted.extraTotalTokens,
                     inputTokens: extracted.inputTokens,
                     outputTokens: extracted.outputTokens,
                     totalTokens: extracted.totalTokens,
                 }),
-                costUSD: extracted.credits > 0
-                    ? extracted.credits
-                    : calculateUsageCostFromCandidates(
-                            toInteractionUsage({
-                                ...applyTotalUsageFallback({
-                                    cacheCreationTokens: extracted.cacheCreationTokens,
-                                    cacheReadTokens: extracted.cacheReadTokens,
-                                    inputTokens: extracted.inputTokens,
-                                    outputTokens: extracted.outputTokens,
-                                    totalTokens: extracted.totalTokens,
-                                }),
-                            }),
-                            getCodebuffCandidates(model, inferCodebuffProvider(model)),
-                            resolvePricing,
-                        ),
             })
 
             if (isZeroInteractionUsage(usage)) {
                 continue
             }
 
+            const costUSD = calculateUsageCostFromCandidates(
+                usage,
+                getCodebuffCandidates(model, inferCodebuffProvider(model)),
+                resolvePricing,
+                { includeExtraTotalAsOutput: true, includeReasoningAsOutput: false },
+            )
+
             const timestamp = getCodebuffMessageTimestamp(message) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
                 content: '',
-                costUSD: usage.costUSD,
+                costUSD,
                 dedupeKey: getCodebuffDedupeKey(message, sessionId, timestamp ?? '', model, usage, index),
                 index,
                 model,
                 role: 'assistant',
                 timestamp,
                 type: normalizeStringValue(message.variant) || normalizeStringValue(message.role) || 'assistant',
-                usage,
+                usage: toInteractionUsage({
+                    ...usage,
+                    costUSD,
+                }),
             })
         }
 
@@ -120,6 +116,7 @@ interface CodebuffUsageSnapshot {
     cacheCreationTokens: number
     cacheReadTokens: number
     credits: number
+    extraTotalTokens: number
     inputTokens: number
     model: string | null
     outputTokens: number
@@ -203,7 +200,7 @@ function parseCodebuffUsageRecord(value: unknown): CodebuffUsageSnapshot | null 
         return null
     }
 
-    const raw = applyTotalUsageFallback({
+    const raw = applyTotalUsageAsExtra({
         cacheCreationTokens: pickUsageNumber(record, ['cacheCreationInputTokens', 'cache_creation_input_tokens', 'cacheCreationTokens', 'cache_creation_tokens', 'cachedTokensCreated', 'cached_tokens_created']),
         cacheReadTokens: Math.max(
             pickUsageNumber(record, ['cacheReadInputTokens', 'cache_read_input_tokens']),
@@ -219,10 +216,11 @@ function parseCodebuffUsageRecord(value: unknown): CodebuffUsageSnapshot | null 
         cacheCreationTokens: raw.cacheCreationTokens,
         cacheReadTokens: raw.cacheReadTokens,
         credits: getFiniteNumber(record.credits),
+        extraTotalTokens: raw.extraTotalTokens,
         inputTokens: raw.inputTokens,
         model: normalizeStringValue(record.model) ?? null,
         outputTokens: raw.outputTokens,
-        totalTokens: raw.inputTokens + raw.outputTokens + raw.cacheCreationTokens + raw.cacheReadTokens + raw.reasoningOutputTokens,
+        totalTokens: raw.inputTokens + raw.outputTokens + raw.cacheCreationTokens + raw.cacheReadTokens + raw.extraTotalTokens,
     }
 }
 
@@ -231,6 +229,7 @@ function emptyCodebuffUsage(): CodebuffUsageSnapshot {
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
         credits: 0,
+        extraTotalTokens: 0,
         inputTokens: 0,
         model: null,
         outputTokens: 0,
@@ -259,6 +258,10 @@ function mergeCodebuffUsage(target: CodebuffUsageSnapshot, fallback: CodebuffUsa
         target.cacheReadTokens = fallback.cacheReadTokens
     }
 
+    if (target.extraTotalTokens === 0) {
+        target.extraTotalTokens = fallback.extraTotalTokens
+    }
+
     if (target.totalTokens === 0) {
         target.totalTokens = fallback.totalTokens
     }
@@ -277,6 +280,7 @@ function hasCodebuffSignal(usage: CodebuffUsageSnapshot) {
         || usage.outputTokens > 0
         || usage.cacheCreationTokens > 0
         || usage.cacheReadTokens > 0
+        || usage.extraTotalTokens > 0
         || usage.totalTokens > 0
         || usage.credits > 0
 }
@@ -356,8 +360,9 @@ function getCodebuffDedupeKey(
         String(index),
         String(usage.inputTokens),
         String(usage.outputTokens),
-        String(usage.cachedInputTokens),
-        String(usage.reasoningOutputTokens),
+        String(usage.cacheReadTokens ?? 0),
+        String(usage.cacheCreationTokens ?? 0),
+        String(usage.extraTotalTokens ?? 0),
     ].join(':')
 }
 

@@ -4,7 +4,6 @@ import type { ProjectInteractionRole, ProjectInteractionUsage } from '#shared/ty
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
-    CLAUDE_FALLBACK_MODEL,
     CLAUDE_MODEL_ALIASES,
 } from '#shared/platform/constant'
 import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
@@ -36,7 +35,6 @@ export const claudeCodeUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
             aliases: CLAUDE_MODEL_ALIASES,
-            fallbackModel: CLAUDE_FALLBACK_MODEL,
             getLookupCandidates: getClaudeLookupCandidates,
         })
     },
@@ -66,6 +64,11 @@ export const claudeCodeUsageAdapter = {
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
+
+            if (!isSupportedClaudeUsageLine(line)) {
+                continue
+            }
+
             const sessionId = normalizeStringValue(line.sessionId) || fallbackSessionId
             const cwd = normalizeStringValue(line.cwd) ?? ''
             const project = getProjectName(cwd, '') || decodeClaudeProjectPath(projectPath)
@@ -178,4 +181,51 @@ function getInteractionRole(line: Record<string, unknown>, message: Record<strin
     const role = normalizeStringValue(line.type) || normalizeStringValue(message?.role) || normalizeStringValue(message?.type) || ''
 
     return normalizeRole(role)
+}
+
+function isSupportedClaudeUsageLine(line: Record<string, unknown>) {
+    const message = normalizeUnknownRecord(line.message)
+    const usage = normalizeUnknownRecord(message?.usage)
+
+    if (hasUnsupportedClaudeNullField(line, message, usage)) {
+        return false
+    }
+
+    const version = normalizeStringValue(line.version)
+
+    if (version && !/^\d+\.\d+\.\d+/u.test(version)) {
+        return false
+    }
+
+    return !hasEmptyClaudeField(line, message)
+}
+
+function hasUnsupportedClaudeNullField(
+    line: Record<string, unknown>,
+    message: Record<string, unknown> | null,
+    usage: Record<string, unknown> | null,
+) {
+    return line.cwd === null
+        || line.costUSD === null
+        || line.version === null
+        || line.sessionId === null
+        || line.requestId === null
+        || line.isApiErrorMessage === null
+        || message?.id === null
+        || message?.model === null
+        || usage?.speed === null
+        || usage?.cache_read_input_tokens === null
+        || usage?.cache_creation_input_tokens === null
+}
+
+function hasEmptyClaudeField(line: Record<string, unknown>, message: Record<string, unknown> | null) {
+    const candidates = [
+        line.sessionId,
+        line.requestId,
+        line.version,
+        message?.id,
+        message?.model,
+    ]
+
+    return candidates.some(value => typeof value === 'string' && value.trim() === '')
 }

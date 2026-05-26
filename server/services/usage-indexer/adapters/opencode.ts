@@ -1,4 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
+import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
@@ -11,7 +12,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -102,9 +103,15 @@ export const openCodeUsageAdapter = {
 
         const value = parseJsonFile(filePath)
         const record = normalizeUnknownRecord(value)
+        const interactionId = normalizeStringValue(record?.id)
+
+        if (interactionId && isDuplicatedByOpenCodeDatabase(filePath, interactionId)) {
+            return []
+        }
+
         const entry = record
             ? getOpenCodeMessageEntry(record, resolvePricing, {
-                    interactionId: normalizeStringValue(record.id),
+                    interactionId,
                     sessionId: normalizeStringValue(record.sessionID),
                 })
             : null
@@ -173,7 +180,7 @@ function getOpenCodeMessageEntry(
     }
 
     const usage = toInteractionUsage({
-        ...applyTotalUsageFallback({
+        ...applyTotalUsageAsExtra({
             cacheCreationTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.write),
             cacheReadTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.read),
             inputTokens: getNumber(tokens.input),
@@ -196,7 +203,10 @@ function getOpenCodeMessageEntry(
     const directCost = normalizeFiniteNumberOrNull(value.cost)
     const costUSD = directCost && directCost > 0
         ? directCost
-        : calculateUsageCostFromCandidates(usage, getOpenCodeModelCandidates(model, provider), resolvePricing)
+        : calculateUsageCostFromCandidates(usage, getOpenCodeModelCandidates(model, provider), resolvePricing, {
+                includeExtraTotalAsOutput: true,
+                includeReasoningAsOutput: false,
+            })
 
     return {
         interactionId: options.interactionId || normalizeStringValue(value.id) || `${sessionId}:${timestamp}:${model}`,
@@ -213,6 +223,33 @@ function getOpenCodeMessageEntry(
 function getOpenCodeLookupCandidates(model: string) {
     const normalizedModel = normalizeOpenCodeModelName(resolveOpenCodeModelName(model.trim()))
     return [model.trim(), normalizedModel]
+}
+
+function isDuplicatedByOpenCodeDatabase(filePath: string, interactionId: string) {
+    const root = getOpenCodeRootFromMessageFile(filePath)
+
+    if (!root) {
+        return false
+    }
+
+    const databaseFile = getOpenCodeDatabaseFileSync(root)
+
+    if (!databaseFile) {
+        return false
+    }
+
+    const database = openSqliteDatabase(databaseFile, { readOnly: true })
+
+    try {
+        const row = database.prepare<[string], { id: string }>('SELECT id FROM message WHERE id = ? LIMIT 1').get(interactionId)
+        return Boolean(row?.id)
+    }
+    catch {
+        return false
+    }
+    finally {
+        database.close()
+    }
 }
 
 function getOpenCodeModelCandidates(model: string, provider: string) {
@@ -263,4 +300,27 @@ function parseUnknownJson(value: string) {
     catch {
         return null
     }
+}
+
+function getOpenCodeDatabaseFileSync(root: string) {
+    const defaultPath = join(root, 'opencode.db')
+
+    if (existsSync(defaultPath)) {
+        return defaultPath
+    }
+
+    return readdirSync(root, { withFileTypes: true })
+        .filter(entry => entry.isFile() && isOpenCodeChannelDatabase(entry.name))
+        .map(entry => join(root, entry.name))
+        .sort((left, right) => left.localeCompare(right))[0] ?? null
+}
+
+function getOpenCodeRootFromMessageFile(filePath: string) {
+    const marker = `${join('storage', 'message')}/`
+    const index = filePath.lastIndexOf(marker)
+    return index >= 0 ? filePath.slice(0, index) : null
+}
+
+function isOpenCodeChannelDatabase(name: string) {
+    return /^opencode-[\w-]+\.db$/u.test(name)
 }

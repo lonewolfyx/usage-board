@@ -58,7 +58,7 @@ export const gooseUsageAdapter = {
                     addFragmentInteraction(fragment, {
                         content: '',
                         costUSD: entry.usage.costUSD,
-                        dedupeKey: `goose:${entry.sessionId}`,
+                        dedupeKey: `goose:${filePath}:${entry.sessionId}`,
                         index: 0,
                         model: entry.model,
                         role: 'usage',
@@ -94,11 +94,11 @@ function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<
     const inputTokens = getNumber(row.accumulated_input_tokens) || getNumber(row.input_tokens)
     const outputTokens = getNumber(row.accumulated_output_tokens) || getNumber(row.output_tokens)
     const totalTokens = getNumber(row.accumulated_total_tokens) || getNumber(row.total_tokens) || (inputTokens + outputTokens)
-    const reasoningOutputTokens = Math.max(0, totalTokens - inputTokens - outputTokens)
+    const extraTotalTokens = Math.max(0, totalTokens - inputTokens - outputTokens)
     const usage = toInteractionUsage({
+        extraTotalTokens,
         inputTokens,
         outputTokens,
-        reasoningOutputTokens,
     })
 
     if (isZeroInteractionUsage(usage)) {

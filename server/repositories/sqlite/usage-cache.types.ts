@@ -193,6 +193,7 @@ export interface ScopeInteractionRow {
     cached_input_tokens: number | null
     content: string
     cost_usd: number
+    extra_total_tokens: number | null
     input_tokens: number | null
     interaction_index: number
     interaction_order: number
@@ -245,6 +246,7 @@ export interface IndexedInteractionRow {
     content: string
     cost_usd: number
     dedupe_key: string | null
+    extra_total_tokens: number | null
     fragment_id: number
     input_tokens: number | null
     interaction_index: number

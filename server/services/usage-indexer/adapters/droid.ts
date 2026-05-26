@@ -27,8 +27,7 @@ export const droidUsageAdapter = {
             absolute: true,
         }).catch(() => [])))
 
-        return groups
-            .flat()
+        return selectLatestDroidSettingsFiles(groups.flat())
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'droid'))
     },
     parseFile(filePath, resolvePricing) {
@@ -40,15 +39,16 @@ export const droidUsageAdapter = {
             return []
         }
 
+        const extraTotalTokens = getNumber(tokenUsage.thinkingTokens)
         const usage = toInteractionUsage({
             ...applyTotalUsageFallback({
                 cacheCreationTokens: getNumber(tokenUsage.cacheCreationTokens),
                 cacheReadTokens: getNumber(tokenUsage.cacheReadTokens),
                 inputTokens: getNumber(tokenUsage.inputTokens),
                 outputTokens: getNumber(tokenUsage.outputTokens),
-                reasoningOutputTokens: getNumber(tokenUsage.thinkingTokens),
-                totalTokens: getNumber(tokenUsage.totalTokens),
+                totalTokens: Math.max(getNumber(tokenUsage.totalTokens) - extraTotalTokens, 0),
             }),
+            extraTotalTokens,
         })
 
         if (isZeroInteractionUsage(usage)) {
@@ -243,4 +243,29 @@ function extractDroidModelFromSidecar(settingsPath: string) {
 
 function getNumber(value: unknown) {
     return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+}
+
+function selectLatestDroidSettingsFiles(filePaths: string[]) {
+    const latestBySession = new Map<string, { filePath: string, timestamp: number }>()
+
+    for (const filePath of filePaths) {
+        const sessionId = basename(filePath, '.settings.json')
+        const timestamp = getDroidSnapshotTimestamp(filePath)
+        const current = latestBySession.get(sessionId)
+
+        if (!current || timestamp > current.timestamp) {
+            latestBySession.set(sessionId, { filePath, timestamp })
+        }
+    }
+
+    return Array.from(latestBySession.values())
+        .map(item => item.filePath)
+        .sort((a, b) => a.localeCompare(b))
+}
+
+function getDroidSnapshotTimestamp(filePath: string) {
+    const settings = normalizeUnknownRecord(parseJsonFile(filePath))
+    const timestamp = toIsoString(settings?.providerLockTimestamp)
+
+    return timestamp ? Date.parse(timestamp) : Date.parse(getFileModifiedAtIso(filePath) ?? '') || 0
 }

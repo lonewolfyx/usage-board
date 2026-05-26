@@ -102,15 +102,16 @@ function parseKiloMessage(
         return null
     }
 
+    const extraTotalTokens = getNumber(tokens.reasoning)
     const usage = toInteractionUsage({
         ...applyTotalUsageFallback({
             cacheCreationTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.write),
             cacheReadTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.read),
             inputTokens: getNumber(tokens.input),
             outputTokens: getNumber(tokens.output),
-            reasoningOutputTokens: getNumber(tokens.reasoning),
-            totalTokens: getNumber(tokens.total),
+            totalTokens: Math.max(getNumber(tokens.total) - extraTotalTokens, 0),
         }),
+        extraTotalTokens,
     })
 
     if (isZeroInteractionUsage(usage)) {

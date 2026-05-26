@@ -11,7 +11,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    applyTotalUsageFallback,
+    applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
@@ -63,7 +63,7 @@ export const kimiUsageAdapter = {
             }
 
             const usage = toInteractionUsage({
-                ...applyTotalUsageFallback({
+                ...applyTotalUsageAsExtra({
                     cacheCreationTokens: getNumber(tokenUsage.input_cache_creation),
                     cacheReadTokens: getNumber(tokenUsage.input_cache_read),
                     inputTokens: getNumber(tokenUsage.input_other),
@@ -87,7 +87,11 @@ export const kimiUsageAdapter = {
                     normalizeStringValue(payload.message_id) || '',
                     timestamp || '',
                     model,
-                    String(usage.totalTokens),
+                    String(usage.inputTokens),
+                    String(usage.outputTokens),
+                    String(usage.cacheCreationTokens ?? 0),
+                    String(usage.cacheReadTokens ?? 0),
+                    String(usage.extraTotalTokens ?? 0),
                 ].join(':'),
                 index,
                 model,
