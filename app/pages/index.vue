@@ -29,6 +29,14 @@
                     </StatisticalAnalysisPanel>
                     <StatisticalAnalysisPanel
                         class="md:col-span-12"
+                        description="Hourly token and spend by agent for today"
+                        icon="lucide:chart-area"
+                        title="Today's Token Trend"
+                    >
+                        <Skeleton class="h-72 w-full rounded-md" />
+                    </StatisticalAnalysisPanel>
+                    <StatisticalAnalysisPanel
+                        class="md:col-span-12"
                         description="Usage trend over the selected period"
                         icon="lucide:activity"
                         title="Usage Trend"
@@ -68,6 +76,23 @@
                 <DashboardPanelGrid>
                     <StatisticalAnalysisModelUsagePanel :monthly-items="monthlyModelUsage" class="md:col-span-8" />
                     <StatisticalAnalysisProjectUsagePanel :items="projectUsage" class="md:col-span-4" />
+                    <StatisticalAnalysisPanel
+                        v-if="showUsageSkeleton || usageErrorText"
+                        class="md:col-span-12"
+                        description="Hourly token and spend by agent for today"
+                        icon="lucide:chart-area"
+                        title="Today's Token Trend"
+                    >
+                        <p v-if="usageErrorText" class="text-xs text-destructive">
+                            {{ usageErrorText }}
+                        </p>
+                        <Skeleton v-else class="h-72 w-full rounded-md" />
+                    </StatisticalAnalysisPanel>
+                    <DashboardTodayUsageTrendPanel
+                        v-else
+                        :items="todayHourlyUsage"
+                        class="md:col-span-12"
+                    />
                     <StatisticalAnalysisPanel
                         v-if="showUsageSkeleton || usageErrorText"
                         class="md:col-span-12"
@@ -142,6 +167,7 @@ const {
     sessionAnalysisStatus,
     sessionUsage,
     totalSessions,
+    todayHourlyUsage,
     status,
     usageError,
     usageStatus,

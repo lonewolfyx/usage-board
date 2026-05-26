@@ -10,7 +10,7 @@ import type {
     HomeDashboardUsageModules,
 } from '#shared/types/analysis'
 import type { UsageAnalyticsTokenUsageRow } from '#shared/types/usage-analytics'
-import type { DailyTokenUsage, MonthlyModelUsage, ProjectUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import type { DailyTokenUsage, HourlyUsagePoint, MonthlyModelUsage, ProjectUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
 
@@ -24,6 +24,7 @@ const analysisRouteMap = {
     overviewCards: '/api/analysis/overview-cards.json',
     session: '/api/analysis/session.json',
     token: '/api/analysis/token.json',
+    todayHourlyUsage: '/api/analysis/token/today-hourly.json',
 } as const
 
 export async function fetchHomeDashboardCoreModules(): Promise<HomeDashboardCoreModules> {
@@ -48,14 +49,17 @@ export async function fetchHomeDashboardUsageModules(): Promise<HomeDashboardUsa
     const [
         cache,
         dailyTokenUsage,
+        todayHourlyUsage,
     ] = await Promise.all([
         requestAnalysis<AnalysisCacheResponse>('cache'),
         requestAnalysis<DailyTokenUsage[]>('dailyTokenUsage'),
+        requestAnalysis<HourlyUsagePoint[]>('todayHourlyUsage'),
     ])
 
     return {
         dailyTokenUsage,
         efficiencyMetrics: cache.items,
+        todayHourlyUsage,
     }
 }
 

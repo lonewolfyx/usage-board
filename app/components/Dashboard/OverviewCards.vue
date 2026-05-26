@@ -6,6 +6,7 @@
             :detail="card.detail"
             :icon="card.icon"
             :name="card.name"
+            :subvalue="card.subvalue"
             :trend="card.trend"
             :trend-tone="card.trendTone"
             :value="card.value"

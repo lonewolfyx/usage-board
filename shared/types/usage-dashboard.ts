@@ -22,13 +22,37 @@ export interface DailyPlatformTokenUsage {
 
 export type TrendTone = 'down' | 'neutral' | 'up'
 
+export interface UsageOverviewCardSubvalueItem {
+    label?: string
+    value: string
+}
+
+export interface UsageOverviewCardSubvalue {
+    items: UsageOverviewCardSubvalueItem[]
+    separator?: string
+}
+
 export interface UsageOverviewCard {
     detail?: string
     icon: string
     name: string
+    subvalue?: UsageOverviewCardSubvalue
     trend: string
     trendTone: TrendTone
     value: string
+}
+
+export interface HourlyUsageBreakdown {
+    costUSD: number
+    totalTokens: number
+}
+
+export interface HourlyUsagePoint {
+    agents: Partial<Record<ProjectUsagePlatform, HourlyUsageBreakdown>>
+    costUSD: number
+    hour: number
+    label: string
+    totalTokens: number
 }
 
 export interface MonthlyModelUsage {

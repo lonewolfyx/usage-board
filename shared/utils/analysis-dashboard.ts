@@ -1,4 +1,4 @@
-import type { ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type {
     AgentDashboardCoreModules,
     AgentDashboardInsightsModules,
@@ -9,11 +9,12 @@ import type {
     HomeDashboardSessionModules,
     HomeDashboardUsageModules,
 } from '#shared/types/analysis'
-import type { LoadUsageResult, RankedUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, RankedUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import {
     buildGrowthTrend,
+    buildPercentTrend,
     buildProjectUsage,
     formatCompactNumber,
     formatCurrency,
@@ -23,6 +24,7 @@ import {
     getPreviousDateKey,
     mergeDailyTokenUsage,
     mergeMonthlyModelUsage,
+    roundCurrency,
 } from '#shared/utils/usage-dashboard'
 import { formatNumber } from '@lonewolfyx/utils'
 
@@ -46,6 +48,7 @@ export function createEmptyHomeDashboardUsageModules(): HomeDashboardUsageModule
     return {
         dailyTokenUsage: [],
         efficiencyMetrics: [],
+        todayHourlyUsage: [],
     }
 }
 
@@ -129,20 +132,6 @@ export function buildHomeDashboardModules(
     const outputTokens = dailyTokenUsage.reduce((sum, item) => sum + item.outputTokens, 0)
     const reasoningOutputTokens = dailyTokenUsage.reduce((sum, item) => sum + item.reasoningOutputTokens, 0)
     const totalSessions = sessionUsage.length
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey)
-    const previousDayDailyUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
-    const costGrowthTrend = buildGrowthTrend(
-        todayDailyUsage?.costUSD ?? 0,
-        previousDayDailyUsage?.costUSD ?? 0,
-        formatCurrency,
-    )
-    const tokenGrowthTrend = buildGrowthTrend(
-        todayDailyUsage?.totalTokens ?? 0,
-        previousDayDailyUsage?.totalTokens ?? 0,
-        formatCompactNumber,
-    )
     const efficiencyMetrics = buildEfficiencyMetrics({
         cachedInputTokens,
         inputTokens,
@@ -150,6 +139,7 @@ export function buildHomeDashboardModules(
         reasoningOutputTokens,
         totalTokens,
     })
+    const todayInsights = buildHomeTodayInsights(dashboardsByPlatform, dailyTokenUsage)
 
     return {
         dailyTokenUsage,
@@ -158,9 +148,14 @@ export function buildHomeDashboardModules(
         modelUsage: monthlyModelUsage,
         overviewCards: buildHomeOverviewCards({
             cachedInputTokens,
-            costGrowthTrend,
             inputTokens,
-            tokenGrowthTrend,
+            previousPromptCount: todayInsights.previousPromptCount,
+            previousSessionCount: todayInsights.previousSessionCount,
+            previousUsage: todayInsights.previousUsage,
+            promptCount: todayInsights.promptCount,
+            sessionCount: todayInsights.sessionCount,
+            todayHourlyUsage: todayInsights.todayHourlyUsage,
+            todayUsage: todayInsights.todayUsage,
             totalCost,
             totalSessions,
             totalTokens,
@@ -169,6 +164,7 @@ export function buildHomeDashboardModules(
             items: sessionUsage,
             totalSessions,
         },
+        todayHourlyUsage: todayInsights.todayHourlyUsage,
     }
 }
 
@@ -184,28 +180,97 @@ function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<Load
 
 function buildHomeOverviewCards(options: {
     cachedInputTokens: number
-    costGrowthTrend: Pick<UsageOverviewCard, 'trend' | 'trendTone'>
     inputTokens: number
-    tokenGrowthTrend: Pick<UsageOverviewCard, 'trend' | 'trendTone'>
+    previousPromptCount: number
+    previousSessionCount: number
+    previousUsage: LoadUsageResult['dailyTokenUsage'][number] | undefined
+    promptCount: number
+    sessionCount: number
+    todayHourlyUsage: HourlyUsagePoint[]
+    todayUsage: LoadUsageResult['dailyTokenUsage'][number] | undefined
     totalCost: number
     totalSessions: number
     totalTokens: number
 }): UsageOverviewCard[] {
+    const tokenTrend = buildGrowthTrend(
+        options.todayUsage?.totalTokens ?? 0,
+        options.previousUsage?.totalTokens ?? 0,
+        formatCompactNumber,
+    )
+    const costTrend = buildGrowthTrend(
+        options.todayUsage?.costUSD ?? 0,
+        options.previousUsage?.costUSD ?? 0,
+        formatCurrency,
+    )
+    const sessionTrend = buildPercentTrend(options.sessionCount, options.previousSessionCount)
+    const promptTrend = buildPercentTrend(options.promptCount, options.previousPromptCount)
+
     return [
+        {
+            detail: `${formatNumber(options.todayUsage?.totalTokens ?? 0)} tokens today. Yesterday: ${formatNumber(options.previousUsage?.totalTokens ?? 0)}.`,
+            icon: 'solar:cpu-line-duotone',
+            name: 'Today Tokens',
+            subvalue: {
+                items: [
+                    {
+                        label: 'In',
+                        value: formatCompactNumber(options.todayUsage?.inputTokens ?? 0),
+                    },
+                    {
+                        label: 'Out',
+                        value: formatCompactNumber(options.todayUsage?.outputTokens ?? 0),
+                    },
+                ],
+            },
+            trend: tokenTrend.trend,
+            trendTone: tokenTrend.trendTone,
+            value: formatCompactNumber(options.todayUsage?.totalTokens ?? 0),
+        },
+        {
+            detail: `${formatCurrency(options.todayUsage?.costUSD ?? 0)} spent today. Yesterday: ${formatCurrency(options.previousUsage?.costUSD ?? 0)}.`,
+            icon: 'lucide:wallet',
+            name: 'Today Spend',
+            subvalue: {
+                items: [
+                    {
+                        value: `${options.todayHourlyUsage.filter(item => item.totalTokens > 0).length} active hours`,
+                    },
+                ],
+            },
+            trend: costTrend.trend,
+            trendTone: costTrend.trendTone,
+            value: formatCurrency(options.todayUsage?.costUSD ?? 0),
+        },
+        {
+            detail: `${formatNumber(options.sessionCount)} sessions started today. Yesterday: ${formatNumber(options.previousSessionCount)}.`,
+            icon: 'lucide:messages-square',
+            name: 'Today Sessions',
+            trend: sessionTrend.label,
+            trendTone: sessionTrend.tone,
+            value: formatNumber(options.sessionCount),
+        },
+        {
+            detail: `${formatNumber(options.promptCount)} prompts sent today. Yesterday: ${formatNumber(options.previousPromptCount)}.`,
+            icon: 'lucide:square-pen',
+            name: 'Prompt Count',
+            trend: promptTrend.label,
+            trendTone: promptTrend.tone,
+            value: formatNumber(options.promptCount),
+        },
         {
             detail: `${formatCurrency(options.totalCost)} total spend across all tools`,
             icon: 'lucide:wallet',
             name: 'Total Spend',
-            trend: options.costGrowthTrend.trend,
-            trendTone: options.costGrowthTrend.trendTone,
+            trend: costTrend.trend,
+            trendTone: costTrend.trendTone,
             value: formatCurrency(options.totalCost),
         },
         {
             detail: `${formatNumber(options.totalTokens)} total tokens across all tools`,
             icon: 'solar:cpu-line-duotone',
             name: 'Token Usage',
-            trend: options.tokenGrowthTrend.trend,
-            trendTone: options.tokenGrowthTrend.trendTone,
+            trend: tokenTrend.trend,
+            trendTone: tokenTrend.trendTone,
             value: formatCompactNumber(options.totalTokens),
         },
         {
@@ -225,6 +290,113 @@ function buildHomeOverviewCards(options: {
             value: formatCurrency(options.totalSessions > 0 ? options.totalCost / options.totalSessions : 0),
         },
     ]
+}
+
+function buildHomeTodayInsights(
+    dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
+    dailyTokenUsage: LoadUsageResult['dailyTokenUsage'],
+) {
+    const todayDateKey = getDateKey(new Date())
+    const previousDayDateKey = getPreviousDateKey(todayDateKey)
+    const hourlyUsage = new Map<number, {
+        agents: Map<ProjectUsagePlatform, {
+            costUSD: number
+            totalTokens: number
+        }>
+        costUSD: number
+        totalTokens: number
+    }>()
+    let promptCount = 0
+    let previousPromptCount = 0
+    let sessionCount = 0
+    let previousSessionCount = 0
+
+    for (const platform of PROJECT_USAGE_PLATFORMS) {
+        for (const session of dashboardsByPlatform[platform].sessionUsage as ProjectSessionUsageItem[]) {
+            const startedAtDateKey = getDateKeyFromTimestamp(session.startedAt)
+
+            if (startedAtDateKey === todayDateKey) {
+                sessionCount += 1
+            }
+            else if (startedAtDateKey === previousDayDateKey) {
+                previousSessionCount += 1
+            }
+
+            for (const interaction of session.interactions) {
+                const interactionDateKey = getDateKeyFromTimestamp(interaction.timestamp)
+
+                if (interaction.role === 'user') {
+                    if (interactionDateKey === todayDateKey) {
+                        promptCount += 1
+                    }
+                    else if (interactionDateKey === previousDayDateKey) {
+                        previousPromptCount += 1
+                    }
+                }
+
+                if (!interaction.usage || interactionDateKey !== todayDateKey) {
+                    continue
+                }
+
+                const interactionDate = new Date(interaction.timestamp!)
+
+                if (!Number.isFinite(interactionDate.getTime())) {
+                    continue
+                }
+
+                const hour = interactionDate.getHours()
+                const bucket = hourlyUsage.get(hour) ?? {
+                    agents: new Map<ProjectUsagePlatform, {
+                        costUSD: number
+                        totalTokens: number
+                    }>(),
+                    costUSD: 0,
+                    totalTokens: 0,
+                }
+                const agentUsage = bucket.agents.get(platform) ?? {
+                    costUSD: 0,
+                    totalTokens: 0,
+                }
+
+                bucket.costUSD = roundCurrency(bucket.costUSD + interaction.usage.costUSD)
+                bucket.totalTokens += interaction.usage.totalTokens
+                agentUsage.costUSD = roundCurrency(agentUsage.costUSD + interaction.usage.costUSD)
+                agentUsage.totalTokens += interaction.usage.totalTokens
+                bucket.agents.set(platform, agentUsage)
+                hourlyUsage.set(hour, bucket)
+            }
+        }
+    }
+
+    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey)
+    const previousUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
+    const todayHourlyUsage = Array.from({ length: 24 }, (_, hour) => ({
+        agents: Object.fromEntries(hourlyUsage.get(hour)?.agents.entries() ?? []),
+        costUSD: hourlyUsage.get(hour)?.costUSD ?? 0,
+        hour,
+        label: `${String(hour).padStart(2, '0')}:00`,
+        totalTokens: hourlyUsage.get(hour)?.totalTokens ?? 0,
+    }))
+
+    return {
+        previousPromptCount,
+        previousSessionCount,
+        previousUsage,
+        promptCount,
+        sessionCount,
+        todayHourlyUsage,
+        todayUsage,
+    }
+}
+
+function getDateKeyFromTimestamp(value: string | null | undefined) {
+    if (!value) {
+        return null
+    }
+
+    const date = new Date(value)
+
+    return Number.isFinite(date.getTime()) ? getDateKey(date) : null
 }
 
 function buildEfficiencyMetrics(options: {
