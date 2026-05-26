@@ -122,6 +122,7 @@ export interface DailyUsageRow {
 
 export interface DailyUsageModelRow {
     cached_input_tokens: number
+    cost_usd: number
     date: string
     input_tokens: number
     is_fallback: number

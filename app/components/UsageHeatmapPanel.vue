@@ -44,7 +44,8 @@
                     <span class="sr-only">{{ cell.title }}</span>
                     <div
                         v-if="!cell.isBlank"
-                        class="pointer-events-none absolute bottom-full left-1/2 z-30 mb-2 hidden min-w-40 -translate-x-1/2 gap-1 rounded-md border bg-popover px-2.5 py-1.5 text-xs text-popover-foreground shadow-md group-hover:grid group-focus-visible:grid"
+                        class="pointer-events-none absolute bottom-full z-30 mb-2 hidden w-64 max-w-[calc(100vw-2rem)] gap-1 rounded-md border bg-popover px-2.5 py-2 text-xs text-popover-foreground shadow-md group-hover:grid group-focus-visible:grid"
+                        :class="cell.tooltipClass"
                         role="tooltip"
                     >
                         <span class="font-medium">{{ cell.date }}</span>
@@ -66,7 +67,55 @@
                             <span>Tokens</span>
                             <span class="font-mono font-medium text-foreground">{{ cell.tokenLabel }}</span>
                         </span>
-                        <span class="absolute top-full left-1/2 size-2 -translate-x-1/2 -translate-y-1/2 rotate-45 border-r border-b border-border bg-popover" />
+                        <div
+                            v-if="cell.platformSections.length > 0 || cell.modelRows.length > 0"
+                            class="mt-1 grid max-h-56 gap-2 overflow-y-auto border-t pt-2 pr-1"
+                        >
+                            <template v-if="cell.platformSections.length > 0">
+                                <div
+                                    v-for="section in cell.platformSections"
+                                    :key="section.key"
+                                    class="grid gap-1"
+                                >
+                                    <div class="flex items-center justify-between gap-3 text-[11px] font-semibold">
+                                        <span>{{ section.label }}</span>
+                                        <span class="font-mono text-muted-foreground">
+                                            {{ section.costLabel }} / {{ section.tokenLabel }}
+                                        </span>
+                                    </div>
+                                    <div
+                                        v-for="model in section.models"
+                                        :key="model.key"
+                                        class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"
+                                    >
+                                        <span class="min-w-0 truncate">
+                                            {{ model.label }}<span v-if="model.isFallback"> (fallback)</span>
+                                        </span>
+                                        <span class="shrink-0 font-mono">
+                                            {{ model.costLabel }} / {{ model.tokenLabel }}
+                                        </span>
+                                    </div>
+                                </div>
+                            </template>
+                            <template v-else>
+                                <div
+                                    v-for="model in cell.modelRows"
+                                    :key="model.key"
+                                    class="flex items-center justify-between gap-3 text-[11px] text-muted-foreground"
+                                >
+                                    <span class="min-w-0 truncate">
+                                        {{ model.label }}<span v-if="model.isFallback"> (fallback)</span>
+                                    </span>
+                                    <span class="shrink-0 font-mono">
+                                        {{ model.costLabel }} / {{ model.tokenLabel }}
+                                    </span>
+                                </div>
+                            </template>
+                        </div>
+                        <span
+                            class="absolute top-full size-2 -translate-y-1/2 rotate-45 border-r border-b border-border bg-popover"
+                            :class="cell.tooltipArrowClass"
+                        />
                     </div>
                 </div>
             </div>
@@ -110,6 +159,7 @@
 </template>
 
 <script setup lang="ts">
+import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { computed } from 'vue'
 
 defineOptions({
@@ -130,6 +180,26 @@ interface SummaryCard {
     key: string
     label: string
     value: string
+}
+
+interface TooltipModelRow {
+    costLabel: string
+    isFallback: boolean
+    key: string
+    label: string
+    totalTokens: number
+    tokenLabel: string
+    costUSD: number
+}
+
+interface TooltipPlatformSection {
+    costLabel: string
+    key: string
+    label: string
+    models: TooltipModelRow[]
+    totalTokens: number
+    tokenLabel: string
+    costUSD: number
 }
 
 const heatmapLevels = [
@@ -206,6 +276,8 @@ const trendItems = computed(() => {
             costUSD,
             date: formatRangeDate(item.date),
             hasUsage: Boolean(item.usage),
+            modelRows: buildTooltipModelRows(item.usage?.models ?? {}),
+            platformSections: buildTooltipPlatformSections(item.usage?.platforms),
             tokenLabel: formatCompactNumber(totalTokens),
             totalTokens,
         }
@@ -215,6 +287,7 @@ const trendItems = computed(() => {
 const heatmapCells = computed(() => {
     const leadingBlankCount = rangeStartDate.value.getDay()
     const trailingBlankCount = (7 - ((leadingBlankCount + trendItems.value.length) % 7)) % 7
+    const weekColumnCount = Math.ceil((leadingBlankCount + trendItems.value.length + trailingBlankCount) / 7)
     const blanks = Array.from({ length: leadingBlankCount }, (_, index) => ({
         column: String(Math.floor(index / 7) + 2),
         colorClass: 'bg-transparent',
@@ -222,8 +295,12 @@ const heatmapCells = computed(() => {
         date: '',
         isBlank: true,
         key: `blank-${index}`,
+        modelRows: [],
+        platformSections: [],
         row: String((index % 7) + 1),
         title: 'No date',
+        tooltipArrowClass: '',
+        tooltipClass: '',
         tokenLabel: '',
     }))
     const days = trendItems.value.map((item, index) => ({
@@ -235,6 +312,7 @@ const heatmapCells = computed(() => {
         title: props.heatMetric === 'cost'
             ? `${item.date}: ${formatCurrency(item.costUSD)} / ${formatCompactNumber(item.totalTokens)} tokens`
             : `${item.date}: ${formatCompactNumber(item.totalTokens)} tokens / ${formatCurrency(item.costUSD)}`,
+        ...getTooltipPlacement(Math.floor((leadingBlankCount + index) / 7), weekColumnCount),
     }))
     const trailingBlanks = Array.from({ length: trailingBlankCount }, (_, index) => ({
         column: String(Math.floor((leadingBlankCount + trendItems.value.length + index) / 7) + 2),
@@ -243,8 +321,12 @@ const heatmapCells = computed(() => {
         date: '',
         isBlank: true,
         key: `trailing-blank-${index}`,
+        modelRows: [],
+        platformSections: [],
         row: String(((leadingBlankCount + trendItems.value.length + index) % 7) + 1),
         title: 'No date',
+        tooltipArrowClass: '',
+        tooltipClass: '',
         tokenLabel: '',
     }))
 
@@ -304,5 +386,77 @@ function getHeatmapLevel(value: number, maxValue: number) {
     }
 
     return Math.min(9, Math.max(1, Math.ceil((value / maxValue) * 9)))
+}
+
+function buildTooltipPlatformSections(platforms: DailyTokenUsage['platforms']): TooltipPlatformSection[] {
+    return Object.entries(platforms ?? {})
+        .map(([platform, usage]) => ({
+            costLabel: formatCurrency(usage.costUSD),
+            costUSD: usage.costUSD,
+            key: platform,
+            label: PROJECT_USAGE_PLATFORM_META[platform as keyof typeof PROJECT_USAGE_PLATFORM_META]?.label ?? platform,
+            models: buildTooltipModelRows(usage.models),
+            totalTokens: usage.totalTokens,
+            tokenLabel: formatCompactNumber(usage.totalTokens),
+        }))
+        .sort(sortTooltipRows)
+}
+
+function buildTooltipModelRows(models: DailyTokenUsage['models']): TooltipModelRow[] {
+    return Object.entries(models)
+        .map(([model, usage]) => ({
+            costLabel: formatCurrency(usage.costUSD),
+            costUSD: usage.costUSD,
+            isFallback: usage.isFallback,
+            key: model,
+            label: model,
+            totalTokens: usage.totalTokens,
+            tokenLabel: formatCompactNumber(usage.totalTokens),
+        }))
+        .sort(sortTooltipRows)
+}
+
+function sortTooltipRows(
+    left: Pick<TooltipModelRow, 'costUSD' | 'label' | 'totalTokens'>,
+    right: Pick<TooltipModelRow, 'costUSD' | 'label' | 'totalTokens'>,
+) {
+    const metricDifference = props.heatMetric === 'cost'
+        ? right.costUSD - left.costUSD
+        : right.totalTokens - left.totalTokens
+
+    if (metricDifference !== 0) {
+        return metricDifference
+    }
+
+    if (right.totalTokens !== left.totalTokens) {
+        return right.totalTokens - left.totalTokens
+    }
+
+    if (right.costUSD !== left.costUSD) {
+        return right.costUSD - left.costUSD
+    }
+
+    return left.label.localeCompare(right.label)
+}
+
+function getTooltipPlacement(weekColumnIndex: number, weekColumnCount: number) {
+    if (weekColumnIndex <= 1) {
+        return {
+            tooltipArrowClass: 'left-3.5',
+            tooltipClass: 'left-0',
+        }
+    }
+
+    if (weekColumnIndex >= weekColumnCount - 2) {
+        return {
+            tooltipArrowClass: 'right-3.5',
+            tooltipClass: 'right-0',
+        }
+    }
+
+    return {
+        tooltipArrowClass: 'left-1/2 -translate-x-1/2',
+        tooltipClass: 'left-1/2 -translate-x-1/2',
+    }
 }
 </script>

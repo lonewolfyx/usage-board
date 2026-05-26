@@ -185,6 +185,7 @@ export interface PeriodRowGroup extends SessionAggregateGroup {
 }
 
 export interface ModelUsageSummary {
+    costUSD: number
     cachedInputTokens: number
     inputTokens: number
     isFallback: boolean

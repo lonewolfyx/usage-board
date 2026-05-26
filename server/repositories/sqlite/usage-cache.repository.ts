@@ -58,7 +58,7 @@ import {
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
-const CACHE_SCHEMA_VERSION = 6
+const CACHE_SCHEMA_VERSION = 7
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -199,6 +199,7 @@ const CACHE_SCHEMA_SQL = `
         output_tokens INTEGER NOT NULL,
         reasoning_output_tokens INTEGER NOT NULL,
         total_tokens INTEGER NOT NULL,
+        cost_usd REAL NOT NULL,
         is_fallback INTEGER NOT NULL,
         PRIMARY KEY (scope_key, date, model),
         FOREIGN KEY (scope_key, date)
@@ -765,6 +766,7 @@ export class UsageCacheRepository {
     private initializeSchema() {
         this.database.exec(CACHE_SCHEMA_SQL)
         this.ensureIndexedFilesCacheSignatureColumn()
+        this.ensureDailyUsageModelCostColumn()
         this.ensureProjectCatalogColumns()
         this.ensureInteractionExtraTotalTokenColumns()
 
@@ -890,6 +892,20 @@ export class UsageCacheRepository {
             const platforms = row.type === 'mixed' ? [] : [row.type]
             updateStatement.run(JSON.stringify(platforms), row.label)
         }
+    }
+
+    private ensureDailyUsageModelCostColumn() {
+        if (!this.hasTable('usage_scope_daily_usage_models')) {
+            return
+        }
+
+        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_daily_usage_models)').all()
+
+        if (columns.some(column => column.name === 'cost_usd')) {
+            return
+        }
+
+        this.database.exec('ALTER TABLE usage_scope_daily_usage_models ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0')
     }
 
     private ensureInteractionExtraTotalTokenColumns() {
@@ -1139,9 +1155,10 @@ export class UsageCacheRepository {
                 output_tokens,
                 reasoning_output_tokens,
                 total_tokens,
+                cost_usd,
                 is_fallback
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertMonthlyModelStatement = this.database.prepare(`
             INSERT INTO usage_scope_monthly_model_usage (
@@ -1314,6 +1331,7 @@ export class UsageCacheRepository {
                     usage.outputTokens,
                     usage.reasoningOutputTokens,
                     usage.totalTokens,
+                    usage.costUSD,
                     usage.isFallback ? 1 : 0,
                 )
             }
@@ -1499,6 +1517,7 @@ export class UsageCacheRepository {
                     model.output_tokens,
                     model.reasoning_output_tokens,
                     model.total_tokens,
+                    model.cost_usd,
                     model.is_fallback
                 FROM usage_scope_daily_usage_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
@@ -1847,6 +1866,7 @@ function groupDailyUsage(rows: DailyUsageRow[], modelRows: DailyUsageModelRow[])
         const models = modelsByRow.get(key) ?? {}
         models[row.model] = {
             cachedInputTokens: row.cached_input_tokens,
+            costUSD: row.cost_usd,
             inputTokens: row.input_tokens,
             isFallback: Boolean(row.is_fallback),
             outputTokens: row.output_tokens,

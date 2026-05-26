@@ -125,9 +125,11 @@ function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
         if (shouldIncludeModel(event, options)) {
             const modelUsage = group.modelUsage.get(event.model) ?? {
                 ...createEmptyUsage(),
+                costUSD: 0,
                 isFallback: false,
             }
             addUsage(modelUsage, event)
+            modelUsage.costUSD += getEventCostUSD(event, options)
             if (event.isFallbackModel) {
                 modelUsage.isFallback = true
             }
@@ -157,6 +159,7 @@ function buildDailyTokenUsage(dailyGroups: Map<string, DailyUsageSummaryGroup>):
             inputTokens: group.inputTokens,
             models: Object.fromEntries(Array.from(group.modelUsage.entries()).map(([model, usage]) => [model, {
                 cachedInputTokens: usage.cachedInputTokens,
+                costUSD: roundCurrency(usage.costUSD),
                 inputTokens: usage.inputTokens,
                 isFallback: usage.isFallback,
                 outputTokens: usage.outputTokens,
