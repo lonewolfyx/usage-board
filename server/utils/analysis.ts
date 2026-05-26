@@ -5,7 +5,6 @@ import type { H3Event } from 'h3'
 import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveProjectUsagePlatform } from '#shared/platform/metadata'
 import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
-import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import { resolveConfig } from '#shared/utils/configs'
 
 export function getAnalysisRuntime(event: H3Event) {
@@ -101,7 +100,7 @@ export function defineRequiredAgentAnalysisHandler<TResult>(
 }
 
 async function getHomeAnalysisModules(event: H3Event) {
-    return buildHomeDashboardModules(await getAnalysisRuntime(event).getBootstrap())
+    return getAnalysisRuntime(event).getHomeDashboardModules()
 }
 
 function normalizeQueryString(value: unknown) {
