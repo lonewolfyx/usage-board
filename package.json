@@ -35,7 +35,7 @@
         "generate": "nuxt generate",
         "preview": "nuxt preview",
         "typecheck": "nuxt typecheck",
-        "lint": "eslint .",
+        "lint": "nuxt prepare && eslint .",
         "lint:fix": "nuxt prepare && eslint --fix",
         "dev:cli": "tsdown -w",
         "test": "vitest",
