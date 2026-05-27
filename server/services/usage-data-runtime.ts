@@ -106,7 +106,7 @@ class UsageDataRuntime {
     }
 
     async getProjectDataModules(
-        request: Pick<Extract<ProjectWebSocketRequest, { type: 'project_data' }>, 'module' | 'modules' | 'platform' | 'project'>,
+        request: Pick<Extract<ProjectWebSocketRequest, { type: 'project_data' }>, 'module' | 'modules' | 'page' | 'pageSize' | 'platform' | 'project'>,
     ): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
         await this.initialize()
         const projectLabel = (request.project || '').trim()
@@ -141,6 +141,8 @@ class UsageDataRuntime {
         return buildProjectUsageDataModuleFromDetail(hydratedDetail, {
             module: request.module,
             modules: request.modules,
+            page: request.page,
+            pageSize: request.pageSize,
             platform: request.platform,
         })
     }

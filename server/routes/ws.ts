@@ -72,6 +72,8 @@ function parseTextRequest(text: string): unknown {
     return {
         module: params.get('module') ?? undefined,
         modules: params.getAll('modules').flatMap(item => normalizeStringList<ProjectUsageDataModule>(item) ?? []),
+        page: normalizeNumberValue(params.get('page')),
+        pageSize: normalizeNumberValue(params.get('pageSize')),
         platform: params.get('platform') ?? undefined,
         project: params.get('project') ?? undefined,
         requestId: params.get('requestId') ?? undefined,
@@ -102,6 +104,8 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
         return {
             module: normalizeStringValue<ProjectUsageDataModule>(record.module),
             modules: normalizeStringList<ProjectUsageDataModule>(record.modules),
+            page: normalizeNumberValue(record.page),
+            pageSize: normalizeNumberValue(record.pageSize),
             platform: normalizeStringValue<ProjectDashboardScope>(record.platform),
             project: normalizeStringValue<string>(record.project),
             requestId: normalizeStringValue<string>(record.requestId),
@@ -110,6 +114,18 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
     }
 
     throw new Error(`Unsupported websocket request type: ${type || 'unknown'}.`)
+}
+
+function normalizeNumberValue(value: unknown) {
+    const stringValue = normalizeStringValue<string>(value)
+
+    if (!stringValue) {
+        return undefined
+    }
+
+    const numberValue = Number(stringValue)
+
+    return Number.isFinite(numberValue) ? numberValue : undefined
 }
 
 function sendData(

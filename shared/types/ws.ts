@@ -57,6 +57,8 @@ export type ProjectWebSocketRequest
         type: 'project_data'
         module?: ProjectUsageDataModule
         modules?: ProjectUsageDataModule[]
+        page?: number
+        pageSize?: number
         project?: string
         requestId?: string
         platform?: ProjectDashboardScope

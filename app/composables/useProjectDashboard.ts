@@ -1,4 +1,5 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type { PaginatedResponse, PaginationMeta } from '#shared/types/pagination'
 import type {
     ProjectDailyTrendModulePayload,
     ProjectDashboardPlatformTab,
@@ -12,6 +13,7 @@ import type {
     ProjectSessionListModulePayload,
     ProjectTabSummary,
     ProjectTokenUsageModulePayload,
+    ProjectTokenUsageRow,
 } from '#shared/types/project-dashboard'
 import type {
     ProjectUsageCatalogItem,
@@ -23,6 +25,7 @@ import type {
 import type { ShallowRef } from 'vue'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import {
     buildMonthlyTickIndexes,
@@ -31,7 +34,6 @@ import {
     buildProjectPlatformOverviewCards,
     buildRecentDateLabels,
     summarizeProjectSessions,
-    toProjectDisplayDailyUsageRows,
     toProjectSessionTableRow,
     toProjectSessionTableRows,
 } from '#shared/utils/project-dashboard'
@@ -40,6 +42,7 @@ import {
     formatCurrency,
     mergeDailyTokenUsage,
 } from '#shared/utils/usage-dashboard'
+import { formatNumber } from '@lonewolfyx/utils'
 
 const recentProjectDays = 30
 const yearlyProjectDays = 365
@@ -58,15 +61,15 @@ const emptyModelUsagePayload: ProjectModelUsageModulePayload = {
 }
 
 const emptyTokenUsagePayload: ProjectTokenUsageModulePayload = {
-    dailyRows: [],
-    monthlyRows: [],
-    sessionRows: [],
-    weeklyRows: [],
+    dailyRows: createEmptyPaginatedResponse(),
+    monthlyRows: createEmptyPaginatedResponse(),
+    sessionRows: createEmptyPaginatedResponse(),
+    weeklyRows: createEmptyPaginatedResponse(),
 }
 
 const emptySessionListPayload: ProjectSessionListModulePayload = {
-    sessionRows: [],
-    sessionUsage: [],
+    sessionRows: createEmptyPaginatedResponse(),
+    sessionUsage: createEmptyPaginatedResponse(),
     sessions: [],
 }
 
@@ -86,6 +89,22 @@ interface ProjectModulePayloadMap {
 
 type ProjectModuleStateMap = {
     [TModule in keyof ProjectModulePayloadMap]: ShallowRef<ProjectPlatformModulePayload<ProjectModulePayloadMap[TModule]> | null>
+}
+
+function createEmptyPaginationMeta(): PaginationMeta {
+    return {
+        page: 1,
+        pageCount: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: 0,
+    }
+}
+
+function createEmptyPaginatedResponse<T>(): PaginatedResponse<T> {
+    return {
+        items: [],
+        pagination: createEmptyPaginationMeta(),
+    }
 }
 
 export function useProjectDashboard() {
@@ -168,9 +187,6 @@ export function useProjectDashboard() {
     const visiblePlatformSessions = computed(() => platformTabs.value
         .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions)
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
-    const visiblePlatformDailyUsage = computed(() => mergeDailyTokenUsage(
-        platformTabs.value.flatMap(tab => getPlatformModulePayload('daily_trend', tab.value).dailyTokenUsage),
-    ))
     const visiblePlatformModelUsage = computed(() => mergeDailyTokenUsage(
         platformTabs.value.flatMap(tab => getPlatformModulePayload('model_usage', tab.value).dailyTokenUsage),
     ))
@@ -209,18 +225,17 @@ export function useProjectDashboard() {
     const yearlyDayLabels = computed(() => buildRecentDateLabels(yearlyProjectDays))
     const yearlyTickIndexes = computed(() => buildMonthlyTickIndexes(yearlyDayLabels.value))
     const allOverviewCards = computed(() => buildProjectOverviewCards(visiblePlatformSessions.value))
-    const allDailyUsageRows = computed(() => toProjectDisplayDailyUsageRows(
-        visiblePlatformDailyUsage.value,
-        visiblePlatformSessions.value,
+    const allSessionRowsPage = computed<PaginatedResponse<ProjectSessionTableRow>>(() => {
+        const sessionListPayload = getPlatformModulePayload('session_list', 'all')
+
+        return {
+            items: sessionListPayload.sessionUsage.items.map(session => toProjectSessionTableRow(session, inferSessionPlatform(session.id), session.id)),
+            pagination: sessionListPayload.sessionUsage.pagination,
+        }
+    })
+    const allDailyUsageRowsPage = computed<PaginatedResponse<ProjectTokenUsageRow>>(() => toProjectTokenUsagePage(
+        getPlatformModulePayload('token_usage', 'all').dailyRows,
     ))
-    const allSessionRows = computed(() => platformTabs
-        .value
-        .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions.map(session => ({
-            platform: tab.value,
-            session,
-        })))
-        .sort((a, b) => Date.parse(b.session.startedAt) - Date.parse(a.session.startedAt))
-        .map(({ platform, session }) => toProjectSessionTableRow(session, platform)))
     const dailyTrendLabels = computed(() => recentDayLabels.value)
     const dailyTooltipLabels = computed(() => dailyTrendLabels.value)
     const dailySeries = computed<ProjectLineSeries[]>(() => platformTabs.value.map(tab => ({
@@ -252,7 +267,10 @@ export function useProjectDashboard() {
                     dailyTrendPayload.dailyTokenUsage,
                 ),
                 sessionRows: tokenUsagePayload.sessionRows,
-                sessionTableRows: toProjectSessionTableRows(sessionListPayload.sessions, platform),
+                sessionTableRows: {
+                    items: toProjectSessionTableRows(sessionListPayload.sessionUsage.items, platform),
+                    pagination: sessionListPayload.sessionUsage.pagination,
+                },
                 trendLabels,
                 trendSeries: [{
                     color: PROJECT_USAGE_PLATFORM_META[platform].color,
@@ -348,6 +366,8 @@ export function useProjectDashboard() {
         try {
             const response = await sendWebSocketRequest<ProjectUsageDataModulesResponse>({
                 modules: [...PROJECT_USAGE_DATA_MODULES],
+                page: 1,
+                pageSize: DEFAULT_PAGE_SIZE,
                 project: project.id,
                 type: 'project_data',
             })
@@ -520,16 +540,95 @@ export function useProjectDashboard() {
         return labels.map(label => usageByDate.get(label) ?? 0)
     }
 
+    function inferSessionPlatform(sessionId: string) {
+        return PROJECT_USAGE_PLATFORMS.find(platform => sessionId.startsWith(`${platform}:`)) ?? PROJECT_USAGE_PLATFORMS[0]!
+    }
+
+    async function fetchProjectTokenUsagePage(platform: ProjectDashboardScope, page: number) {
+        const projectId = selectedProjectId.value
+
+        if (!projectId) {
+            return emptyTokenUsagePayload.dailyRows
+        }
+
+        const response = await sendWebSocketRequest<ProjectUsageDataModulesResponse>({
+            modules: ['token_usage'],
+            page,
+            pageSize: DEFAULT_PAGE_SIZE,
+            platform,
+            project: projectId,
+            type: 'project_data',
+        })
+        const tokenUsage = response.modules.token_usage?.[platform] ?? emptyTokenUsagePayload
+
+        setProjectModulePayload('token_usage', platform, tokenUsage)
+
+        return tokenUsage.dailyRows
+    }
+
+    function toProjectTokenUsagePage(page: PaginatedResponse<UsageAnalyticsTokenUsageRow>): PaginatedResponse<ProjectTokenUsageRow> {
+        return {
+            items: page.items.map(row => ({
+                cacheTokens: formatNumber(row.cachedInputTokens),
+                cost: formatCurrency(row.costUSD),
+                inputTokens: formatNumber(row.inputTokens),
+                label: row.label,
+                models: row.models.join(', ') || '-',
+                outputTokens: formatNumber(row.outputTokens),
+                reasoningTokens: formatNumber(row.reasoningOutputTokens),
+                sessions: String(row.sessionCount),
+                tokens: formatNumber(row.totalTokens),
+            })),
+            pagination: page.pagination,
+        }
+    }
+
+    async function fetchProjectSessionListPage(platform: ProjectDashboardScope, page: number) {
+        const projectId = selectedProjectId.value
+
+        if (!projectId) {
+            return emptySessionListPayload.sessionUsage
+        }
+
+        const response = await sendWebSocketRequest<ProjectUsageDataModulesResponse>({
+            modules: ['session_list'],
+            page,
+            pageSize: DEFAULT_PAGE_SIZE,
+            platform,
+            project: projectId,
+            type: 'project_data',
+        })
+        const sessionList = response.modules.session_list?.[platform] ?? emptySessionListPayload
+
+        setProjectModulePayload('session_list', platform, sessionList)
+
+        return sessionList.sessionUsage
+    }
+
+    function setProjectModulePayload<TModule extends keyof ProjectModulePayloadMap>(
+        module: TModule,
+        platform: ProjectDashboardScope,
+        payload: ProjectModulePayloadMap[TModule],
+    ) {
+        const projectModule = projectModules[module] as ProjectModuleStateMap[TModule]
+        projectModule.value = {
+            ...(projectModule.value ?? {}),
+            [platform]: payload,
+        } as ProjectModuleStateMap[TModule]['value']
+    }
+
     return {
         activeScopeItems,
         activeTab,
-        allDailyUsageRows,
+        allDailyUsageRowsPage,
         allModelChart,
         allOverviewCards,
-        allSessionRows,
+        allSessionRowsPage,
         dailySeries,
         dailyTooltipLabels,
         dailyTrendLabels,
+        fetchProjectSessionListPage,
+        fetchProjectTokenUsagePage,
         isModuleLoaded,
         isProjectModuleLoading,
         isProjectSelectDisabled,

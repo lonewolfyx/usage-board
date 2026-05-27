@@ -1,4 +1,5 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
+import type { PaginatedResponse } from '#shared/types/pagination'
 import type {
     DailyTokenUsage,
     MonthlyModelUsage,
@@ -87,34 +88,34 @@ export interface ProjectModelUsageModulePayload {
 }
 
 export interface ProjectTokenUsageModulePayload {
-    dailyRows: TokenUsageRow[]
-    monthlyRows: TokenUsageRow[]
-    sessionRows: TokenUsageRow[]
-    weeklyRows: TokenUsageRow[]
+    dailyRows: PaginatedResponse<TokenUsageRow>
+    monthlyRows: PaginatedResponse<TokenUsageRow>
+    sessionRows: PaginatedResponse<TokenUsageRow>
+    weeklyRows: PaginatedResponse<TokenUsageRow>
 }
 
 export interface ProjectSessionListModulePayload {
-    sessionRows: TokenUsageRow[]
-    sessionUsage: ProjectSessionListItem[]
+    sessionRows: PaginatedResponse<TokenUsageRow>
+    sessionUsage: PaginatedResponse<ProjectSessionListItem>
     sessions: ProjectSessionListItem[]
 }
 
 export type ProjectPlatformModulePayload<T> = Record<ProjectDashboardScope, T>
 
 export interface ProjectPlatformView {
-    dayRows: TokenUsageRow[]
+    dayRows: PaginatedResponse<TokenUsageRow>
     modelLabels: string[]
     modelSeries: ProjectLineSeries[]
     modelTickIndexes: number[]
-    monthRows: TokenUsageRow[]
+    monthRows: PaginatedResponse<TokenUsageRow>
     overviewCards: UsageOverviewCard[]
-    sessionRows: TokenUsageRow[]
-    sessionTableRows: ProjectSessionTableRow[]
+    sessionRows: PaginatedResponse<TokenUsageRow>
+    sessionTableRows: PaginatedResponse<ProjectSessionTableRow>
     trendLabels: string[]
     trendSeries: ProjectLineSeries[]
     trendTickIndexes: number[]
     trendTooltipLabels: string[]
-    weekRows: TokenUsageRow[]
+    weekRows: PaginatedResponse<TokenUsageRow>
 }
 
 export interface ProjectPendingWebSocketRequest<T = unknown> {

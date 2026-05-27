@@ -67,10 +67,10 @@ export function getRequiredAnalysisAgentTokenType(event: H3Event): AnalysisAgent
 }
 
 export function defineHomeAnalysisHandler<TResult>(
-    select: (modules: HomeDashboardModules) => TResult | Promise<TResult>,
+    select: (modules: HomeDashboardModules, event: H3Event) => TResult | Promise<TResult>,
 ) {
     return defineEventHandler(async (event) => {
-        return select(await getHomeAnalysisModules(event))
+        return select(await getHomeAnalysisModules(event), event)
     })
 }
 

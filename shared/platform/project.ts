@@ -17,12 +17,14 @@ import type {
     ProjectUsageDataModuleResponse,
     ProjectUsageDataModulesResponse,
 } from '#shared/types/ws'
+import type { PaginationInput } from '#shared/utils/pagination'
 import {
     createEmptyProjectPlatformUsage,
     normalizeProjectUsageDetail,
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
+import { paginateItems } from '#shared/utils/pagination'
 import { buildLoadUsageResult } from '#shared/utils/platform'
 import { uniqueItems } from '#shared/utils/usage-dashboard'
 
@@ -33,6 +35,8 @@ export function buildProjectUsageDataModuleFromDetail(
     options: {
         module?: ProjectUsageDataModule
         modules?: ProjectUsageDataModule[]
+        page?: number
+        pageSize?: number
         platform?: ProjectDashboardScope
     },
 ): ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse {
@@ -51,7 +55,7 @@ export function buildProjectUsageDataModuleFromDetail(
 
     if (modules.length === 1) {
         const module = modules[0]!
-        const data = buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all') as ProjectUsageDataModulePayloadMap[typeof module]
+        const data = buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all', options) as ProjectUsageDataModulePayloadMap[typeof module]
 
         return {
             data,
@@ -64,7 +68,7 @@ export function buildProjectUsageDataModuleFromDetail(
         label: normalizedDetail.label,
         modules: Object.fromEntries(modules.map(module => [
             module,
-            buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all'),
+            buildProjectPlatformModule(normalizedDetail, module, options.platform ?? 'all', options),
         ])),
     }
 }
@@ -111,27 +115,28 @@ function buildProjectPlatformModule(
     detail: ProjectUsageDetail,
     module: ProjectUsageDataModule,
     platform: ProjectDashboardScope,
+    pagination: PaginationInput,
 ) {
     if (platform !== 'all') {
-        return buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module)
+        return buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module, pagination)
     }
 
     if (module === 'session_list') {
         const sessions = getProjectDetailSessions(detail)
         const allUsage = buildProjectLoadUsageResult(sessions)
-        const platformPayloads = buildProjectPlatformPayloadMap(detail, module)
+        const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
         return {
-            all: buildSessionListModulePayload(allUsage.sessionRows, sessions),
+            all: buildSessionListModulePayload(allUsage.sessionRows, sessions, pagination),
             ...platformPayloads,
         }
     }
 
     const allUsage = buildProjectLoadUsageResult(getProjectDetailSessions(detail))
-    const platformPayloads = buildProjectPlatformPayloadMap(detail, module)
+    const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
     return {
-        all: buildLoadUsageModulePayload(allUsage, module),
+        all: buildLoadUsageModulePayload(allUsage, module, pagination),
         ...platformPayloads,
     }
 }
@@ -139,17 +144,19 @@ function buildProjectPlatformModule(
 function buildPlatformModulePayload(
     usage: ProjectPlatformUsage,
     module: ProjectUsageDataModule,
+    pagination: PaginationInput,
 ) {
     if (module === 'session_list') {
-        return buildSessionListModulePayload(usage.sessionRows, usage.sessions)
+        return buildSessionListModulePayload(usage.sessionRows, usage.sessions, pagination)
     }
 
-    return buildLoadUsageModulePayload(usage, module)
+    return buildLoadUsageModulePayload(usage, module, pagination)
 }
 
 function buildLoadUsageModulePayload(
     usage: LoadUsageResult,
     module: Exclude<ProjectUsageDataModule, 'session_list'>,
+    pagination: PaginationInput,
 ) {
     const modulePayloadBuilders = {
         daily_trend: () => ({
@@ -161,10 +168,10 @@ function buildLoadUsageModulePayload(
             monthlyModelUsage: usage.monthlyModelUsage,
         }),
         token_usage: () => ({
-            dailyRows: usage.dailyRows,
-            monthlyRows: usage.monthlyRows,
-            sessionRows: usage.sessionRows,
-            weeklyRows: usage.weeklyRows,
+            dailyRows: paginateItems(usage.dailyRows, pagination),
+            monthlyRows: paginateItems(usage.monthlyRows, pagination),
+            sessionRows: paginateItems(usage.sessionRows, pagination),
+            weeklyRows: paginateItems(usage.weeklyRows, pagination),
         }),
     } satisfies Record<typeof module, () => unknown>
 
@@ -207,12 +214,13 @@ function getProjectDetailTotalTokens(detail: ProjectUsageDetail) {
 function buildSessionListModulePayload(
     sessionRows: LoadUsageResult['sessionRows'],
     sessions: ProjectSessionUsageItem[],
+    pagination: PaginationInput,
 ) {
     const sessionList = sessions.map(({ interactions: _interactions, ...session }) => session)
 
     return {
-        sessionRows,
-        sessionUsage: sessionList,
+        sessionRows: paginateItems(sessionRows, pagination),
+        sessionUsage: paginateItems(sessionList, pagination),
         sessions: sessionList,
     }
 }
@@ -220,11 +228,12 @@ function buildSessionListModulePayload(
 function buildProjectPlatformPayloadMap(
     detail: ProjectUsageDetail,
     module: ProjectUsageDataModule,
+    pagination: PaginationInput,
 ) {
     return Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [
             platform,
-            buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module),
+            buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module, pagination),
         ]),
     ) as ProjectUsagePlatformRecord<ReturnType<typeof buildPlatformModulePayload>>
 }

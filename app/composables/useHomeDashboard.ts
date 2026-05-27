@@ -6,6 +6,7 @@ import {
 } from '#shared/utils/analysis-dashboard'
 import {
     fetchHomeDashboardCoreModules,
+    fetchHomeDashboardDailyTokenPage,
     fetchHomeDashboardSessionAnalysis,
     fetchHomeDashboardUsageModules,
 } from '~/lib/analysis-repository'
@@ -31,6 +32,15 @@ export function useHomeDashboard() {
         status: usageStatus,
     } = useAsyncData('analysis:home:usage', fetchHomeDashboardUsageModules, {
         default: createEmptyHomeDashboardUsageModules,
+        immediate: false,
+        server: false,
+    })
+    const {
+        data: dailyTokenUsagePageData,
+        error: dailyTokenUsagePageError,
+        execute: executeDailyTokenUsagePage,
+        status: dailyTokenUsagePageStatus,
+    } = useAsyncData('analysis:home:daily-token-page', () => fetchHomeDashboardDailyTokenPage(1), {
         immediate: false,
         server: false,
     })
@@ -64,8 +74,20 @@ export function useHomeDashboard() {
         ]),
     })
 
+    watch(usageStatus, (status) => {
+        if (status === 'success' && dailyTokenUsagePageStatus.value === 'idle') {
+            void executeDailyTokenUsagePage()
+        }
+    }, {
+        immediate: true,
+    })
+
     return {
         dailyTokenUsage: computed(() => usageData.value?.dailyTokenUsage ?? defaultUsageModules.dailyTokenUsage),
+        dailyTokenUsagePage: computed(() => dailyTokenUsagePageData.value),
+        dailyTokenUsagePageError,
+        dailyTokenUsagePageStatus,
+        fetchDailyTokenUsagePage: fetchHomeDashboardDailyTokenPage,
         efficiencyMetrics: computed(() => usageData.value?.efficiencyMetrics ?? defaultUsageModules.efficiencyMetrics),
         error: coreError,
         monthlyModelUsage: computed(() => coreData.value?.modelUsage ?? defaultCoreModules.modelUsage),

@@ -149,7 +149,13 @@
                         </p>
                         <Skeleton v-else class="h-72 w-full rounded-md" />
                     </StatisticalAnalysisPanel>
-                    <StatisticalAnalysisTokensUsagePanel v-else :items="dailyTokenUsage" class="md:col-span-12" />
+                    <StatisticalAnalysisTokensUsagePanel
+                        v-else
+                        :fetch-page="fetchDailyTokenUsagePage"
+                        :items="dailyTokenUsagePage?.items ?? []"
+                        :pagination="dailyTokenUsagePage?.pagination"
+                        class="md:col-span-12"
+                    />
                 </DashboardPanelGrid>
             </template>
         </div>
@@ -159,8 +165,10 @@
 <script lang="ts" setup>
 const {
     dailyTokenUsage,
+    dailyTokenUsagePage,
     error,
     efficiencyMetrics,
+    fetchDailyTokenUsagePage,
     monthlyModelUsage,
     projectUsage,
     sessionAnalysisError,
@@ -189,3 +197,4 @@ const {
     showSkeleton: showUsageSkeleton,
 } = useDashboardAsyncState(usageStatus, usageError)
 </script>
+    fetchDailyTokenUsagePage,

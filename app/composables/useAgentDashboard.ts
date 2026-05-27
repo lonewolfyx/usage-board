@@ -1,5 +1,5 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
-import type { AgentDashboardCoreModules } from '#shared/types/analysis'
+import type { AgentDashboardCoreModules, AnalysisAgentTokenType } from '#shared/types/analysis'
 import type { MaybeRefOrGetter } from 'vue'
 import {
     createEmptyAgentDashboardCoreModules,
@@ -10,6 +10,8 @@ import {
     fetchAgentDashboardCoreModules,
     fetchAgentDashboardInsightsModules,
     fetchAgentDashboardSessionModules,
+    fetchAgentSessionPage,
+    fetchAgentTokenPage,
 } from '~/lib/analysis-repository'
 
 export function useAgentDashboard(agent: MaybeRefOrGetter<ProjectUsagePlatform>) {
@@ -71,20 +73,27 @@ export function useAgentDashboard(agent: MaybeRefOrGetter<ProjectUsagePlatform>)
 
     return {
         dailyRows: computed(() => coreDashboard.value.dailyRows),
+        dailyRowsPagination: computed(() => coreDashboard.value.dailyRowsPagination),
         dailyTokenUsage: computed(() => coreDashboard.value.dailyTokenUsage),
         error: coreError,
+        fetchSessionUsagePage: (page: number) => fetchAgentSessionPage(agentKey.value, page),
+        fetchTokenUsagePage: (type: AnalysisAgentTokenType, page: number) => fetchAgentTokenPage(agentKey.value, type, page),
         insightsError,
         insightsStatus,
         monthlyModelUsage: computed(() => coreDashboard.value.monthlyModelUsage),
         monthlyRows: computed(() => insightsDashboard.value.monthlyRows),
+        monthlyRowsPagination: computed(() => insightsDashboard.value.monthlyRowsPagination),
         overviewCards: computed(() => coreDashboard.value.overviewCards),
         projectUsage: computed(() => insightsDashboard.value.projectUsage),
         refresh,
         sessionError,
         sessionRows: computed(() => insightsDashboard.value.sessionRows),
+        sessionRowsPagination: computed(() => insightsDashboard.value.sessionRowsPagination),
         sessionStatus,
         sessionUsage: computed(() => sessionDashboard.value.sessionUsage),
+        sessionUsagePagination: computed(() => sessionDashboard.value.sessionUsagePagination),
         status: coreStatus,
         weeklyRows: computed(() => insightsDashboard.value.weeklyRows),
+        weeklyRowsPagination: computed(() => insightsDashboard.value.weeklyRowsPagination),
     }
 }
