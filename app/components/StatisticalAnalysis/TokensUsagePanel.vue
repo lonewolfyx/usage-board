@@ -87,7 +87,7 @@ const columns: ColumnDef<AnalysisDailyTokenRow>[] = [
     },
     {
         accessorKey: 'costUSD',
-        cell: ({ row }) => row.original.costUSD.toFixed(2),
+        cell: ({ row }) => formatCurrency(row.original.costUSD),
         header: 'Cost (USD)',
         meta: { class: 'text-right tabular-nums' },
     },
