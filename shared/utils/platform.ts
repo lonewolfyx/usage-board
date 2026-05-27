@@ -37,6 +37,7 @@ import {
     getPreviousDateKey,
     normalizeNumber,
     roundCurrency,
+    sumCurrency,
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
 import { formatNumber } from '@lonewolfyx/utils'
@@ -130,7 +131,7 @@ function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
                 isFallback: false,
             }
             addUsage(modelUsage, event)
-            modelUsage.costUSD += getEventCostUSD(event, options)
+            modelUsage.costUSD = sumCurrency(modelUsage.costUSD, getEventCostUSD(event, options))
             if (event.isFallbackModel) {
                 modelUsage.isFallback = true
             }
@@ -1186,7 +1187,7 @@ function addEventToAggregateGroup<TEvent extends UsageAggregateEvent>(
     group.outputTokens += event.outputTokens
     group.reasoningOutputTokens += event.reasoningOutputTokens
     group.totalTokens += event.totalTokens
-    group.costUSD += getEventCostUSD(event, options)
+    group.costUSD = sumCurrency(group.costUSD, getEventCostUSD(event, options))
     group.models = shouldIncludeModel(event, options) ? uniqueItems([...group.models, event.model]) : group.models
     group.projects = uniqueItems([...group.projects, event.project])
 }

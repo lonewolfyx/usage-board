@@ -42,7 +42,7 @@ export const gooseUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows: Array<Record<string, unknown>> = database.prepare<[], Record<string, unknown>>(GOOSE_SESSION_QUERY).all()
+            const rows = database.prepare<Record<string, unknown>>(GOOSE_SESSION_QUERY).all()
             const fragments = rows
                 .map(row => parseGooseRow(row, resolvePricing))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)

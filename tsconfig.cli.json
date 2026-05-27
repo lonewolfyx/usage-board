@@ -20,6 +20,12 @@
             ],
             "#shared/*": [
                 "./shared/*"
+            ],
+            "#server": [
+                "./server"
+            ],
+            "#server/*": [
+                "./server/*"
             ]
         },
         "resolveJsonModule": true,

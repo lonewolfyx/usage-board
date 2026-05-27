@@ -12,10 +12,10 @@
                             :arc-width="26"
                             :central-label="cacheHitRateLabel"
                             central-sub-label="Hit Rate"
-                            :color="item => item.color"
+                            :color="(item: CacheSegment) => item.color"
                             :corner-radius="4"
                             :pad-angle="0.04"
-                            :value="item => item.value"
+                            :value="(item: CacheSegment) => item.value"
                         />
                         <VisTooltip :triggers="tooltipTriggers" />
                     </VisSingleContainer>

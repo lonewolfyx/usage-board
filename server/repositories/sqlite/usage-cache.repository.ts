@@ -61,7 +61,7 @@ import {
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { roundCurrency } from '#shared/utils/usage-dashboard'
 
-const CACHE_SCHEMA_VERSION = 9
+const CACHE_SCHEMA_VERSION = 10
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -360,6 +360,8 @@ const CACHE_SCHEMA_SQL = `
         content TEXT NOT NULL,
         cost_usd REAL NOT NULL,
         dedupe_key TEXT,
+        fallback_dedupe_key TEXT,
+        is_sidechain INTEGER,
         model TEXT,
         role TEXT NOT NULL,
         timestamp TEXT,
@@ -594,6 +596,8 @@ export class UsageCacheRepository {
                 content,
                 cost_usd,
                 dedupe_key,
+                fallback_dedupe_key,
+                is_sidechain,
                 model,
                 role,
                 timestamp,
@@ -679,6 +683,8 @@ export class UsageCacheRepository {
                 content,
                 cost_usd,
                 dedupe_key,
+                fallback_dedupe_key,
+                is_sidechain,
                 model,
                 role,
                 timestamp,
@@ -695,7 +701,7 @@ export class UsageCacheRepository {
                 tool_tokens,
                 is_fallback_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         this.database.exec('BEGIN')
@@ -731,6 +737,8 @@ export class UsageCacheRepository {
                             interaction.content,
                             interaction.costUSD,
                             interaction.dedupeKey ?? null,
+                            interaction.fallbackDedupeKey ?? null,
+                            interaction.isSidechain ? 1 : 0,
                             interaction.model,
                             interaction.role,
                             interaction.timestamp,
@@ -878,7 +886,7 @@ export class UsageCacheRepository {
             && this.hasTableColumns('usage_scope_daily_usage_models', ['cost_usd'])
             && this.hasTableColumns('usage_scope_overview_cards', ['subvalue_json'])
             && this.hasTableColumns('usage_scope_interactions', ['extra_total_tokens'])
-            && this.hasTableColumns('indexed_fragment_interactions', ['extra_total_tokens'])
+            && this.hasTableColumns('indexed_fragment_interactions', ['extra_total_tokens', 'fallback_dedupe_key', 'is_sidechain'])
     }
 
     private hasTableColumns(tableName: string, columnNames: string[]) {
@@ -1062,6 +1070,12 @@ export class UsageCacheRepository {
 
             if (!indexedInteractionColumns.some(column => column.name === 'extra_total_tokens')) {
                 this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN extra_total_tokens INTEGER')
+            }
+            if (!indexedInteractionColumns.some(column => column.name === 'fallback_dedupe_key')) {
+                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN fallback_dedupe_key TEXT')
+            }
+            if (!indexedInteractionColumns.some(column => column.name === 'is_sidechain')) {
+                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN is_sidechain INTEGER')
             }
         }
     }
@@ -1968,7 +1982,9 @@ function groupIndexedInteractions(rows: IndexedInteractionRow[]) {
             content: row.content,
             costUSD: row.cost_usd,
             dedupeKey: row.dedupe_key,
+            fallbackDedupeKey: row.fallback_dedupe_key,
             index: row.interaction_index,
+            isSidechain: row.is_sidechain === 1,
             model: row.model,
             role: row.role,
             timestamp: row.timestamp,

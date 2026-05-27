@@ -48,11 +48,7 @@ export const openCodeUsageAdapter = {
             const database = openSqliteDatabase(filePath, { readOnly: true })
 
             try {
-                const rows: Array<{
-                    data: string
-                    id: string
-                    session_id: string
-                }> = database.prepare<[], {
+                const rows = database.prepare<{
                     data: string
                     id: string
                     session_id: string
@@ -241,7 +237,7 @@ function isDuplicatedByOpenCodeDatabase(filePath: string, interactionId: string)
     const database = openSqliteDatabase(databaseFile, { readOnly: true })
 
     try {
-        const row = database.prepare<[string], { id: string }>('SELECT id FROM message WHERE id = ? LIMIT 1').get(interactionId)
+        const row = database.prepare<{ id: string }>('SELECT id FROM message WHERE id = ? LIMIT 1').get(interactionId)
         return Boolean(row?.id)
     }
     catch {

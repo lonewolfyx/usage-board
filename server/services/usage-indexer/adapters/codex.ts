@@ -123,7 +123,7 @@ export const codexUsageAdapter = {
                 content: extractCodexContent(line),
                 costUSD: usage?.costUSD ?? 0,
                 dedupeKey: usage && timestamp
-                    ? getCodexDedupeKey(timestamp, model ?? CODEX_FALLBACK_MODEL, usage)
+                    ? getCodexDedupeKey(sessionId, timestamp, model ?? CODEX_FALLBACK_MODEL, usage)
                     : null,
                 index,
                 model: model ?? null,
@@ -151,8 +151,15 @@ function getCodexRawUsage(line: Record<string, unknown>, previousTotals: RawUsag
         const info = normalizeUnknownRecord(payload?.info)
         const lastUsage = normalizeRawUsage(info?.last_token_usage as RawUsage | null | undefined)
         const totalUsage = normalizeRawUsage(info?.total_token_usage as RawUsage | null | undefined)
+        const sessionUsage = lastUsage ?? (totalUsage ? subtractRawUsage(totalUsage, previousTotals) : null)
 
-        return lastUsage ?? (totalUsage ? subtractRawUsage(totalUsage, previousTotals) : null)
+        return sessionUsage
+            && sessionUsage.input_tokens === 0
+            && sessionUsage.cached_input_tokens === 0
+            && sessionUsage.output_tokens === 0
+            && sessionUsage.reasoning_output_tokens === 0
+            ? null
+            : sessionUsage
     }
 
     return getHeadlessCodexRawUsage(line)
@@ -419,11 +426,12 @@ function getCodexTimestamp(line: Record<string, unknown> | null | undefined) {
         || toIsoString(response?.createdAt)
 }
 
-function getCodexDedupeKey(timestamp: string, model: string, usage: { cachedInputTokens: number, inputTokens: number, outputTokens: number, reasoningOutputTokens: number, totalTokens: number }) {
+function getCodexDedupeKey(sessionId: string, timestamp: string, model: string, usage: { cachedInputTokens: number, inputTokens: number, outputTokens: number, reasoningOutputTokens: number, totalTokens: number }) {
     const rawInputTokens = usage.inputTokens + usage.cachedInputTokens
 
     return [
         'codex',
+        sessionId,
         timestamp,
         model,
         String(rawInputTokens),

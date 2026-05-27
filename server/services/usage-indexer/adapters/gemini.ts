@@ -1,5 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
-import type { GeminiSessionFile, GeminiTokenSnapshot, ModelPricingResolver } from '#shared/types/platform'
+import type { GeminiSessionFile, GeminiTokenSnapshot } from '#shared/types/platform'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
@@ -7,7 +7,7 @@ import {
     GEMINI_FALLBACK_PRICING_TABLE,
     GEMINI_MODEL_ALIASES,
 } from '#shared/platform/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     convertGeminiTokenUsage,
     extractGeminiMessageText,
@@ -52,7 +52,7 @@ export const geminiUsageAdapter = {
 
         return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'gemini'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const data = parseJsonFile(filePath)
 
         if (!isGeminiSessionFile(data)) {
@@ -83,7 +83,7 @@ export const geminiUsageAdapter = {
             const timestamp = toIsoString(message.timestamp)
             const model = message.model?.trim() || (message.tokens ? GEMINI_FALLBACK_MODEL : null)
             const usage = message.tokens && model
-                ? getGeminiInteractionUsage(message.tokens, model, resolvePricing)
+                ? getGeminiInteractionUsage(message.tokens)
                 : null
 
             addFragmentInteraction(fragment, {
@@ -110,8 +110,6 @@ export const geminiUsageAdapter = {
 
 function getGeminiInteractionUsage(
     tokens: GeminiTokenSnapshot,
-    model: string,
-    resolvePricing: ModelPricingResolver,
 ) {
     const baseUsage = convertGeminiTokenUsage(tokens)
     const extraTotalTokens = normalizeNumber(tokens.thoughts)
@@ -125,15 +123,9 @@ function getGeminiInteractionUsage(
         return null
     }
 
-    const costUSD = calculateUsageCostUSD({
-        cachedInputTokens: usage.cachedInputTokens,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-    }, resolvePricing(model))
-
     return {
         ...usage,
-        costUSD,
+        costUSD: 0,
         extraTotalTokens,
     }
 }

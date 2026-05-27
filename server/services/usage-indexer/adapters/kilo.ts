@@ -32,11 +32,7 @@ export const kiloUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows: Array<{
-                data: string
-                id: string
-                session_id: string
-            }> = database.prepare<[], {
+            const rows = database.prepare<{
                 data: string
                 id: string
                 session_id: string

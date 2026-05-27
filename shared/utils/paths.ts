@@ -18,9 +18,9 @@ const DEFAULT_CLAUDE_CODE_PATH = '.claude'
 const DEFAULT_CLAUDE_CONFIG_PATH = join(process.env.XDG_CONFIG_HOME?.trim() || join(USER_HOME_DIR, '.config'), 'claude')
 const DEFAULT_DROID_SESSIONS_DIR = join(USER_HOME_DIR, '.factory', 'sessions')
 const DEFAULT_GOOSE_DB_CANDIDATES = [
-    join(USER_HOME_DIR, '.local', 'share', 'goose', 'sessions', 'goose.db'),
-    join(USER_HOME_DIR, 'Library', 'Application Support', 'goose', 'sessions', 'goose.db'),
-    join(USER_HOME_DIR, '.local', 'share', 'Block', 'goose', 'sessions', 'goose.db'),
+    join(USER_HOME_DIR, '.local', 'share', 'goose', 'sessions', 'sessions.db'),
+    join(USER_HOME_DIR, 'Library', 'Application Support', 'goose', 'sessions', 'sessions.db'),
+    join(USER_HOME_DIR, '.local', 'share', 'Block', 'goose', 'sessions', 'sessions.db'),
 ] as const
 const DEFAULT_KILO_DIR = join(USER_HOME_DIR, '.local', 'share', 'kilo')
 const DEFAULT_KIMI_DIR = join(USER_HOME_DIR, '.kimi')
@@ -134,7 +134,7 @@ export function getGoosePaths(): string[] {
     const root = process.env.GOOSE_PATH_ROOT?.trim()
 
     if (root) {
-        const dbPath = resolve(root, 'data', 'sessions', 'goose.db')
+        const dbPath = resolve(root, 'data', 'sessions', 'sessions.db')
         return isFileSync(dbPath) ? [dbPath] : []
     }
 

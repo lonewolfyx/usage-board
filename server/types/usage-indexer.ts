@@ -5,7 +5,9 @@ export interface IndexedUsageInteraction {
     content: string
     costUSD: number
     dedupeKey?: string | null
+    fallbackDedupeKey?: string | null
     index: number
+    isSidechain?: boolean
     model: string | null
     role: ProjectInteractionRole
     timestamp: string | null

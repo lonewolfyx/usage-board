@@ -248,12 +248,14 @@ export interface IndexedInteractionRow {
     content: string
     cost_usd: number
     dedupe_key: string | null
+    fallback_dedupe_key: string | null
     extra_total_tokens: number | null
     fragment_id: number
     input_tokens: number | null
     interaction_index: number
     interaction_order: number
     is_fallback_model: number | null
+    is_sidechain: number | null
     model: string | null
     output_tokens: number | null
     reasoning_output_tokens: number | null

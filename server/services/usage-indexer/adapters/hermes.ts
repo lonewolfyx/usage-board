@@ -42,7 +42,7 @@ export const hermesUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows: Array<Record<string, unknown>> = database.prepare<[], Record<string, unknown>>(HERMES_SESSION_QUERY).all()
+            const rows = database.prepare<Record<string, unknown>>(HERMES_SESSION_QUERY).all()
             return rows
                 .map(row => parseHermesRow(row, resolvePricing))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
