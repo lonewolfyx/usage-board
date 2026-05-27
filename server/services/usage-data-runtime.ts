@@ -76,10 +76,7 @@ class UsageDataRuntime {
             await this.refreshNow()
         }
         else if (!this.state.hasIndexedCurrentProcess) {
-            await this.refreshNow()
-        }
-        else {
-            await this.refreshNow()
+            void this.refreshInBackground()
         }
 
         return this.state.bootstrap!
@@ -92,10 +89,7 @@ class UsageDataRuntime {
             await this.refreshNow()
         }
         else if (!this.state.hasIndexedCurrentProcess) {
-            await this.refreshNow()
-        }
-        else {
-            await this.refreshNow()
+            void this.refreshInBackground()
         }
 
         return this.state.projectCatalog
@@ -121,13 +115,24 @@ class UsageDataRuntime {
             throw new Error('Missing project name for project data request.')
         }
 
-        if (this.state.projectDetails === null) {
-            this.state.projectDetails = this.repository.loadProjectDetails()
+        const projectDetails = this.state.projectDetails ?? new Map<string, ProjectUsageDetail>()
+
+        if (!projectDetails.has(projectLabel)) {
+            const storedDetail = this.repository.loadProjectDetail(projectLabel)
+
+            if (storedDetail) {
+                projectDetails.set(projectLabel, storedDetail)
+                this.state.projectDetails = projectDetails
+            }
+            else {
+                await this.refreshNow()
+            }
+        }
+        else if (!this.state.hasIndexedCurrentProcess) {
+            void this.refreshInBackground()
         }
 
-        await this.refreshNow()
-
-        const hydratedDetail = this.state.projectDetails.get(projectLabel)
+        const hydratedDetail = this.state.projectDetails?.get(projectLabel) ?? null
 
         if (!hydratedDetail) {
             return null
