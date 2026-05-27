@@ -401,7 +401,9 @@ export class UsageCacheRepository {
             return null
         }
 
-        const scopes = this.loadHydratedUsageScopes('bootstrap', false)
+        const scopes = this.loadHydratedUsageScopes('bootstrap', {
+            includeInteractions: false,
+        })
         const payload = Object.fromEntries(
             PROJECT_USAGE_PLATFORMS.map(platform => [
                 platform,
@@ -515,46 +517,38 @@ export class UsageCacheRepository {
             ORDER BY label ASC
         `).all()
 
-        if (projects.length === 0) {
-            return new Map<string, ProjectUsageDetail>()
-        }
-
         const projectModels = groupProjectModels(this.database.prepare<ProjectModelRow>(`
             SELECT project_label, model, model_order
             FROM project_models
             ORDER BY project_label ASC, model_order ASC
         `).all())
         const scopes = this.loadHydratedUsageScopes('project')
-        const details = new Map<string, ProjectUsageDetail>()
 
-        for (const project of projects) {
-            const analyzing = Object.fromEntries(
-                PROJECT_USAGE_PLATFORMS.map((platform) => {
-                    const scopeKey = createUsageScopeKey('project', platform, project.label)
-                    const usage = scopes.get(scopeKey)
+        return buildProjectUsageDetails(projects, projectModels, scopes)
+    }
 
-                    return [
-                        platform,
-                        usage
-                            ? {
-                                    ...usage,
-                                    sessions: usage.sessionUsage,
-                                }
-                            : createEmptyProjectPlatformUsage(),
-                    ]
-                }),
-            ) as ProjectUsagePlatformRecord<ProjectPlatformUsage>
+    loadProjectDetail(label: string) {
+        const project = this.database.prepare<ProjectRow>(`
+            SELECT label, create_time, session_count
+            FROM projects
+            WHERE label = ?
+        `).get(label)
 
-            details.set(project.label, normalizeProjectUsageDetail({
-                analyzing,
-                createTime: project.create_time,
-                label: project.label,
-                models: projectModels.get(project.label) ?? [],
-                sessionCound: project.session_count,
-            }))
+        if (!project) {
+            return null
         }
 
-        return details
+        const projectModels = groupProjectModels(this.database.prepare<ProjectModelRow>(`
+            SELECT project_label, model, model_order
+            FROM project_models
+            WHERE project_label = ?
+            ORDER BY model_order ASC
+        `).all(label))
+        const scopes = this.loadHydratedUsageScopes('project', {
+            projectLabel: label,
+        })
+
+        return buildProjectUsageDetails([project], projectModels, scopes).get(label) ?? null
     }
 
     loadIndexedSourceFiles() {
@@ -1577,7 +1571,20 @@ export class UsageCacheRepository {
         }
     }
 
-    private loadHydratedUsageScopes(kind: UsageScopeKind, includeInteractions = true) {
+    private loadHydratedUsageScopes(kind: UsageScopeKind, options: {
+        includeInteractions?: boolean
+        projectLabel?: string
+    } = {}) {
+        const includeInteractions = options.includeInteractions ?? true
+        const baseScopeWhere = options.projectLabel === undefined
+            ? 'scope_kind = ?'
+            : 'scope_kind = ? AND project_label = ?'
+        const joinedScopeWhere = options.projectLabel === undefined
+            ? 'scope.scope_kind = ?'
+            : 'scope.scope_kind = ? AND scope.project_label = ?'
+        const scopeParameters = options.projectLabel === undefined
+            ? [kind]
+            : [kind, options.projectLabel]
         const scopes: UsageScopeRow[] = this.database.prepare<UsageScopeRow>(`
             SELECT
                 scope_key,
@@ -1593,9 +1600,9 @@ export class UsageCacheRepository {
                 today_top_project,
                 today_top_project_session_count
             FROM usage_scopes
-            WHERE scope_kind = ?
+            WHERE ${baseScopeWhere}
             ORDER BY project_label ASC, platform ASC
-        `).all(kind)
+        `).all(...scopeParameters)
 
         if (scopes.length === 0) {
             return new Map<string, PersistedUsageScope>()
@@ -1606,9 +1613,9 @@ export class UsageCacheRepository {
             SELECT card.scope_key, card.position, card.icon, card.name, card.value, card.detail, card.subvalue_json, card.trend, card.trend_tone
             FROM usage_scope_overview_cards AS card
             JOIN usage_scopes AS scope ON scope.scope_key = card.scope_key
-            WHERE scope.scope_kind = ?
+            WHERE ${joinedScopeWhere}
             ORDER BY card.scope_key ASC, card.position ASC
-        `).all(kind))
+        `).all(...scopeParameters))
         const tokenRows = groupTokenRows(
             this.database.prepare<TokenRowRow>(`
                 SELECT
@@ -1627,23 +1634,23 @@ export class UsageCacheRepository {
                     row.cost_usd
                 FROM usage_scope_token_rows AS row
                 JOIN usage_scopes AS scope ON scope.scope_key = row.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY row.scope_key ASC, row.bucket ASC, row.row_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
             this.database.prepare<TokenRowModelRow>(`
                 SELECT model.scope_key, model.bucket, model.row_id, model.model, model.model_order
                 FROM usage_scope_token_row_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY model.scope_key ASC, model.bucket ASC, model.row_id ASC, model.model_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
             this.database.prepare<TokenRowProjectRow>(`
                 SELECT project.scope_key, project.bucket, project.row_id, project.project, project.project_order
                 FROM usage_scope_token_row_projects AS project
                 JOIN usage_scopes AS scope ON scope.scope_key = project.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY project.scope_key ASC, project.bucket ASC, project.row_id ASC, project.project_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
         )
         const dailyUsage = groupDailyUsage(
             this.database.prepare<DailyUsageRow>(`
@@ -1659,9 +1666,9 @@ export class UsageCacheRepository {
                     daily.cost_usd
                 FROM usage_scope_daily_usage AS daily
                 JOIN usage_scopes AS scope ON scope.scope_key = daily.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY daily.scope_key ASC, daily.row_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
             this.database.prepare<DailyUsageModelRow>(`
                 SELECT
                     model.scope_key,
@@ -1677,17 +1684,17 @@ export class UsageCacheRepository {
                     model.is_fallback
                 FROM usage_scope_daily_usage_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY model.scope_key ASC, model.date ASC, model.model_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
         )
         const monthlyUsage = groupMonthlyModelUsage(this.database.prepare<MonthlyModelUsageRow>(`
             SELECT monthly.scope_key, monthly.row_order, monthly.month, monthly.model, monthly.token_total
             FROM usage_scope_monthly_model_usage AS monthly
             JOIN usage_scopes AS scope ON scope.scope_key = monthly.scope_key
-            WHERE scope.scope_kind = ?
+            WHERE ${joinedScopeWhere}
             ORDER BY monthly.scope_key ASC, monthly.row_order ASC
-        `).all(kind))
+        `).all(...scopeParameters))
         const projectUsage = groupProjectUsage(this.database.prepare<ProjectUsageRow>(`
             SELECT
                 usage.scope_key,
@@ -1703,9 +1710,9 @@ export class UsageCacheRepository {
                 usage.cost_usd
             FROM usage_scope_project_usage AS usage
             JOIN usage_scopes AS scope ON scope.scope_key = usage.scope_key
-            WHERE scope.scope_kind = ?
+            WHERE ${joinedScopeWhere}
             ORDER BY usage.scope_key ASC, usage.row_order ASC
-        `).all(kind))
+        `).all(...scopeParameters))
         const sessions = groupSessions(
             this.database.prepare<SessionRow>(`
                 SELECT
@@ -1733,16 +1740,16 @@ export class UsageCacheRepository {
                     session.top_model
                 FROM usage_scope_sessions AS session
                 JOIN usage_scopes AS scope ON scope.scope_key = session.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY session.scope_key ASC, session.session_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
             this.database.prepare<SessionModelRow>(`
                 SELECT model.scope_key, model.session_key, model.model, model.model_order
                 FROM usage_scope_session_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE scope.scope_kind = ?
+                WHERE ${joinedScopeWhere}
                 ORDER BY model.scope_key ASC, model.session_key ASC, model.model_order ASC
-            `).all(kind),
+            `).all(...scopeParameters),
             includeInteractions
                 ? this.database.prepare<ScopeInteractionRow>(`
                     SELECT
@@ -1769,9 +1776,9 @@ export class UsageCacheRepository {
                         interaction.is_fallback_model
                     FROM usage_scope_interactions AS interaction
                     JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
-                    WHERE scope.scope_kind = ?
+                    WHERE ${joinedScopeWhere}
                     ORDER BY interaction.scope_key ASC, interaction.session_key ASC, interaction.interaction_order ASC
-                `).all(kind)
+                `).all(...scopeParameters)
                 : [],
         )
         const hydrated = new Map<string, PersistedUsageScope>()
@@ -1959,6 +1966,43 @@ function groupProjectModels(rows: ProjectModelRow[]) {
     }
 
     return grouped
+}
+
+function buildProjectUsageDetails(
+    projects: ProjectRow[],
+    projectModels: Map<string, string[]>,
+    scopes: Map<string, PersistedUsageScope>,
+) {
+    const details = new Map<string, ProjectUsageDetail>()
+
+    for (const project of projects) {
+        const analyzing = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map((platform) => {
+                const scopeKey = createUsageScopeKey('project', platform, project.label)
+                const usage = scopes.get(scopeKey)
+
+                return [
+                    platform,
+                    usage
+                        ? {
+                                ...usage,
+                                sessions: usage.sessionUsage,
+                            }
+                        : createEmptyProjectPlatformUsage(),
+                ]
+            }),
+        ) as ProjectUsagePlatformRecord<ProjectPlatformUsage>
+
+        details.set(project.label, normalizeProjectUsageDetail({
+            analyzing,
+            createTime: project.create_time,
+            label: project.label,
+            models: projectModels.get(project.label) ?? [],
+            sessionCound: project.session_count,
+        }))
+    }
+
+    return details
 }
 
 function groupIndexedFileProjects(rows: IndexedFileProjectRow[]) {
