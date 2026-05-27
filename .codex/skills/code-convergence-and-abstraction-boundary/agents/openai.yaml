@@ -1,0 +1,7 @@
+interface:
+  display_name: "Code Convergence Boundary"
+  short_description: "Enforce convergence and abstraction boundaries"
+  default_prompt: "Use $code-convergence-and-abstraction-boundary to review or refactor this code under the project's convergence and abstraction boundary rules."
+
+policy:
+  allow_implicit_invocation: true
