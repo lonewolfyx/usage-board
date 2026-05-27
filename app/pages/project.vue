@@ -222,7 +222,9 @@
                             >
                                 <DashboardProjectSessionTable
                                     v-if="isModuleLoaded('session_list')"
-                                    :items="allSessionRows"
+                                    :fetch-page="page => fetchProjectSessionListPage('all', page).then(() => allSessionRowsPage)"
+                                    :items="allSessionRowsPage.items"
+                                    :pagination="allSessionRowsPage.pagination"
                                 />
                                 <Skeleton v-else class="h-72 w-full rounded-md" />
                             </StatisticalAnalysisPanel>
@@ -234,8 +236,10 @@
                                 title="Daily Token Usage"
                             >
                                 <DashboardProjectTokenUsageTable
-                                    v-if="isModuleLoaded('daily_trend')"
-                                    :items="allDailyUsageRows"
+                                    v-if="isModuleLoaded('token_usage')"
+                                    :fetch-page="page => fetchProjectTokenUsagePage('all', page).then(() => allDailyUsageRowsPage as PaginatedResponse<ProjectTokenUsageRow>)"
+                                    :items="allDailyUsageRowsPage.items"
+                                    :pagination="allDailyUsageRowsPage.pagination"
                                 />
                                 <Skeleton v-else class="h-72 w-full rounded-md" />
                             </StatisticalAnalysisPanel>
@@ -304,11 +308,16 @@
 
                             <UsageAnalyticsTokenUsageTabsPanel
                                 v-if="isModuleLoaded('token_usage') && isModuleLoaded('session_list')"
-                                :daily-items="platformViews[tab.value].dayRows"
-                                :monthly-items="platformViews[tab.value].monthRows"
+                                :daily-items="platformViews[tab.value].dayRows.items"
+                                :daily-pagination="platformViews[tab.value].dayRows.pagination"
+                                :fetch-page="(tokenTab, page) => fetchProjectTokenUsagePage(tab.value, page).then(() => getProjectTokenPage(tab.value, tokenTab))"
+                                :monthly-items="platformViews[tab.value].monthRows.items"
+                                :monthly-pagination="platformViews[tab.value].monthRows.pagination"
                                 :product-name="tab.label"
-                                :session-items="platformViews[tab.value].sessionRows"
-                                :weekly-items="platformViews[tab.value].weekRows"
+                                :session-items="platformViews[tab.value].sessionRows.items"
+                                :session-pagination="platformViews[tab.value].sessionRows.pagination"
+                                :weekly-items="platformViews[tab.value].weekRows.items"
+                                :weekly-pagination="platformViews[tab.value].weekRows.pagination"
                                 class="md:col-span-12"
                             />
                             <Skeleton v-else class="h-72 rounded-md md:col-span-12" />
@@ -321,7 +330,9 @@
                             >
                                 <DashboardProjectSessionTable
                                     v-if="isModuleLoaded('session_list')"
-                                    :items="platformViews[tab.value].sessionTableRows"
+                                    :fetch-page="page => fetchProjectSessionListPage(tab.value, page).then(() => platformViews[tab.value].sessionTableRows)"
+                                    :items="platformViews[tab.value].sessionTableRows.items"
+                                    :pagination="platformViews[tab.value].sessionTableRows.pagination"
                                 />
                                 <Skeleton v-else class="h-72 w-full rounded-md" />
                             </StatisticalAnalysisPanel>
@@ -348,6 +359,8 @@
 </template>
 
 <script lang="ts" setup>
+import type { PaginatedResponse } from '#shared/types/pagination'
+import type { ProjectTokenUsageRow } from '#shared/types/project-dashboard'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { cn } from '~/lib/utils'
@@ -355,13 +368,15 @@ import { cn } from '~/lib/utils'
 const {
     activeScopeItems,
     activeTab,
-    allDailyUsageRows,
+    allDailyUsageRowsPage,
     allModelChart,
     allOverviewCards,
-    allSessionRows,
+    allSessionRowsPage,
     dailySeries,
     dailyTooltipLabels,
     dailyTrendLabels,
+    fetchProjectSessionListPage,
+    fetchProjectTokenUsagePage,
     isModuleLoaded,
     isProjectModuleLoading,
     isProjectSelectDisabled,
@@ -394,6 +409,24 @@ function handleProjectSelect(projectId: string) {
     }
 
     selectedProjectId.value = projectId
+}
+
+function getProjectTokenPage(platform: ProjectUsagePlatform, tab: TokenTabValue) {
+    const view = platformViews.value[platform]
+
+    if (tab === 'day') {
+        return view.dayRows
+    }
+
+    if (tab === 'week') {
+        return view.weekRows
+    }
+
+    if (tab === 'month') {
+        return view.monthRows
+    }
+
+    return view.sessionRows
 }
 
 function getProjectInitials(name: string) {

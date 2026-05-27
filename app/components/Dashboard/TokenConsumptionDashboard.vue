@@ -91,18 +91,25 @@
                     />
                     <UsageAnalyticsTokenUsageTabsPanel
                         :daily-items="dailyRows"
+                        :daily-pagination="dailyRowsPagination"
                         :error-message="insightsErrorMessage"
+                        :fetch-page="fetchTokenUsagePage"
                         :loading="insightsLoading"
                         :monthly-items="monthlyRows"
+                        :monthly-pagination="monthlyRowsPagination"
                         :product-name="productName"
                         :session-items="sessionRows"
+                        :session-pagination="sessionRowsPagination"
                         :weekly-items="weeklyRows"
+                        :weekly-pagination="weeklyRowsPagination"
                         class="md:col-span-12"
                     />
                     <UsageAnalyticsSessionUsageTable
                         :error-message="sessionErrorMessage"
+                        :fetch-page="fetchSessionUsagePage"
                         :items="sessionUsage"
                         :loading="sessionLoading"
+                        :pagination="sessionUsagePagination"
                         :product-name="productName"
                         class="md:col-span-12"
                     />
@@ -113,6 +120,8 @@
 </template>
 
 <script setup lang="ts">
+import type { AnalysisAgentSessionRow } from '#shared/types/analysis'
+import type { FetchPage, PaginationMeta } from '#shared/types/pagination'
 import { cn } from '~/lib/utils'
 
 defineOptions({
@@ -121,20 +130,27 @@ defineOptions({
 
 defineProps<{
     dailyRows: UsageAnalyticsTokenUsageRow[]
+    dailyRowsPagination: PaginationMeta
     dailyTokenUsage: DailyTokenUsage[]
     errorMessage?: string
+    fetchSessionUsagePage?: FetchPage<AnalysisAgentSessionRow>
+    fetchTokenUsagePage?: (tab: TokenTabValue, page: number) => ReturnType<FetchPage<UsageAnalyticsTokenUsageRow>>
     insightsErrorMessage?: string
     insightsLoading?: boolean
     loading?: boolean
     monthlyModelUsage: MonthlyModelUsage[]
     monthlyRows: UsageAnalyticsTokenUsageRow[]
+    monthlyRowsPagination: PaginationMeta
     overviewCards: UsageOverviewCard[]
     productName: string
     projectUsage: ProjectUsageItem[]
     sessionErrorMessage?: string
     sessionLoading?: boolean
     sessionRows: UsageAnalyticsTokenUsageRow[]
-    sessionUsage: UsageAnalyticsSessionUsageItem[]
+    sessionRowsPagination: PaginationMeta
+    sessionUsage: AnalysisAgentSessionRow[]
+    sessionUsagePagination: PaginationMeta
     weeklyRows: UsageAnalyticsTokenUsageRow[]
+    weeklyRowsPagination: PaginationMeta
 }>()
 </script>

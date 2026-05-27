@@ -24,7 +24,7 @@
                         Sessions
                     </p>
                     <p class="mt-1 text-lg font-semibold tabular-nums">
-                        {{ items.length }}
+                        {{ totalRows }}
                     </p>
                 </div>
                 <div class="rounded-md border px-3 py-2">
@@ -45,79 +45,25 @@
                 </div>
             </div>
 
-            <Table>
-                <TableHeader>
-                    <TableRow>
-                        <TableHead>Session ID</TableHead>
-                        <TableHead>Project</TableHead>
-                        <TableHead>Thread</TableHead>
-                        <TableHead>Model</TableHead>
-                        <TableHead>Started</TableHead>
-                        <TableHead class="text-right">
-                            Duration
-                        </TableHead>
-                        <TableHead class="text-right">
-                            Input
-                        </TableHead>
-                        <TableHead class="text-right">
-                            Output
-                        </TableHead>
-                        <TableHead class="text-right">
-                            Total Tokens
-                        </TableHead>
-                        <TableHead class="text-right">
-                            Cost
-                        </TableHead>
-                    </TableRow>
-                </TableHeader>
-                <TableBody>
-                    <TableRow v-for="session in paginatedItems" :key="session.id">
-                        <TableCell class="max-w-80 truncate font-mono text-xs">
-                            {{ session.sessionId }}
-                        </TableCell>
-                        <TableCell class="font-medium">
-                            {{ session.project }}
-                        </TableCell>
-                        <TableCell class="max-w-64 truncate">
-                            {{ session.threadName }}
-                        </TableCell>
-                        <TableCell>{{ session.model }}</TableCell>
-                        <TableCell class="whitespace-nowrap">
-                            {{ formatDateTime(session.startedAt) }}
-                        </TableCell>
-                        <TableCell class="text-right tabular-nums">
-                            {{ session.duration }}
-                        </TableCell>
-                        <TableCell class="text-right tabular-nums">
-                            {{ formatNumber(session.inputTokens) }}
-                        </TableCell>
-                        <TableCell class="text-right tabular-nums">
-                            {{ formatNumber(session.outputTokens) }}
-                        </TableCell>
-                        <TableCell class="text-right tabular-nums">
-                            {{ formatNumber(session.tokenTotal) }}
-                        </TableCell>
-                        <TableCell class="text-right tabular-nums">
-                            {{ formatCurrency(session.costUSD) }}
-                        </TableCell>
-                    </TableRow>
-                    <TableEmpty v-if="items.length === 0" :colspan="10">
-                        No {{ productName }} sessions found.
-                    </TableEmpty>
-                </TableBody>
-            </Table>
-
-            <UsageAnalyticsPaginationFooter
-                v-model:page="page"
-                :page-count="pageCount"
-                :page-size="pageSize"
-                :total="items.length"
+            <p v-if="tableError" class="mb-3 text-xs text-destructive">
+                {{ tableError.message }}
+            </p>
+            <DataTable
+                :columns="columns"
+                :data="pageData.items"
+                :empty-text="`No ${productName} sessions found.`"
+                :pagination="pageData.pagination"
+                @page-change="setPage"
             />
         </template>
     </StatisticalAnalysisPanel>
 </template>
 
 <script setup lang="ts">
+import type { AnalysisAgentSessionRow } from '#shared/types/analysis'
+import type { FetchPage, PaginatedResponse } from '#shared/types/pagination'
+import type { ColumnDef } from '@tanstack/vue-table'
+import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import { formatNumber } from '@lonewolfyx/utils'
 
 defineOptions({
@@ -126,26 +72,91 @@ defineOptions({
 
 const props = withDefaults(defineProps<{
     errorMessage?: string
-    items: UsageAnalyticsSessionUsageItem[]
+    fetchPage?: FetchPage<AnalysisAgentSessionRow>
+    items: AnalysisAgentSessionRow[]
     loading?: boolean
-    pageSize?: number
+    pagination?: PaginatedResponse<AnalysisAgentSessionRow>['pagination']
     productName?: string
 }>(), {
-    pageSize: 10,
     productName: 'Product',
 })
 
-const page = shallowRef(1)
+const initialPage = computed<PaginatedResponse<AnalysisAgentSessionRow>>(() => ({
+    items: props.items,
+    pagination: props.pagination ?? {
+        page: 1,
+        pageCount: Math.max(1, Math.ceil(props.items.length / DEFAULT_PAGE_SIZE)),
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: props.items.length,
+    },
+}))
+const { error: tableError, pageData, setPage } = usePaginatedTable(initialPage, props.fetchPage)
+const columns: ColumnDef<AnalysisAgentSessionRow>[] = [
+    {
+        accessorKey: 'sessionId',
+        cell: ({ row }) => row.original.sessionId,
+        header: 'Session ID',
+        meta: { class: 'max-w-80 truncate font-mono text-xs' },
+    },
+    {
+        accessorKey: 'project',
+        header: 'Project',
+        meta: { class: 'font-medium' },
+    },
+    {
+        accessorKey: 'threadName',
+        header: 'Thread',
+        meta: { class: 'max-w-64 truncate' },
+    },
+    {
+        accessorKey: 'model',
+        header: 'Model',
+    },
+    {
+        accessorKey: 'startedAt',
+        cell: ({ row }) => formatDateTime(row.original.startedAt),
+        header: 'Started',
+        meta: { class: 'whitespace-nowrap' },
+    },
+    {
+        accessorKey: 'duration',
+        header: 'Duration',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'inputTokens',
+        cell: ({ row }) => formatNumber(row.original.inputTokens),
+        header: 'Input',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'outputTokens',
+        cell: ({ row }) => formatNumber(row.original.outputTokens),
+        header: 'Output',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'tokenTotal',
+        cell: ({ row }) => formatNumber(row.original.tokenTotal),
+        header: 'Total Tokens',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'costUSD',
+        cell: ({ row }) => formatCurrency(row.original.costUSD),
+        header: 'Cost',
+        meta: { class: 'text-right tabular-nums' },
+    },
+]
+const totalCost = computed(() => pageData.value.items.reduce((sum, session) => sum + session.costUSD, 0))
+const totalTokens = computed(() => pageData.value.items.reduce((sum, session) => sum + session.tokenTotal, 0))
+const totalRows = computed(() => pageData.value.pagination.total)
 
-const pageCount = computed(() => Math.max(1, Math.ceil(props.items.length / props.pageSize)))
-const paginatedItems = computed(() => {
-    const safePage = Math.min(page.value, pageCount.value)
-    const start = (safePage - 1) * props.pageSize
-
-    return props.items.slice(start, start + props.pageSize)
+watch(() => props.fetchPage, (fetchPage) => {
+    if (fetchPage && pageData.value.pagination.page !== 1) {
+        void setPage(1)
+    }
 })
-const totalCost = computed(() => props.items.reduce((sum, session) => sum + session.costUSD, 0))
-const totalTokens = computed(() => props.items.reduce((sum, session) => sum + session.tokenTotal, 0))
 
 function formatDateTime(value: string) {
     return new Intl.DateTimeFormat('en-US', {

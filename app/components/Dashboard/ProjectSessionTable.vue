@@ -1,115 +1,104 @@
 <template>
     <div>
-        <Table>
-            <TableHeader>
-                <TableRow>
-                    <TableHead>Session ID</TableHead>
-                    <TableHead>Tool</TableHead>
-                    <TableHead>Model</TableHead>
-                    <TableHead>Started</TableHead>
-                    <TableHead class="text-right">
-                        Duration
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Input
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Output
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Reasoning
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Cache Read
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Tokens
-                    </TableHead>
-                    <TableHead class="text-right">
-                        Cost
-                    </TableHead>
-                </TableRow>
-            </TableHeader>
-            <TableBody>
-                <TableRow v-for="item in paginatedItems" :key="item.id">
-                    <TableCell
-                        class="max-w-72 truncate font-medium font-mono text-xs"
-                        :title="item.threadName ? `${item.sessionId} (${item.threadName})` : item.sessionId"
-                        translate="no"
-                    >
-                        {{ item.sessionId }}
-                    </TableCell>
-                    <TableCell>
-                        <div class="flex items-center gap-2">
-                            <Icon :name="PROJECT_USAGE_PLATFORM_META[item.platform].aiIcon" class="size-5" />
-                            <span>{{ PROJECT_USAGE_PLATFORM_META[item.platform].label }}</span>
-                        </div>
-                    </TableCell>
-                    <TableCell class="max-w-56 truncate" translate="no">
-                        {{ item.model }}
-                    </TableCell>
-                    <TableCell class="whitespace-nowrap">
-                        {{ item.startedAt }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.duration }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.inputTokens }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.outputTokens }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.reasoningTokens }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.cacheTokens }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.tokens }}
-                    </TableCell>
-                    <TableCell class="text-right tabular-nums">
-                        {{ item.cost }}
-                    </TableCell>
-                </TableRow>
-                <TableEmpty v-if="items.length === 0" :colspan="11">
-                    No sessions found.
-                </TableEmpty>
-            </TableBody>
-        </Table>
-
-        <UsageAnalyticsPaginationFooter
-            v-if="items.length > pageSize"
-            v-model:page="page"
-            :page-count="pageCount"
-            :page-size="pageSize"
-            :total="items.length"
+        <p v-if="tableError" class="mb-3 text-xs text-destructive">
+            {{ tableError.message }}
+        </p>
+        <DataTable
+            :columns="columns"
+            :data="pageData.items"
+            empty-text="No sessions found."
+            :pagination="pageData.pagination"
+            @page-change="setPage"
         />
     </div>
 </template>
 
 <script setup lang="ts">
+import type { FetchPage, PaginatedResponse } from '#shared/types/pagination'
 import type { ProjectSessionTableRow } from '#shared/types/project-dashboard'
+import type { ColumnDef } from '@tanstack/vue-table'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 
 const props = withDefaults(defineProps<{
+    fetchPage?: FetchPage<ProjectSessionTableRow>
     items: ProjectSessionTableRow[]
-    pageSize?: number
+    pagination?: PaginatedResponse<ProjectSessionTableRow>['pagination']
 }>(), {
-    pageSize: 10,
 })
 
-const page = shallowRef(1)
-const pageCount = computed(() => Math.max(1, Math.ceil(props.items.length / props.pageSize)))
-const paginatedItems = computed(() => {
-    const safePage = Math.min(page.value, pageCount.value)
-    const start = (safePage - 1) * props.pageSize
-
-    return props.items.slice(start, start + props.pageSize)
-})
-
-watch(() => props.items, () => {
-    page.value = 1
-})
+const initialPage = computed<PaginatedResponse<ProjectSessionTableRow>>(() => ({
+    items: props.items,
+    pagination: props.pagination ?? {
+        page: 1,
+        pageCount: Math.max(1, Math.ceil(props.items.length / DEFAULT_PAGE_SIZE)),
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: props.items.length,
+    },
+}))
+const { error: tableError, pageData, setPage } = usePaginatedTable(initialPage, props.fetchPage)
+const columns: ColumnDef<ProjectSessionTableRow>[] = [
+    {
+        accessorKey: 'sessionId',
+        cell: ({ row }) => row.original.sessionId,
+        header: 'Session ID',
+        meta: { class: 'max-w-72 truncate font-medium font-mono text-xs' },
+    },
+    {
+        accessorKey: 'platform',
+        cell: ({ row }) => h('div', { class: 'flex items-center gap-2' }, [
+            h(resolveComponent('Icon'), {
+                class: 'size-5',
+                name: PROJECT_USAGE_PLATFORM_META[row.original.platform].aiIcon,
+            }),
+            h('span', PROJECT_USAGE_PLATFORM_META[row.original.platform].label),
+        ]),
+        header: 'Tool',
+    },
+    {
+        accessorKey: 'model',
+        header: 'Model',
+        meta: { class: 'max-w-56 truncate' },
+    },
+    {
+        accessorKey: 'startedAt',
+        header: 'Started',
+        meta: { class: 'whitespace-nowrap' },
+    },
+    {
+        accessorKey: 'duration',
+        header: 'Duration',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'inputTokens',
+        header: 'Input',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'outputTokens',
+        header: 'Output',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'reasoningTokens',
+        header: 'Reasoning',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'cacheTokens',
+        header: 'Cache Read',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'tokens',
+        header: 'Tokens',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'cost',
+        header: 'Cost',
+        meta: { class: 'text-right tabular-nums' },
+    },
+]
 </script>

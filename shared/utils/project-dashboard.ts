@@ -162,12 +162,13 @@ export function toProjectDisplayDailyUsageRows(
 export function toProjectSessionTableRow(
     session: ProjectSessionListItem,
     platform: ProjectUsagePlatform,
+    rowId = `${platform}:${session.id}`,
 ): ProjectSessionTableRow {
     return {
         cacheTokens: formatNumber(session.cachedInputTokens),
         cost: formatCurrency(session.costUSD),
         duration: session.duration || '-',
-        id: `${platform}:${session.id}`,
+        id: rowId,
         inputTokens: formatNumber(session.inputTokens),
         model: session.models?.join(', ') || session.model || 'unknown',
         outputTokens: formatNumber(session.outputTokens),

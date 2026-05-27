@@ -1,5 +1,5 @@
-import type { UsageAnalyticsSessionUsageItem } from './usage-analytics'
-import type { DailyTokenUsage, HourlyUsagePoint, LoadUsageResult, MonthlyModelUsage, ProjectUsageItem, RankedUsageItem, UsageOverviewCard } from './usage-dashboard'
+import type { PaginatedResponse, PaginationMeta } from './pagination'
+import type { DailyTokenUsage, HourlyUsagePoint, LoadUsageResult, MonthlyModelUsage, ProjectUsageItem, RankedUsageItem, SessionUsageItem, UsageOverviewCard } from './usage-dashboard'
 
 export const ANALYSIS_AGENT_TOKEN_TYPES = ['day', 'week', 'month', 'session'] as const
 
@@ -18,9 +18,39 @@ export interface AnalysisCacheResponse {
 }
 
 export interface AnalysisSessionResponse {
-    items: UsageAnalyticsSessionUsageItem[]
+    items: SessionUsageItem[]
     totalSessions: number
 }
+
+export interface AnalysisDailyTokenRow {
+    cachedInputTokens: number
+    costUSD: number
+    date: string
+    inputTokens: number
+    models: string[]
+    outputTokens: number
+    reasoningOutputTokens: number
+    totalTokens: number
+}
+
+export type AnalysisDailyTokenPageResponse = PaginatedResponse<AnalysisDailyTokenRow>
+export type AnalysisAgentTokenPageResponse = PaginatedResponse<LoadUsageResult['dailyRows'][number]>
+
+export interface AnalysisAgentSessionRow {
+    costUSD: number
+    duration: string
+    id: string
+    inputTokens: number
+    model: string
+    outputTokens: number
+    project: string
+    sessionId: string
+    startedAt: string
+    threadName: string
+    tokenTotal: number
+}
+
+export type AnalysisAgentSessionPageResponse = PaginatedResponse<AnalysisAgentSessionRow>
 
 export interface HomeDashboardCoreModules {
     hotProjects: ProjectUsageItem[]
@@ -54,7 +84,9 @@ export type AgentDashboardCoreModules = Pick<
     | 'dailyTokenUsage'
     | 'monthlyModelUsage'
     | 'overviewCards'
->
+> & {
+    dailyRowsPagination: PaginationMeta
+}
 
 export type AgentDashboardInsightsModules = Pick<
     LoadUsageResult,
@@ -62,8 +94,15 @@ export type AgentDashboardInsightsModules = Pick<
     | 'projectUsage'
     | 'sessionRows'
     | 'weeklyRows'
->
+> & {
+    monthlyRowsPagination: PaginationMeta
+    sessionRowsPagination: PaginationMeta
+    weeklyRowsPagination: PaginationMeta
+}
 
-export type AgentDashboardSessionModules = Pick<LoadUsageResult, 'sessionUsage'>
+export interface AgentDashboardSessionModules {
+    sessionUsage: AnalysisAgentSessionRow[]
+    sessionUsagePagination: PaginationMeta
+}
 
 export type AgentDashboardModules = AgentDashboardCoreModules & AgentDashboardInsightsModules & AgentDashboardSessionModules

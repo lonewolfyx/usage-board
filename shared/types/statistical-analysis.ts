@@ -1,11 +1,3 @@
-import type { ProjectUsageItem, TrendTone } from './usage-dashboard'
-
-export interface FeaturedProjectItem extends ProjectUsageItem {
-    shortName: string
-    trend: string
-    trendTone: TrendTone
-}
-
 export interface SessionProjectDatum {
     costLabel: string
     costScore: number

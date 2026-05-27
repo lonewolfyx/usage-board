@@ -31,81 +31,15 @@
                     class="mt-4"
                     :value="tab.value"
                 >
-                    <Table>
-                        <TableHeader>
-                            <TableRow>
-                                <TableHead>{{ tab.heading }}</TableHead>
-                                <TableHead>Models</TableHead>
-                                <TableHead>Projects</TableHead>
-                                <TableHead class="text-right">
-                                    Sessions
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Input
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Output
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Reasoning
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Cache Read
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Total Tokens
-                                </TableHead>
-                                <TableHead class="text-right">
-                                    Cost
-                                </TableHead>
-                            </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                            <TableRow
-                                v-for="item in tabState[tab.value].paginatedItems"
-                                :key="item.id"
-                            >
-                                <TableCell class="max-w-72 truncate font-medium">
-                                    {{ item.label }}
-                                </TableCell>
-                                <TableCell>{{ formatList(item.models) }}</TableCell>
-                                <TableCell class="max-w-56 truncate">
-                                    {{ formatList(item.projects) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ item.sessionCount }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatNumber(item.inputTokens) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatNumber(item.outputTokens) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatNumber(item.reasoningOutputTokens) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatNumber(item.cachedInputTokens) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatNumber(item.totalTokens) }}
-                                </TableCell>
-                                <TableCell class="text-right tabular-nums">
-                                    {{ formatCurrency(item.costUSD) }}
-                                </TableCell>
-                            </TableRow>
-                            <TableEmpty v-if="tabState[tab.value].items.length === 0" :colspan="10">
-                                No {{ productName }} token usage found.
-                            </TableEmpty>
-                        </TableBody>
-                    </Table>
-
-                    <UsageAnalyticsPaginationFooter
-                        :page="tabState[tab.value].page"
-                        :page-count="tabState[tab.value].pageCount"
-                        :page-size="pageSize"
-                        :total="tabState[tab.value].items.length"
-                        @update:page="page => setPage(tab.value, page)"
+                    <p v-if="tableError" class="mb-3 text-xs text-destructive">
+                        {{ tableError.message }}
+                    </p>
+                    <DataTable
+                        :columns="columnsByTab[tab.value]"
+                        :data="tabState[tab.value].items"
+                        :empty-text="`No ${productName} token usage found.`"
+                        :pagination="tabState[tab.value].pagination"
+                        @page-change="page => setPage(tab.value, page)"
                     />
                 </TabsContent>
             </Tabs>
@@ -114,6 +48,9 @@
 </template>
 
 <script setup lang="ts">
+import type { FetchPage, PaginatedResponse } from '#shared/types/pagination'
+import type { ColumnDef } from '@tanstack/vue-table'
+import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import { formatNumber } from '@lonewolfyx/utils'
 
 defineOptions({
@@ -123,24 +60,22 @@ defineOptions({
 const props = withDefaults(defineProps<{
     dailyItems: UsageAnalyticsTokenUsageRow[]
     errorMessage?: string
+    fetchPage?: (tab: TokenTabValue, page: number) => ReturnType<FetchPage<UsageAnalyticsTokenUsageRow>>
     loading?: boolean
     weeklyItems: UsageAnalyticsTokenUsageRow[]
     monthlyItems: UsageAnalyticsTokenUsageRow[]
     sessionItems: UsageAnalyticsTokenUsageRow[]
-    pageSize?: number
+    dailyPagination?: PaginatedResponse<UsageAnalyticsTokenUsageRow>['pagination']
+    weeklyPagination?: PaginatedResponse<UsageAnalyticsTokenUsageRow>['pagination']
+    monthlyPagination?: PaginatedResponse<UsageAnalyticsTokenUsageRow>['pagination']
+    sessionPagination?: PaginatedResponse<UsageAnalyticsTokenUsageRow>['pagination']
     productName?: string
 }>(), {
-    pageSize: 10,
     productName: 'Product',
 })
 
 const activeTab = shallowRef<TokenTabValue>('day')
-const pageByTab = reactive<Record<TokenTabValue, number>>({
-    day: 1,
-    month: 1,
-    session: 1,
-    week: 1,
-})
+const tableError = shallowRef<Error | null>(null)
 
 const tabs: TokenTab[] = [
     { heading: 'Date', label: 'Day', value: 'day' },
@@ -155,27 +90,117 @@ const itemsByTab = computed<Record<TokenTabValue, UsageAnalyticsTokenUsageRow[]>
     session: props.sessionItems,
     week: props.weeklyItems,
 }))
+const paginationByTab = computed<Record<TokenTabValue, PaginatedResponse<UsageAnalyticsTokenUsageRow>['pagination']>>(() => ({
+    day: props.dailyPagination ?? buildLocalPagination(props.dailyItems),
+    month: props.monthlyPagination ?? buildLocalPagination(props.monthlyItems),
+    session: props.sessionPagination ?? buildLocalPagination(props.sessionItems),
+    week: props.weeklyPagination ?? buildLocalPagination(props.weeklyItems),
+}))
 
 const tabState = computed<Record<TokenTabValue, TokenTabState>>(() => Object.fromEntries(tabs.map((tab) => {
     const items = itemsByTab.value[tab.value]
-    const pageCount = Math.max(1, Math.ceil(items.length / props.pageSize))
-    const page = Math.min(pageByTab[tab.value], pageCount)
-    const start = (page - 1) * props.pageSize
+    const pagination = paginationByTab.value[tab.value]
 
     return [tab.value, {
         items,
-        page,
-        pageCount,
-        paginatedItems: items.slice(start, start + props.pageSize),
+        page: pagination.page,
+        pageCount: pagination.pageCount,
+        pagination,
     }]
 })) as Record<TokenTabValue, TokenTabState>)
 
-function setPage(tab: TokenTabValue, page: number) {
-    const pageCount = tabState.value[tab].pageCount
-    pageByTab[tab] = Math.min(pageCount, Math.max(1, page))
+const baseColumns: ColumnDef<UsageAnalyticsTokenUsageRow>[] = [
+    {
+        accessorKey: 'models',
+        cell: ({ row }) => formatList(row.original.models),
+        header: 'Models',
+    },
+    {
+        accessorKey: 'projects',
+        cell: ({ row }) => formatList(row.original.projects),
+        header: 'Projects',
+        meta: { class: 'max-w-56 truncate' },
+    },
+    {
+        accessorKey: 'sessionCount',
+        header: 'Sessions',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'inputTokens',
+        cell: ({ row }) => formatNumber(row.original.inputTokens),
+        header: 'Input',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'outputTokens',
+        cell: ({ row }) => formatNumber(row.original.outputTokens),
+        header: 'Output',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'reasoningOutputTokens',
+        cell: ({ row }) => formatNumber(row.original.reasoningOutputTokens),
+        header: 'Reasoning',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'cachedInputTokens',
+        cell: ({ row }) => formatNumber(row.original.cachedInputTokens),
+        header: 'Cache Read',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'totalTokens',
+        cell: ({ row }) => formatNumber(row.original.totalTokens),
+        header: 'Total Tokens',
+        meta: { class: 'text-right tabular-nums' },
+    },
+    {
+        accessorKey: 'costUSD',
+        cell: ({ row }) => formatCurrency(row.original.costUSD),
+        header: 'Cost',
+        meta: { class: 'text-right tabular-nums' },
+    },
+]
+const columnsByTab = computed<Record<TokenTabValue, ColumnDef<UsageAnalyticsTokenUsageRow>[]>>(() => Object.fromEntries(tabs.map(tab => [
+    tab.value,
+    [
+        {
+            accessorKey: 'label',
+            cell: ({ row }) => row.original.label,
+            header: tab.heading,
+            meta: { class: 'max-w-72 truncate font-medium' },
+        },
+        ...baseColumns,
+    ],
+])) as Record<TokenTabValue, ColumnDef<UsageAnalyticsTokenUsageRow>[]>)
+
+async function setPage(tab: TokenTabValue, page: number) {
+    if (!props.fetchPage) {
+        return
+    }
+
+    tableError.value = null
+
+    try {
+        await props.fetchPage(tab, page)
+    }
+    catch (error) {
+        tableError.value = error instanceof Error ? error : new Error('Failed to load token usage page.')
+    }
 }
 
 function formatList(items: string[]) {
     return items.length > 0 ? items.join(', ') : 'None'
+}
+
+function buildLocalPagination(items: unknown[]) {
+    return {
+        page: 1,
+        pageCount: Math.max(1, Math.ceil(items.length / DEFAULT_PAGE_SIZE)),
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: items.length,
+    }
 }
 </script>

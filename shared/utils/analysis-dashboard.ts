@@ -10,9 +10,11 @@ import type {
     HomeDashboardTodayInsights,
     HomeDashboardUsageModules,
 } from '#shared/types/analysis'
+import type { PaginationMeta } from '#shared/types/pagination'
 import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, RankedUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -29,6 +31,8 @@ import {
     roundCurrency,
 } from '#shared/utils/usage-dashboard'
 import { formatNumber } from '@lonewolfyx/utils'
+
+const TOP_PROJECT_LIMIT = 10
 
 export function createEmptyHomeDashboardModules(): HomeDashboardModules {
     return {
@@ -76,6 +80,7 @@ export function createEmptyAgentDashboardCoreModules(): AgentDashboardCoreModule
 
     return {
         dailyRows: source.dailyRows,
+        dailyRowsPagination: createEmptyPaginationMeta(),
         dailyTokenUsage: source.dailyTokenUsage,
         monthlyModelUsage: source.monthlyModelUsage,
         overviewCards: source.overviewCards,
@@ -87,15 +92,28 @@ export function createEmptyAgentDashboardInsightsModules(): AgentDashboardInsigh
 
     return {
         monthlyRows: source.monthlyRows,
+        monthlyRowsPagination: createEmptyPaginationMeta(),
         projectUsage: source.projectUsage,
         sessionRows: source.sessionRows,
+        sessionRowsPagination: createEmptyPaginationMeta(),
         weeklyRows: source.weeklyRows,
+        weeklyRowsPagination: createEmptyPaginationMeta(),
     }
 }
 
 export function createEmptyAgentDashboardSessionModules(): AgentDashboardSessionModules {
     return {
-        sessionUsage: createEmptyLoadUsageResult().sessionUsage,
+        sessionUsage: [],
+        sessionUsagePagination: createEmptyPaginationMeta(),
+    }
+}
+
+export function createEmptyPaginationMeta(): PaginationMeta {
+    return {
+        page: 1,
+        pageCount: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+        total: 0,
     }
 }
 
@@ -128,6 +146,7 @@ export function buildHomeDashboardModules(
         PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].monthlyModelUsage),
     )
     const projectUsage = buildProjectUsage(sessionUsage)
+    const sessionAnalysisItems = buildHomeSessionAnalysisItems(sessionUsage)
     const totalCost = getSessionUsageCostTotal(sessionUsage)
     const totalTokens = dailyTokenUsage.reduce((sum, item) => sum + item.totalTokens, 0)
     const inputTokens = dailyTokenUsage.reduce((sum, item) => sum + item.inputTokens, 0)
@@ -168,11 +187,50 @@ export function buildHomeDashboardModules(
             totalTokens,
         }),
         sessionAnalysis: {
-            items: sessionUsage,
+            items: sessionAnalysisItems,
             totalSessions,
         },
         todayHourlyUsage: homeTodayInsights.todayHourlyUsage,
     }
+}
+
+function buildHomeSessionAnalysisItems(sessionUsage: HomeSessionUsageItem[]) {
+    const durationMinutesByProject = new Map<string, number>()
+
+    for (const session of sessionUsage) {
+        durationMinutesByProject.set(
+            session.project,
+            (durationMinutesByProject.get(session.project) ?? 0) + session.durationMinutes,
+        )
+    }
+
+    return buildProjectUsage(sessionUsage)
+        .slice(0, TOP_PROJECT_LIMIT)
+        .map(project => ({
+            costUSD: project.costUSD,
+            duration: formatDuration(durationMinutesByProject.get(project.label) ?? 0),
+            durationMinutes: durationMinutesByProject.get(project.label) ?? 0,
+            id: project.repository,
+            model: '-',
+            project: project.label,
+            repository: project.repository,
+            tokenTotal: project.tokenTotal,
+        }))
+}
+
+function formatDuration(minutes: number) {
+    const hours = Math.floor(minutes / 60)
+    const remainingMinutes = minutes % 60
+
+    if (hours === 0) {
+        return `${remainingMinutes}m`
+    }
+
+    if (remainingMinutes === 0) {
+        return `${hours}h`
+    }
+
+    return `${hours}h ${remainingMinutes}m`
 }
 
 function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>) {
