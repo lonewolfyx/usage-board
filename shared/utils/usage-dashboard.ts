@@ -49,6 +49,10 @@ export function roundCurrency(value: number) {
     return Math.round(value * 1_000_000) / 1_000_000
 }
 
+export function sumCurrency(total: number, amount: number) {
+    return Math.round((total + amount) * 1_000_000_000_000) / 1_000_000_000_000
+}
+
 export function uniqueItems<T>(items: T[]) {
     return Array.from(new Set(items))
 }
@@ -204,7 +208,7 @@ export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): Projec
             tokenTotal: 0,
         }
 
-        project.costUSD += session.costUSD
+        project.costUSD = sumCurrency(project.costUSD, session.costUSD)
         project.sessions += 1
         project.tokenTotal += session.tokenTotal
         projects.set(session.project, project)
@@ -255,7 +259,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
         }
 
         group.cachedInputTokens += item.cachedInputTokens
-        group.costUSD += item.costUSD
+        group.costUSD = sumCurrency(group.costUSD, item.costUSD)
         group.inputTokens += item.inputTokens
         group.outputTokens += item.outputTokens
         group.reasoningOutputTokens += item.reasoningOutputTokens
@@ -264,7 +268,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
         for (const [modelName, usage] of Object.entries(item.models)) {
             const model = group.models.get(modelName) ?? createEmptyModelUsage()
             model.cachedInputTokens += usage.cachedInputTokens
-            model.costUSD += usage.costUSD
+            model.costUSD = sumCurrency(model.costUSD, usage.costUSD)
             model.inputTokens += usage.inputTokens
             model.isFallback = model.isFallback || usage.isFallback
             model.outputTokens += usage.outputTokens
@@ -276,7 +280,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
         for (const [platform, platformUsage] of Object.entries(item.platforms ?? {})) {
             const currentPlatformUsage = group.platforms.get(platform) ?? createEmptyDailyPlatformTokenUsage()
             currentPlatformUsage.cachedInputTokens += platformUsage.cachedInputTokens
-            currentPlatformUsage.costUSD += platformUsage.costUSD
+            currentPlatformUsage.costUSD = sumCurrency(currentPlatformUsage.costUSD, platformUsage.costUSD)
             currentPlatformUsage.inputTokens += platformUsage.inputTokens
             currentPlatformUsage.outputTokens += platformUsage.outputTokens
             currentPlatformUsage.reasoningOutputTokens += platformUsage.reasoningOutputTokens
@@ -285,7 +289,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
             for (const [modelName, usage] of Object.entries(platformUsage.models)) {
                 const model = currentPlatformUsage.models[modelName] ?? createEmptyModelUsage()
                 model.cachedInputTokens += usage.cachedInputTokens
-                model.costUSD += usage.costUSD
+                model.costUSD = sumCurrency(model.costUSD, usage.costUSD)
                 model.inputTokens += usage.inputTokens
                 model.isFallback = model.isFallback || usage.isFallback
                 model.outputTokens += usage.outputTokens

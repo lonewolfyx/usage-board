@@ -1,6 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import type { ModelPricingResolver } from '#shared/types/platform'
-import type { ProjectInteractionRole, ProjectInteractionUsage } from '#shared/types/usage-dashboard'
+import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
@@ -29,7 +29,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 
-const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:message-id-v1'
+const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:daily-agent-progress-v2'
 
 export const claudeCodeUsageAdapter = {
     async createPricingResolver() {
@@ -63,21 +63,21 @@ export const claudeCodeUsageAdapter = {
         const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
         for (let index = 0; index < lines.length; index += 1) {
-            const line = lines[index]!
+            const line = getClaudeUsageLine(lines[index]!)
 
-            if (!isSupportedClaudeUsageLine(line)) {
+            if (!line) {
                 continue
             }
 
-            const sessionId = normalizeStringValue(line.sessionId) || fallbackSessionId
-            const cwd = normalizeStringValue(line.cwd) ?? ''
+            const sessionId = line.sessionId || fallbackSessionId
+            const cwd = line.cwd ?? ''
             const project = getProjectName(cwd, '') || decodeClaudeProjectPath(projectPath)
-            const timestamp = toIsoString(line.timestamp) ?? null
-            const message = normalizeUnknownRecord(line.message)
-            const usageRecord = normalizeUnknownRecord(message?.usage)
+            const timestamp = line.timestamp
+            const message = line.message
+            const usageRecord = line.usage
             const model = getClaudeDisplayModel(line)
             const usage = usageRecord
-                ? getClaudeInteractionUsage(usageRecord, model, resolvePricing, line)
+                ? getClaudeInteractionUsage(usageRecord, model, resolvePricing, line.costUSD)
                 : null
             const key = `${project}:${sessionId}`
             const fragment = fragments.get(key) ?? createSessionFragment({
@@ -92,11 +92,13 @@ export const claudeCodeUsageAdapter = {
                 content: extractClaudeMessageText(message?.content),
                 costUSD: usage?.costUSD ?? 0,
                 dedupeKey: getClaudeUniqueHash(line),
+                fallbackDedupeKey: normalizeStringValue(message?.id),
                 index,
+                isSidechain: line.isSidechain === true,
                 model: model ?? null,
-                role: getInteractionRole(line, message),
+                role: getInteractionRole(line.type, message),
                 timestamp,
-                type: normalizeStringValue(line.type) || normalizeStringValue(message?.type) || 'message',
+                type: line.type ?? (normalizeStringValue(message?.type) || 'message'),
                 usage,
             })
             fragments.set(key, fragment)
@@ -113,13 +115,13 @@ function getClaudeInteractionUsage(
     usage: Record<string, unknown>,
     model: string | undefined,
     resolvePricing: ModelPricingResolver,
-    line: Record<string, unknown>,
+    costUSD: number | null,
 ): ProjectInteractionUsage {
     const cacheCreationTokens = normalizeNumber(usage.cache_creation_input_tokens)
     const cacheReadTokens = normalizeNumber(usage.cache_read_input_tokens)
     const inputTokens = normalizeNumber(usage.input_tokens)
     const outputTokens = normalizeNumber(usage.output_tokens)
-    const costUSD = normalizeFiniteNumberOrNull(line.costUSD) ?? (model
+    const resolvedCostUSD = costUSD ?? (model
         ? calculateUsageCostUSD({
                 cacheCreationTokens,
                 cachedInputTokens: cacheReadTokens,
@@ -134,7 +136,7 @@ function getClaudeInteractionUsage(
         cacheCreationTokens,
         cacheReadTokens,
         cachedInputTokens: cacheCreationTokens + cacheReadTokens,
-        costUSD,
+        costUSD: resolvedCostUSD,
         inputTokens,
         outputTokens,
         reasoningOutputTokens: 0,
@@ -142,22 +144,19 @@ function getClaudeInteractionUsage(
     }
 }
 
-function getClaudeDisplayModel(line: Record<string, unknown>) {
-    const message = normalizeUnknownRecord(line.message)
-    const model = normalizeStringValue(message?.model)
-    const usage = normalizeUnknownRecord(message?.usage)
+function getClaudeDisplayModel(line: ClaudeUsageLine) {
+    const model = normalizeStringValue(line.message.model)
 
     if (!model) {
         return undefined
     }
 
-    return usage?.speed === 'fast' ? `${model}-fast` : model
+    return line.usage.speed === 'fast' ? `${model}-fast` : model
 }
 
-function getClaudeUniqueHash(line: Record<string, unknown>) {
-    const message = normalizeUnknownRecord(line.message)
-    const messageId = normalizeStringValue(message?.id)
-    const requestId = normalizeStringValue(line.requestId)
+function getClaudeUniqueHash(line: ClaudeUsageLine) {
+    const messageId = normalizeStringValue(line.message.id)
+    const requestId = line.requestId
 
     return messageId ? `${messageId}:${requestId ?? ''}` : null
 }
@@ -177,55 +176,105 @@ function extractClaudeMessageText(content: unknown) {
         .join('\n')
 }
 
-function getInteractionRole(line: Record<string, unknown>, message: Record<string, unknown> | null): ProjectInteractionRole {
-    const role = normalizeStringValue(line.type) || normalizeStringValue(message?.role) || normalizeStringValue(message?.type) || ''
+function getInteractionRole(type: string | undefined, message: Record<string, unknown>) {
+    const role = normalizeStringValue(message.role) || type || normalizeStringValue(message.type) || ''
 
     return normalizeRole(role)
 }
 
-function isSupportedClaudeUsageLine(line: Record<string, unknown>) {
-    const message = normalizeUnknownRecord(line.message)
+interface ClaudeUsageLine {
+    costUSD: number | null
+    cwd: string | undefined
+    isSidechain: boolean | undefined
+    message: Record<string, unknown>
+    requestId: string | undefined
+    sessionId: string | undefined
+    timestamp: string | null
+    type: string | undefined
+    usage: Record<string, unknown>
+}
+
+function getClaudeUsageLine(line: Record<string, unknown>): ClaudeUsageLine | null {
+    const progressData = normalizeUnknownRecord(line.data)
+    const progressMessage = normalizeUnknownRecord(progressData?.message)
+    const message = normalizeUnknownRecord(progressMessage?.message) ?? normalizeUnknownRecord(line.message)
     const usage = normalizeUnknownRecord(message?.usage)
 
-    if (hasUnsupportedClaudeNullField(line, message, usage)) {
-        return false
+    if (!message || !usage || hasUnsupportedClaudeNullField(line, progressMessage, message, usage)) {
+        return null
     }
 
     const version = normalizeStringValue(line.version)
 
     if (version && !/^\d+\.\d+\.\d+/u.test(version)) {
-        return false
+        return null
     }
 
-    return !hasEmptyClaudeField(line, message)
+    const sessionId = normalizeStringValue(line.sessionId)
+    const requestId = normalizeStringValue(progressMessage?.requestId) ?? normalizeStringValue(line.requestId)
+
+    if (hasEmptyClaudeField({
+        message,
+        requestId,
+        sessionId,
+        version,
+    })) {
+        return null
+    }
+
+    return {
+        costUSD: normalizeFiniteNumberOrNull(progressMessage?.costUSD) ?? normalizeFiniteNumberOrNull(line.costUSD),
+        cwd: normalizeStringValue(line.cwd),
+        isSidechain: normalizeBooleanValue(progressMessage?.isSidechain ?? line.isSidechain),
+        message,
+        requestId,
+        sessionId,
+        timestamp: toIsoString(progressMessage?.timestamp ?? line.timestamp) ?? null,
+        type: normalizeStringValue(progressMessage?.type) ?? normalizeStringValue(line.type),
+        usage,
+    }
 }
 
 function hasUnsupportedClaudeNullField(
     line: Record<string, unknown>,
-    message: Record<string, unknown> | null,
-    usage: Record<string, unknown> | null,
+    progressMessage: Record<string, unknown> | null,
+    message: Record<string, unknown>,
+    usage: Record<string, unknown>,
 ) {
     return line.cwd === null
-        || line.costUSD === null
+        || (progressMessage?.costUSD ?? line.costUSD) === null
         || line.version === null
         || line.sessionId === null
-        || line.requestId === null
+        || (progressMessage?.requestId ?? line.requestId) === null
         || line.isApiErrorMessage === null
-        || message?.id === null
-        || message?.model === null
-        || usage?.speed === null
-        || usage?.cache_read_input_tokens === null
-        || usage?.cache_creation_input_tokens === null
+        || message.id === null
+        || message.model === null
+        || usage.speed === null
+        || usage.cache_read_input_tokens === null
+        || usage.cache_creation_input_tokens === null
 }
 
-function hasEmptyClaudeField(line: Record<string, unknown>, message: Record<string, unknown> | null) {
+function hasEmptyClaudeField(options: {
+    message: Record<string, unknown>
+    requestId: string | undefined
+    sessionId: string | undefined
+    version: string | undefined
+}) {
     const candidates = [
-        line.sessionId,
-        line.requestId,
-        line.version,
-        message?.id,
-        message?.model,
+        options.sessionId,
+        options.requestId,
+        options.version,
+        options.message.id,
+        options.message.model,
     ]
 
     return candidates.some(value => typeof value === 'string' && value.trim() === '')
+}
+
+function normalizeBooleanValue(value: unknown) {
+    if (value === true || value === false) {
+        return value
+    }
+
+    return undefined
 }

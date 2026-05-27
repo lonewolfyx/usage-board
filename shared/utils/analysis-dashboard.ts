@@ -128,7 +128,7 @@ export function buildHomeDashboardModules(
         PROJECT_USAGE_PLATFORMS.flatMap(platform => dashboardsByPlatform[platform].monthlyModelUsage),
     )
     const projectUsage = buildProjectUsage(sessionUsage)
-    const totalCost = dailyTokenUsage.reduce((sum, item) => sum + item.costUSD, 0)
+    const totalCost = getSessionUsageCostTotal(sessionUsage)
     const totalTokens = dailyTokenUsage.reduce((sum, item) => sum + item.totalTokens, 0)
     const inputTokens = dailyTokenUsage.reduce((sum, item) => sum + item.inputTokens, 0)
     const cachedInputTokens = dailyTokenUsage.reduce((sum, item) => sum + item.cachedInputTokens, 0)
@@ -183,6 +183,22 @@ function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<Load
             sessionId: `${platform}:${session.sessionId}`,
         })))
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+}
+
+type HomeSessionUsageItem = ReturnType<typeof buildSessionUsage>[number] & Partial<Pick<ProjectSessionUsageItem, 'interactions'>>
+
+function getSessionUsageCostTotal(sessions: HomeSessionUsageItem[]) {
+    return roundCurrency(
+        sessions.reduce((sessionTotal, session) => {
+            if (!session.interactions) {
+                return sessionTotal + session.costUSD
+            }
+
+            return sessionTotal + session.interactions.reduce((interactionTotal, interaction) => {
+                return interactionTotal + (interaction.usage?.costUSD ?? 0)
+            }, 0)
+        }, 0),
+    )
 }
 
 function buildHomeOverviewCards(options: {

@@ -51,8 +51,8 @@
                         cursor="pointer"
                         orientation="horizontal"
                         :rounded-corners="3"
-                        :x="item => item.index"
-                        :y="[item => item.tokenScore, item => item.durationScore, item => item.costScore]"
+                        :x="getProjectIndex"
+                        :y="scoreAccessors"
                     />
                     <VisAxis
                         :grid-line="false"
@@ -195,6 +195,11 @@ const chartData = computed<SessionProjectDatum[]>(() => {
 })
 
 const projectTicks = computed(() => chartData.value.map(item => item.index))
+const scoreAccessors = [
+    (item: SessionProjectDatum) => item.tokenScore,
+    (item: SessionProjectDatum) => item.durationScore,
+    (item: SessionProjectDatum) => item.costScore,
+]
 
 const tooltipTriggers = computed(() => ({
     [VisStackedBarSelectors.bar]: formatTooltip,
@@ -228,6 +233,10 @@ function normalizeScore(value: number, maxValue: number) {
 
 function getSegmentColor(_: SessionProjectDatum, index: number) {
     return chartSegments[index]?.color ?? chartSegments[0].color
+}
+
+function getProjectIndex(item: SessionProjectDatum) {
+    return item.index
 }
 
 function formatTooltip(data: StackedBarTooltipDatum) {

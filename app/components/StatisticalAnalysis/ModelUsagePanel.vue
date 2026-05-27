@@ -26,7 +26,7 @@
                         :line-color="getLineColor"
                         :line-width="2.5"
                         :opacity="0.82"
-                        :x="item => item.monthIndex"
+                        :x="getMonthIndex"
                         :y="modelTokenAccessors"
                     />
                     <VisAxis
@@ -45,7 +45,7 @@
                         v-if="hasChartData"
                         :color="getCrosshairColor"
                         :template="formatTooltip"
-                        :x="item => item.monthIndex"
+                        :x="getMonthIndex"
                         :y-stacked="modelTokenAccessors"
                     />
                 </VisXYContainer>
@@ -238,6 +238,10 @@ function getLineColor(_: ModelSeriesDatum[], index: number) {
 
 function getCrosshairColor(_: ModelSeriesDatum, index: number) {
     return modelSeries.value[index]?.color ?? getModelColor(0)
+}
+
+function getMonthIndex(item: ModelSeriesDatum) {
+    return item.monthIndex
 }
 
 function formatTooltip(datum: ModelSeriesDatum) {

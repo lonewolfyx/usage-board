@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
+import { UsageCacheRepository } from '../server/repositories/sqlite/usage-cache.repository.ts'
+import { buildIncrementalUsageIndex } from '../server/services/usage-indexer.ts'
 import { ampUsageAdapter } from '../server/services/usage-indexer/adapters/amp.ts'
 import { claudeCodeUsageAdapter } from '../server/services/usage-indexer/adapters/claude-code.ts'
 import { codebuffUsageAdapter } from '../server/services/usage-indexer/adapters/codebuff.ts'
@@ -108,6 +110,180 @@ describe('usage indexer parity with ccusage', () => {
         expect(interaction.usage.costUSD).toBe(0)
     })
 
+    it('matches Claude Code sidechain replay deduplication across request ids', async () => {
+        const root = createTempDir('claude-sidechain')
+        const sessionFile = join(root, 'projects/-Users-me-demo/session-1.jsonl')
+        const sidechainFile = join(root, 'projects/-Users-me-demo/session-1/subagents/agent-1.jsonl')
+
+        mkdirSync(dirname(sessionFile), { recursive: true })
+        mkdirSync(dirname(sidechainFile), { recursive: true })
+        writeFileSync(sessionFile, `${JSON.stringify({
+            isSidechain: false,
+            message: {
+                id: 'msg-parent',
+                model: 'claude-sonnet-4.5',
+                usage: {
+                    cache_read_input_tokens: 30,
+                    input_tokens: 120,
+                    output_tokens: 45,
+                },
+            },
+            requestId: 'req-parent',
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            version: '1.0.70',
+        })}\n`)
+        writeFileSync(sidechainFile, `${JSON.stringify({
+            isSidechain: true,
+            message: {
+                id: 'msg-parent',
+                model: 'claude-sonnet-4.5',
+                usage: {
+                    cache_read_input_tokens: 30,
+                    input_tokens: 120,
+                    output_tokens: 45,
+                },
+            },
+            requestId: 'req-sidechain',
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:01.000Z',
+            version: '1.0.70',
+        })}\n`)
+
+        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(createConfig({
+            claudeCodePath: root,
+            claudeCodePaths: [root],
+        }), createMemoryRepository())
+
+        expect(bootstrapByPlatform.claudeCode).toHaveLength(1)
+        expect(bootstrapByPlatform.claudeCode[0].tokenTotal).toBe(195)
+    })
+
+    it('matches Claude Code daily agent progress deduplication against sidechain usage', async () => {
+        const root = createTempDir('claude-agent-progress')
+        const sessionFile = join(root, 'projects/-Users-me-demo/session-1.jsonl')
+        const sidechainFile = join(root, 'projects/-Users-me-demo/session-1/subagents/agent-1.jsonl')
+
+        mkdirSync(dirname(sessionFile), { recursive: true })
+        mkdirSync(dirname(sidechainFile), { recursive: true })
+        writeFileSync(sessionFile, `${JSON.stringify({
+            cwd: '/Users/me/demo',
+            data: {
+                message: {
+                    message: {
+                        id: 'msg-sidechain-tool',
+                        model: 'claude-sonnet-4.5',
+                        role: 'assistant',
+                        type: 'message',
+                        usage: {
+                            input_tokens: 0,
+                            output_tokens: 0,
+                        },
+                    },
+                    timestamp: '2026-01-02T00:00:00.000Z',
+                    type: 'assistant',
+                },
+                type: 'agent_progress',
+            },
+            isSidechain: false,
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:00.001Z',
+            type: 'progress',
+            version: '1.0.70',
+        })}\n`)
+        writeFileSync(sidechainFile, `${JSON.stringify({
+            cwd: '/Users/me/demo',
+            isSidechain: true,
+            message: {
+                id: 'msg-sidechain-tool',
+                model: 'claude-sonnet-4.5',
+                role: 'assistant',
+                type: 'message',
+                usage: {
+                    cache_read_input_tokens: 30,
+                    input_tokens: 120,
+                    output_tokens: 45,
+                },
+            },
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'assistant',
+            version: '1.0.70',
+        })}\n`)
+
+        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(createConfig({
+            claudeCodePath: root,
+            claudeCodePaths: [root],
+        }), createMemoryRepository())
+
+        expect(bootstrapByPlatform.claudeCode).toHaveLength(0)
+    })
+
+    it('preserves Claude Code fallback dedupe metadata in the indexed cache', async () => {
+        const root = createTempDir('claude-cache-dedupe')
+        const sessionFile = join(root, 'projects/-Users-me-demo/session-1.jsonl')
+        const sidechainFile = join(root, 'projects/-Users-me-demo/session-1/subagents/agent-1.jsonl')
+
+        mkdirSync(dirname(sessionFile), { recursive: true })
+        mkdirSync(dirname(sidechainFile), { recursive: true })
+        writeFileSync(sessionFile, `${JSON.stringify({
+            data: {
+                message: {
+                    message: {
+                        id: 'msg-cache-dedupe',
+                        model: 'mimo-v2-pro',
+                        role: 'assistant',
+                        type: 'message',
+                        usage: {
+                            cache_read_input_tokens: 300,
+                            input_tokens: 20,
+                            output_tokens: 5,
+                        },
+                    },
+                    timestamp: '2026-01-02T00:00:00.000Z',
+                    type: 'assistant',
+                },
+                type: 'agent_progress',
+            },
+            isSidechain: false,
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:00.001Z',
+            type: 'progress',
+            version: '1.0.70',
+        })}\n`)
+        writeFileSync(sidechainFile, `${JSON.stringify({
+            isSidechain: true,
+            message: {
+                id: 'msg-cache-dedupe',
+                model: 'mimo-v2-pro',
+                role: 'assistant',
+                type: 'message',
+                usage: {
+                    cache_read_input_tokens: 300,
+                    input_tokens: 20,
+                    output_tokens: 5,
+                },
+            },
+            sessionId: 'session-1',
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'assistant',
+            version: '1.0.70',
+        })}\n`)
+
+        const repository = new UsageCacheRepository(join(root, 'cache.sqlite'))
+        const config = createConfig({
+            claudeCodePath: root,
+            claudeCodePaths: [root],
+        })
+
+        await buildIncrementalUsageIndex(config, repository)
+        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(config, repository)
+        repository.close()
+
+        expect(bootstrapByPlatform.claudeCode).toHaveLength(1)
+        expect(bootstrapByPlatform.claudeCode[0].tokenTotal).toBe(325)
+    })
+
     it('matches Codex headless usage parsing and numeric timestamps', () => {
         const headlessFile = createTempFile('codex/run.jsonl', [
             JSON.stringify({
@@ -183,6 +359,39 @@ describe('usage indexer parity with ccusage', () => {
         expect(numericInteraction.usage.inputTokens).toBe(90)
     })
 
+    it('ignores Codex token_count deltas that only carry total_tokens', () => {
+        const filePath = createTempFile('codex/total-only-token-count.jsonl', [
+            JSON.stringify({
+                timestamp: '2026-01-02T00:00:00.000Z',
+                type: 'turn_context',
+                payload: { model: 'gpt-5' },
+            }),
+            JSON.stringify({
+                timestamp: '2026-01-02T00:00:01.000Z',
+                type: 'event_msg',
+                payload: {
+                    info: {
+                        model: 'gpt-5',
+                        last_token_usage: {
+                            input_tokens: 0,
+                            cached_input_tokens: 0,
+                            output_tokens: 0,
+                            reasoning_output_tokens: 0,
+                            total_tokens: 15,
+                        },
+                    },
+                    type: 'token_count',
+                },
+            }),
+        ])
+
+        const interactions = getUsageInteractions(
+            codexUsageAdapter.parseFile(filePath, zeroPricingResolver, discovered(filePath, 'codex')),
+        )
+
+        expect(interactions).toHaveLength(0)
+    })
+
     it('matches Codex unknown-model pricing fallback behavior', async () => {
         const filePath = createTempFile('codex/unknown-model.jsonl', [
             JSON.stringify({
@@ -209,6 +418,41 @@ describe('usage indexer parity with ccusage', () => {
 
         expect(interaction.model).toBe('mimo-v2-pro')
         expect(interaction.usage.costUSD).toBe(0)
+    })
+
+    it('matches Codex distinct-session deduplication boundaries', async () => {
+        const root = createTempDir('codex-dedupe')
+        const firstFile = join(root, 'sessions/2026/01/02/session-a.jsonl')
+        const secondFile = join(root, 'sessions/2026/01/02/session-b.jsonl')
+        const sharedUsageLine = JSON.stringify({
+            timestamp: '2026-01-02T00:00:00.000Z',
+            type: 'event_msg',
+            payload: {
+                info: {
+                    model: 'gpt-5',
+                    last_token_usage: {
+                        cached_input_tokens: 10,
+                        input_tokens: 100,
+                        output_tokens: 50,
+                        reasoning_output_tokens: 0,
+                        total_tokens: 150,
+                    },
+                },
+                type: 'token_count',
+            },
+        })
+
+        mkdirSync(dirname(firstFile), { recursive: true })
+        mkdirSync(dirname(secondFile), { recursive: true })
+        writeFileSync(firstFile, `${sharedUsageLine}\n`)
+        writeFileSync(secondFile, `${sharedUsageLine}\n`)
+
+        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(createConfig({
+            codexPath: root,
+        }), createMemoryRepository())
+
+        expect(bootstrapByPlatform.codex).toHaveLength(2)
+        expect(bootstrapByPlatform.codex.reduce((sum, session) => sum + session.tokenTotal, 0)).toBe(300)
     })
 
     it('keeps Goose extra tokens outside reasoning and avoids cross-db session collisions', () => {
@@ -432,6 +676,7 @@ describe('usage indexer parity with ccusage', () => {
         )[0]
 
         expect(geminiInteraction.usage.inputTokens).toBe(3808)
+        expect(geminiInteraction.usage.costUSD).toBe(0)
         expect(geminiInteraction.usage.extraTotalTokens).toBe(919)
         expect(geminiInteraction.usage.reasoningOutputTokens).toBe(0)
         expect(kiloInteraction.usage.extraTotalTokens).toBe(5)
@@ -694,4 +939,59 @@ function createSqliteFile(relativePath, fill) {
 
 function getUsageInteractions(fragments) {
     return fragments.flatMap(fragment => fragment.interactions).filter(interaction => interaction.usage)
+}
+
+function createConfig(overrides = {}) {
+    return {
+        version: 'test',
+        home: '/tmp',
+        ampPaths: [],
+        claudeCodePath: '/tmp/claude',
+        claudeCodePaths: [],
+        codebuffPaths: [],
+        copilotPaths: [],
+        codexPath: '/tmp/codex',
+        droidPaths: [],
+        geminiPath: '/tmp/gemini',
+        goosePaths: [],
+        hermesPaths: [],
+        kiloPaths: [],
+        kimiPaths: [],
+        openClawPaths: [],
+        openCodePaths: [],
+        piPaths: [],
+        qwenPaths: [],
+        ...overrides,
+    }
+}
+
+function createMemoryRepository() {
+    const indexedFiles = []
+
+    return {
+        deleteIndexedSourceFiles(paths) {
+            if (paths.length === 0) {
+                return
+            }
+
+            const pending = new Set(paths)
+            const kept = indexedFiles.filter(file => !pending.has(file.path))
+            indexedFiles.splice(0, indexedFiles.length, ...kept)
+        },
+        loadIndexedSourceFiles() {
+            return [...indexedFiles]
+        },
+        upsertIndexedSourceFiles(files) {
+            for (const file of files) {
+                const index = indexedFiles.findIndex(candidate => candidate.path === file.path)
+
+                if (index === -1) {
+                    indexedFiles.push(file)
+                }
+                else {
+                    indexedFiles[index] = file
+                }
+            }
+        },
+    }
 }

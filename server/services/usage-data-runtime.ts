@@ -25,11 +25,11 @@ import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import chokidar from 'chokidar'
 
-const RUNTIME_STALE_AFTER_MS = 1000 * 60
 const WATCHER_DEBOUNCE_MS = 350
 
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
+    hasIndexedCurrentProcess: boolean
     hydratedAt: number
     projectCatalog: ProjectUsageCatalogItem[]
     projectDetails: Map<string, ProjectUsageDetail> | null
@@ -40,6 +40,7 @@ class UsageDataRuntime {
     private readonly repository: UsageCacheRepository
     private readonly state: UsageRuntimeState = {
         bootstrap: null,
+        hasIndexedCurrentProcess: false,
         hydratedAt: 0,
         projectCatalog: [],
         projectDetails: null,
@@ -74,8 +75,11 @@ class UsageDataRuntime {
         if (!this.state.bootstrap) {
             await this.refreshNow()
         }
+        else if (!this.state.hasIndexedCurrentProcess) {
+            await this.refreshNow()
+        }
         else {
-            this.scheduleRefreshIfStale()
+            await this.refreshNow()
         }
 
         return this.state.bootstrap!
@@ -87,8 +91,11 @@ class UsageDataRuntime {
         if (this.state.projectCatalog.length === 0) {
             await this.refreshNow()
         }
+        else if (!this.state.hasIndexedCurrentProcess) {
+            await this.refreshNow()
+        }
         else {
-            this.scheduleRefreshIfStale()
+            await this.refreshNow()
         }
 
         return this.state.projectCatalog
@@ -118,14 +125,7 @@ class UsageDataRuntime {
             this.state.projectDetails = this.repository.loadProjectDetails()
         }
 
-        const detail = this.state.projectDetails.get(projectLabel)
-
-        if (!detail) {
-            await this.refreshNow()
-        }
-        else {
-            this.scheduleRefreshIfStale()
-        }
+        await this.refreshNow()
 
         const hydratedDetail = this.state.projectDetails.get(projectLabel)
 
@@ -174,18 +174,6 @@ class UsageDataRuntime {
         })
     }
 
-    private scheduleRefreshIfStale() {
-        if (Date.now() - this.state.hydratedAt < RUNTIME_STALE_AFTER_MS) {
-            return
-        }
-
-        if (this.refreshPromise || Date.now() - this.state.refreshStartedAt < 1000) {
-            return
-        }
-
-        void this.refreshInBackground()
-    }
-
     private async refresh() {
         this.state.refreshStartedAt = Date.now()
 
@@ -211,6 +199,7 @@ class UsageDataRuntime {
 
         this.state.bootstrap = bootstrap
         this.state.projectCatalog = projectCatalog
+        this.state.hasIndexedCurrentProcess = true
         if (this.state.projectDetails) {
             this.state.projectDetails = projectDetails
         }

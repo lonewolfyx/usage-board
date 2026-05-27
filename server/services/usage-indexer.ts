@@ -19,7 +19,7 @@ import {
     getMonthKey,
     getWeekLabel,
 } from '#shared/utils/platform'
-import { formatDateLabelFromDateKey, getDateKey, roundCurrency } from '#shared/utils/usage-dashboard'
+import { formatDateLabelFromDateKey, getDateKey, roundCurrency, sumCurrency } from '#shared/utils/usage-dashboard'
 
 interface MutableSessionDetail {
     cachedInputTokens: number
@@ -199,6 +199,10 @@ function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platf
         fragment: IndexedUsageSessionFragment
         interaction: IndexedUsageInteraction
     }>()
+    const interactionsByFallbackDedupeKey = new Map<string, {
+        fragment: IndexedUsageSessionFragment
+        interaction: IndexedUsageInteraction
+    }>()
 
     for (const file of indexedFiles) {
         if (file.platform !== platform) {
@@ -207,20 +211,43 @@ function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platf
 
         for (const fragment of file.payload) {
             for (const interaction of fragment.interactions) {
-                if (!interaction.dedupeKey) {
+                if (!interaction.dedupeKey && !interaction.fallbackDedupeKey) {
                     interactionsWithoutDedupeKey.push({ fragment, interaction })
                     continue
                 }
 
-                const existing = interactionsByDedupeKey.get(interaction.dedupeKey)
+                const existing = (interaction.dedupeKey
+                    ? interactionsByDedupeKey.get(interaction.dedupeKey)
+                    : undefined)
+                ?? (interaction.fallbackDedupeKey
+                    ? interactionsByFallbackDedupeKey.get(interaction.fallbackDedupeKey)
+                    : undefined)
 
                 if (!existing) {
-                    interactionsByDedupeKey.set(interaction.dedupeKey, { fragment, interaction })
+                    if (interaction.dedupeKey) {
+                        interactionsByDedupeKey.set(interaction.dedupeKey, { fragment, interaction })
+                    }
+                    if (interaction.fallbackDedupeKey) {
+                        interactionsByFallbackDedupeKey.set(interaction.fallbackDedupeKey, { fragment, interaction })
+                    }
                 }
                 else if (shouldReplaceDedupedInteraction(interaction, existing.interaction)) {
                     // Pin attribution to the first-seen fragment so the winning interaction
                     // doesn't migrate across sessions and silently empty the loser.
-                    interactionsByDedupeKey.set(interaction.dedupeKey, { fragment: existing.fragment, interaction })
+                    const next = { fragment: existing.fragment, interaction }
+
+                    if (existing.interaction.dedupeKey) {
+                        interactionsByDedupeKey.set(existing.interaction.dedupeKey, next)
+                    }
+                    if (existing.interaction.fallbackDedupeKey) {
+                        interactionsByFallbackDedupeKey.set(existing.interaction.fallbackDedupeKey, next)
+                    }
+                    if (interaction.dedupeKey) {
+                        interactionsByDedupeKey.set(interaction.dedupeKey, next)
+                    }
+                    if (interaction.fallbackDedupeKey) {
+                        interactionsByFallbackDedupeKey.set(interaction.fallbackDedupeKey, next)
+                    }
                 }
             }
         }
@@ -228,11 +255,15 @@ function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platf
 
     return [
         ...interactionsWithoutDedupeKey,
-        ...interactionsByDedupeKey.values(),
+        ...new Set(interactionsByDedupeKey.values()),
     ]
 }
 
 function shouldReplaceDedupedInteraction(candidate: IndexedUsageInteraction, existing: IndexedUsageInteraction) {
+    if ((candidate.isSidechain ?? false) !== (existing.isSidechain ?? false)) {
+        return existing.isSidechain === true
+    }
+
     const candidateTotal = candidate.usage?.totalTokens ?? 0
     const existingTotal = existing.usage?.totalTokens ?? 0
 
@@ -300,7 +331,7 @@ function addInteraction(detail: MutableSessionDetail, interaction: IndexedUsageI
     detail.outputTokens += interaction.usage.outputTokens
     detail.reasoningOutputTokens += interaction.usage.reasoningOutputTokens
     detail.tokenTotal += interaction.usage.totalTokens
-    detail.costUSD += interaction.usage.costUSD
+    detail.costUSD = sumCurrency(detail.costUSD, interaction.usage.costUSD)
 
     if (interaction.model) {
         detail.models = Array.from(new Set([...detail.models, interaction.model]))
@@ -347,7 +378,7 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         durationMinutes: detail.durationMinutes,
         id: detail.key,
         inputTokens: detail.inputTokens,
-        interactions: detail.interactions.map(({ dedupeKey: _dedupeKey, ...interaction }) => ({
+        interactions: detail.interactions.map(({ dedupeKey: _dedupeKey, fallbackDedupeKey: _fallbackDedupeKey, isSidechain: _isSidechain, ...interaction }) => ({
             ...interaction,
             raw: null,
         })) as ProjectSessionInteractionItem[],
