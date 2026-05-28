@@ -1,16 +1,19 @@
 import type { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
+import type { UsageCleaningReporter } from '#server/services/usage-cleaning-reporter'
 import type { DiscoveredUsageFile } from '#server/services/usage-indexer/platform-adapter'
 import type {
     IncrementalUsageIndexResult,
     IndexedUsageInteraction,
     IndexedUsageSessionFragment,
     IndexedUsageSourceFile,
+    UpdatedUsageSession,
 } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
 import type { ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
+import { calculateUsageCostUSD } from '#shared/platform/pricing'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { normalizeTimestampValue } from '#shared/utils/normalize'
 import {
@@ -46,35 +49,146 @@ interface MutableSessionDetail {
 export async function buildIncrementalUsageIndex(
     config: IConfig,
     repository: UsageCacheRepository,
+    reporter?: UsageCleaningReporter,
+    options: {
+        cachedFiles?: IndexedUsageSourceFile[]
+        cachedPlatformSessions?: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>
+        forceLog?: boolean
+        hydrateCachedPricing?: boolean
+        reparseAllFiles?: boolean
+        updatedPlatforms?: readonly ProjectUsagePlatform[]
+    } = {},
 ): Promise<IncrementalUsageIndexResult> {
+    const timing = {
+        aggregateMs: 0,
+        discoveryMs: 0,
+        parseMs: 0,
+    }
+    const shouldStartReporter = Boolean(reporter && options.forceLog)
+
+    if (shouldStartReporter) {
+        reporter!.start()
+    }
+    const discoveryStartedAt = Date.now()
     const discoveredFiles = await discoverUsageFiles(config)
-    const cachedFiles = repository.loadIndexedSourceFiles()
-    const cachedFilesByPath = new Map(cachedFiles.map(file => [file.path, file]))
-    const changedFiles = discoveredFiles.filter((file) => {
-        const cached = cachedFilesByPath.get(file.path)
 
-        return !cached
-            || cached.platform !== file.platform
-            || cached.cacheSignature !== file.cacheSignature
-            || cached.size !== file.size
-            || cached.mtimeMs !== file.mtimeMs
-    })
-    const removedFiles = cachedFiles.filter(file => !discoveredFiles.some(discovered => discovered.path === file.path))
+    if (shouldStartReporter) {
+        reporter!.discoveredFiles({
+            discoveredFiles: discoveredFiles.length,
+        })
+    }
+    const cachedFiles = options.cachedFiles ?? repository.loadIndexedSourceFiles()
+    const cachedFilesStartedAt = Date.now()
+    const hydratedCachedFiles = options.hydrateCachedPricing
+        ? await hydrateIndexedUsageSourceFiles(cachedFiles)
+        : cachedFiles
+
+    timing.parseMs += Date.now() - cachedFilesStartedAt
+    const { cachedFilesByPath, changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, hydratedCachedFiles)
+    const filesToParse = options.reparseAllFiles ? discoveredFiles : changedFiles
+    timing.discoveryMs = Date.now() - discoveryStartedAt
     const affectedProjects = new Set<string>(removedFiles.flatMap(file => file.projectNames))
+    const hasFileChanges = changedFiles.length > 0 || removedFiles.length > 0
+    const shouldReport = Boolean(reporter && (options.forceLog || hasFileChanges))
+    const updatedPlatforms = options.updatedPlatforms ?? getUpdatedPlatforms(filesToParse, removedFiles)
 
-    if (changedFiles.length === 0 && removedFiles.length === 0) {
-        const indexedFiles = cachedFiles.sort((a, b) => a.path.localeCompare(b.path))
+    if (shouldReport && !shouldStartReporter) {
+        reporter!.start()
+        reporter!.discoveredFiles({
+            discoveredFiles: discoveredFiles.length,
+        })
+    }
+
+    if (shouldReport) {
+        reporter!.foundFiles({
+            cachedFiles: hydratedCachedFiles.length,
+            changedFiles: filesToParse.length,
+            discoveredFiles: discoveredFiles.length,
+            removedFiles: removedFiles.length,
+            updatedPlatforms,
+        })
+    }
+    const activeReporter = shouldReport ? reporter : undefined
+    const discoveredFileCountsByPlatform = countFilesByPlatform(discoveredFiles)
+    // const changedFileCountsByPlatform = countFilesByPlatform(filesToParse)
+
+    if (filesToParse.length === 0 && removedFiles.length === 0) {
+        const indexedFiles = hydratedCachedFiles.sort((a, b) => a.path.localeCompare(b.path))
+
+        const aggregateStartedAt = Date.now()
+        const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
+            cachedPlatformSessions: options.hydrateCachedPricing ? undefined : options.cachedPlatformSessions,
+            updatedPlatforms,
+        })
+        timing.aggregateMs = Date.now() - aggregateStartedAt
 
         return {
             affectedProjects: [],
-            bootstrapByPlatform: buildPlatformSessionsByPlatform(indexedFiles),
+            bootstrapByPlatform,
+            hasChanges: false,
             indexedFiles,
+            timing,
             removedProjects: [],
+            updatedSessions: [],
+            updatedPlatforms,
         }
     }
 
-    const pricingResolvers = await createPricingResolvers()
-    const parsedChangedFiles = await Promise.all(changedFiles.map(file => parseUsageFile(file, pricingResolvers)))
+    const parsedFiles: IndexedUsageSourceFile[] = []
+    const updatedPlatformSessions: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>> = {}
+    const pricingResolvers = await createPricingResolversForPlatforms(filesToParse.map(file => file.platform))
+    const parsedByPath = new Map<string, IndexedUsageSourceFile>()
+
+    for (const platform of updatedPlatforms) {
+        const platformFilesToParse = filesToParse.filter(file => file.platform === platform)
+        const discoveredFilesForPlatform = discoveredFileCountsByPlatform[platform]
+
+        if (discoveredFilesForPlatform > 0) {
+            activeReporter?.startPlatform(platform, {
+                discoveredFiles: discoveredFilesForPlatform,
+            })
+        }
+
+        const parseStartedAt = Date.now()
+        const parsedPlatformFiles = await Promise.all(platformFilesToParse.map(file => parseUsageFile(file, pricingResolvers)))
+
+        timing.parseMs += Date.now() - parseStartedAt
+
+        for (const file of parsedPlatformFiles) {
+            parsedFiles.push(file)
+            parsedByPath.set(file.path, file)
+        }
+
+        if (discoveredFilesForPlatform > 0) {
+            activeReporter?.parsedPlatformFiles(platform, {
+                parsedFiles: parsedPlatformFiles.length,
+            })
+        }
+
+        const aggregateStartedAt = Date.now()
+        const platformIndexedFiles = discoveredFiles
+            .filter(file => file.platform === platform)
+            .map(file => parsedByPath.get(file.path) ?? cachedFilesByPath.get(file.path) ?? null)
+            .filter((file): file is IndexedUsageSourceFile => file !== null)
+        const platformSessions = buildPlatformSessionsFromFiles(platformIndexedFiles, platform)
+
+        timing.aggregateMs += Date.now() - aggregateStartedAt
+        updatedPlatformSessions[platform] = platformSessions
+
+        if (discoveredFilesForPlatform > 0) {
+            const deltaStats = getPlatformDeltaStats(platform, parsedPlatformFiles, cachedFilesByPath)
+            activeReporter?.finishPlatform(platform, {
+                interactions: platformSessions.reduce((sum, session) => sum + session.interactions.length, 0),
+                newInteractions: deltaStats.newInteractions,
+                newSessions: deltaStats.newSessions,
+                sessions: platformSessions.length,
+                updatedSessions: deltaStats.updatedSessions,
+            })
+        }
+    }
+
+    const changedFilePaths = new Set(changedFiles.map(file => file.path))
+    const parsedChangedFiles = parsedFiles.filter(file => changedFilePaths.has(file.path))
 
     for (const file of changedFiles) {
         const cached = cachedFilesByPath.get(file.path)
@@ -92,7 +206,6 @@ export async function buildIncrementalUsageIndex(
         }
     }
 
-    const parsedByPath = new Map(parsedChangedFiles.map(file => [file.path, file]))
     const indexedFiles = discoveredFiles
         .map((file) => {
             const changed = parsedByPath.get(file.path)
@@ -106,10 +219,19 @@ export async function buildIncrementalUsageIndex(
         .filter((file): file is IndexedUsageSourceFile => file !== null)
         .sort((a, b) => a.path.localeCompare(b.path))
 
-    repository.deleteIndexedSourceFiles(removedFiles.map(file => file.path))
-    repository.upsertIndexedSourceFiles(parsedChangedFiles)
+    if (removedFiles.length > 0) {
+        repository.deleteIndexedSourceFiles(removedFiles.map(file => file.path))
+    }
 
-    const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles)
+    if (parsedChangedFiles.length > 0) {
+        repository.upsertIndexedSourceFiles(parsedChangedFiles)
+    }
+
+    const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
+        cachedPlatformSessions: options.hydrateCachedPricing ? undefined : options.cachedPlatformSessions,
+        updatedPlatformSessions,
+        updatedPlatforms,
+    })
     const currentProjectNames = new Set(
         Object.values(bootstrapByPlatform).flatMap(sessions => sessions.map(session => session.project)),
     )
@@ -118,18 +240,137 @@ export async function buildIncrementalUsageIndex(
     return {
         affectedProjects: Array.from(affectedProjects).sort((a, b) => a.localeCompare(b)),
         bootstrapByPlatform,
+        hasChanges: hasFileChanges,
         indexedFiles,
+        timing,
         removedProjects,
+        updatedSessions: collectUpdatedSessions(parsedChangedFiles, removedFiles),
+        updatedPlatforms,
     }
 }
 
-async function createPricingResolvers(): Promise<ProjectUsagePlatformRecord<ModelPricingResolver>> {
-    const entries = await Promise.all(PROJECT_USAGE_PLATFORMS.map(async platform => [
+export async function hydrateIndexedUsageSourceFiles(files: IndexedUsageSourceFile[]) {
+    if (files.length === 0) {
+        return files
+    }
+
+    const pricingResolvers = await createPricingResolversForPlatforms(files.map(file => file.platform))
+
+    return files.map((file) => {
+        const resolvePricing = pricingResolvers.get(file.platform)
+
+        if (!resolvePricing) {
+            return file
+        }
+
+        return {
+            ...file,
+            payload: file.payload.map(fragment => ({
+                ...fragment,
+                interactions: fragment.interactions.map((interaction) => {
+                    const usage = interaction.usage
+
+                    if (!usage || !interaction.model) {
+                        return {
+                            ...interaction,
+                            costUSD: 0,
+                            usage,
+                        }
+                    }
+
+                    const cacheCreationTokens = usage.cacheCreationTokens ?? 0
+                    const cacheReadTokens = usage.cacheReadTokens ?? Math.max(usage.cachedInputTokens - cacheCreationTokens, 0)
+                    const outputTokens = usage.outputTokens + usage.reasoningOutputTokens + (usage.extraTotalTokens ?? 0) + (usage.toolTokens ?? 0)
+                    const costUSD = calculateUsageCostUSD({
+                        cacheCreationTokens,
+                        cachedInputTokens: cacheReadTokens,
+                        inputTokens: usage.inputTokens,
+                        outputTokens,
+                    }, resolvePricing(interaction.model), {
+                        defaultFastMultiplier: file.platform === 'codex' ? 2 : undefined,
+                        speed: file.platform === 'codex'
+                            ? (file.cacheSignature === 'codex-speed:fast' ? 'fast' : 'standard')
+                            : (interaction.model.endsWith('-fast') ? 'fast' : undefined),
+                    })
+
+                    return {
+                        ...interaction,
+                        costUSD,
+                        usage: {
+                            ...usage,
+                            costUSD,
+                        },
+                    }
+                }),
+            })),
+        }
+    })
+}
+
+export function buildPlatformSessionsSnapshot(indexedFiles: IndexedUsageSourceFile[]) {
+    return Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map(platform => [platform, buildPlatformSessionsFromFiles(indexedFiles, platform)]),
+    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+}
+
+export async function getUsageCacheUpdateState(
+    config: IConfig,
+    repository: UsageCacheRepository,
+    cacheUpdatedAt: number,
+) {
+    if (cacheUpdatedAt <= 0) {
+        const discoveredFiles = await discoverUsageFiles(config)
+
+        return {
+            hasChanges: true,
+            updatedPlatforms: getUpdatedPlatforms(discoveredFiles, []),
+        }
+    }
+
+    const discoveredFiles = await discoverUsageFiles(config)
+    const cachedFiles = repository.loadIndexedSourceFiles()
+    const { changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, cachedFiles)
+    const staleFiles = discoveredFiles.filter(file => file.mtimeMs > cacheUpdatedAt)
+
+    return {
+        hasChanges: changedFiles.length > 0 || removedFiles.length > 0 || staleFiles.length > 0,
+        updatedPlatforms: getUpdatedPlatforms([...changedFiles, ...staleFiles], removedFiles),
+    }
+}
+
+function getUsageFileChanges(
+    discoveredFiles: DiscoveredUsageFile[],
+    cachedFiles: IndexedUsageSourceFile[],
+) {
+    const cachedFilesByPath = new Map(cachedFiles.map(file => [file.path, file]))
+    const discoveredFilePaths = new Set(discoveredFiles.map(file => file.path))
+    const changedFiles = discoveredFiles.filter((file) => {
+        const cached = cachedFilesByPath.get(file.path)
+
+        return !cached
+            || cached.platform !== file.platform
+            || cached.cacheSignature !== file.cacheSignature
+            || cached.size !== file.size
+            || cached.mtimeMs !== file.mtimeMs
+    })
+    const removedFiles = cachedFiles.filter(file => !discoveredFilePaths.has(file.path))
+
+    return {
+        cachedFiles: cachedFiles.length,
+        cachedFilesByPath,
+        changedFiles,
+        removedFiles,
+    }
+}
+
+async function createPricingResolversForPlatforms(platforms: ProjectUsagePlatform[]): Promise<Map<ProjectUsagePlatform, ModelPricingResolver>> {
+    const uniquePlatforms = PROJECT_USAGE_PLATFORMS.filter(platform => platforms.includes(platform))
+    const entries = await Promise.all(uniquePlatforms.map(async platform => [
         platform,
         await usagePlatformAdapters[platform].createPricingResolver(),
     ] as const))
 
-    return Object.fromEntries(entries) as ProjectUsagePlatformRecord<ModelPricingResolver>
+    return new Map(entries)
 }
 
 async function discoverUsageFiles(config: IConfig) {
@@ -142,10 +383,16 @@ async function discoverUsageFiles(config: IConfig) {
 
 function parseUsageFile(
     file: DiscoveredUsageFile,
-    pricingResolvers: ProjectUsagePlatformRecord<ModelPricingResolver>,
+    pricingResolvers: Map<ProjectUsagePlatform, ModelPricingResolver>,
 ): IndexedUsageSourceFile {
     const adapter = usagePlatformAdapters[file.platform]
-    const payload = adapter.parseFile(file.path, pricingResolvers[file.platform], file)
+    const resolvePricing = pricingResolvers.get(file.platform)
+
+    if (!resolvePricing) {
+        throw new Error(`Missing pricing resolver for platform ${file.platform}.`)
+    }
+
+    const payload = adapter.parseFile(file.path, resolvePricing, file)
 
     return {
         cacheSignature: file.cacheSignature,
@@ -159,10 +406,152 @@ function parseUsageFile(
     }
 }
 
-function buildPlatformSessionsByPlatform(indexedFiles: IndexedUsageSourceFile[]) {
+function buildPlatformSessionsByPlatform(
+    indexedFiles: IndexedUsageSourceFile[],
+    options: {
+        cachedPlatformSessions?: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>
+        updatedPlatformSessions?: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>
+        updatedPlatforms: readonly ProjectUsagePlatform[]
+    },
+) {
     return Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map(platform => [platform, buildPlatformSessionsFromFiles(indexedFiles, platform)]),
+        PROJECT_USAGE_PLATFORMS.map((platform) => {
+            const updatedSessions = options.updatedPlatformSessions?.[platform]
+
+            if (updatedSessions) {
+                return [platform, updatedSessions]
+            }
+
+            if (!options.updatedPlatforms.includes(platform) && options.cachedPlatformSessions?.[platform]) {
+                return [platform, options.cachedPlatformSessions[platform]!]
+            }
+
+            const sessions = buildPlatformSessionsFromFiles(indexedFiles, platform)
+
+            return [platform, sessions]
+        }),
     ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+}
+
+function getPlatformDeltaStats(
+    platform: ProjectUsagePlatform,
+    parsedFiles: IndexedUsageSourceFile[],
+    cachedFilesByPath: Map<string, IndexedUsageSourceFile>,
+) {
+    const updatedSessions = new Set<string>()
+    let newInteractions = 0
+    let newSessions = 0
+
+    for (const file of parsedFiles) {
+        if (file.platform !== platform) {
+            continue
+        }
+
+        const cachedFile = cachedFilesByPath.get(file.path)
+        const cachedFragmentsByKey = new Map((cachedFile?.payload ?? []).map(fragment => [fragment.key, fragment]))
+
+        for (const fragment of file.payload) {
+            const cachedFragment = cachedFragmentsByKey.get(fragment.key)
+
+            if (!cachedFragment) {
+                newSessions += 1
+                newInteractions += fragment.interactions.length
+
+                if (fragment.sessionId.trim()) {
+                    updatedSessions.add(fragment.sessionId.trim())
+                }
+                continue
+            }
+
+            const cachedInteractionKeys = new Set(cachedFragment.interactions.map(createInteractionIdentityKey))
+            const interactionDelta = fragment.interactions.reduce((sum, interaction) => {
+                return sum + (cachedInteractionKeys.has(createInteractionIdentityKey(interaction)) ? 0 : 1)
+            }, 0)
+
+            if (interactionDelta > 0) {
+                newInteractions += interactionDelta
+
+                if (fragment.sessionId.trim()) {
+                    updatedSessions.add(fragment.sessionId.trim())
+                }
+            }
+        }
+    }
+
+    return {
+        newInteractions,
+        newSessions,
+        updatedSessions: updatedSessions.size,
+    }
+}
+
+function createInteractionIdentityKey(interaction: IndexedUsageInteraction) {
+    return interaction.dedupeKey
+        ?? interaction.fallbackDedupeKey
+        ?? [
+            interaction.index,
+            interaction.timestamp ?? '',
+            interaction.role,
+            interaction.model ?? '',
+            interaction.type,
+            interaction.usage?.totalTokens ?? 0,
+        ].join(':')
+}
+
+function countFilesByPlatform(files: Array<{ platform: ProjectUsagePlatform }>) {
+    const counts = Object.fromEntries(PROJECT_USAGE_PLATFORMS.map(platform => [platform, 0])) as ProjectUsagePlatformRecord<number>
+
+    for (const file of files) {
+        counts[file.platform] += 1
+    }
+
+    return counts
+}
+
+function collectUpdatedSessions(
+    parsedChangedFiles: IndexedUsageSourceFile[],
+    removedFiles: IndexedUsageSourceFile[],
+) {
+    const sessions = new Map<string, UpdatedUsageSession>()
+
+    for (const file of [...parsedChangedFiles, ...removedFiles]) {
+        for (const fragment of file.payload) {
+            const sessionId = fragment.sessionId.trim()
+
+            if (!sessionId) {
+                continue
+            }
+
+            const key = `${file.platform}:${sessionId}`
+
+            if (!sessions.has(key)) {
+                sessions.set(key, {
+                    platform: file.platform,
+                    sessionId,
+                })
+            }
+        }
+    }
+
+    return Array.from(sessions.values()).sort((a, b) => {
+        if (a.platform !== b.platform) {
+            return a.platform.localeCompare(b.platform)
+        }
+
+        return a.sessionId.localeCompare(b.sessionId)
+    })
+}
+
+function getUpdatedPlatforms(
+    changedFiles: Array<{ platform: ProjectUsagePlatform }>,
+    removedFiles: Array<{ platform: ProjectUsagePlatform }>,
+) {
+    const platforms = new Set<ProjectUsagePlatform>([
+        ...changedFiles.map(file => file.platform),
+        ...removedFiles.map(file => file.platform),
+    ])
+
+    return PROJECT_USAGE_PLATFORMS.filter(platform => platforms.has(platform))
 }
 
 function buildPlatformSessionsFromFiles(

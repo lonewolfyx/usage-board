@@ -60,7 +60,6 @@ export interface UsageScopeRow {
     today_top_model_total_tokens: number | null
     today_top_project: string | null
     today_top_project_session_count: number | null
-    today_total_cost: number
     today_total_tokens: number
     updated_at: string
 }
@@ -80,7 +79,6 @@ export interface OverviewCardRow {
 export interface TokenRowRow {
     bucket: TokenRowBucket
     cached_input_tokens: number
-    cost_usd: number
     input_tokens: number
     label: string
     output_tokens: number
@@ -111,7 +109,6 @@ export interface TokenRowProjectRow {
 
 export interface DailyUsageRow {
     cached_input_tokens: number
-    cost_usd: number
     date: string
     input_tokens: number
     output_tokens: number
@@ -123,7 +120,6 @@ export interface DailyUsageRow {
 
 export interface DailyUsageModelRow {
     cached_input_tokens: number
-    cost_usd: number
     date: string
     input_tokens: number
     is_fallback: number
@@ -144,7 +140,6 @@ export interface MonthlyModelUsageRow {
 }
 
 export interface ProjectUsageRow {
-    cost_usd: number
     detail: string
     label: string
     percent: number
@@ -159,7 +154,6 @@ export interface ProjectUsageRow {
 
 export interface SessionRow {
     cached_input_tokens: number
-    cost_usd: number
     date: string
     duration: string
     duration_minutes: number
@@ -194,7 +188,6 @@ export interface ScopeInteractionRow {
     cache_read_tokens: number | null
     cached_input_tokens: number | null
     content: string
-    cost_usd: number
     extra_total_tokens: number | null
     input_tokens: number | null
     interaction_index: number
@@ -210,7 +203,6 @@ export interface ScopeInteractionRow {
     tool_tokens: number | null
     total_tokens: number | null
     type: string
-    usage_cost_usd: number | null
 }
 
 export interface IndexedFileRow {
@@ -246,7 +238,6 @@ export interface IndexedInteractionRow {
     cache_read_tokens: number | null
     cached_input_tokens: number | null
     content: string
-    cost_usd: number
     dedupe_key: string | null
     fallback_dedupe_key: string | null
     extra_total_tokens: number | null
@@ -264,7 +255,6 @@ export interface IndexedInteractionRow {
     tool_tokens: number | null
     total_tokens: number | null
     type: string
-    usage_cost_usd: number | null
 }
 
 export interface LegacySnapshotRow {
