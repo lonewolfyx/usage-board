@@ -37,9 +37,24 @@ export interface IndexedUsageSourceFile {
     updatedAt: string
 }
 
+export interface UpdatedUsageSession {
+    platform: ProjectUsagePlatform
+    sessionId: string
+}
+
+export interface IncrementalUsageIndexTiming {
+    aggregateMs: number
+    discoveryMs: number
+    parseMs: number
+}
+
 export interface IncrementalUsageIndexResult {
     affectedProjects: string[]
     bootstrapByPlatform: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+    hasChanges: boolean
     indexedFiles: IndexedUsageSourceFile[]
+    timing: IncrementalUsageIndexTiming
     removedProjects: string[]
+    updatedSessions: UpdatedUsageSession[]
+    updatedPlatforms: readonly ProjectUsagePlatform[]
 }

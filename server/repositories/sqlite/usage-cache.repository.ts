@@ -1,14 +1,11 @@
 import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
 import type { SqliteDatabase } from '#server/utils/sqlite'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
-import type { HomeDashboardTodayInsights } from '#shared/types/analysis'
 import type {
     DailyTokenUsage,
-    HourlyUsagePoint,
     LoadUsageResult,
     MonthlyModelUsage,
     ProjectInteractionUsage,
-    ProjectPlatformUsage,
     ProjectSessionInteractionItem,
     ProjectSessionUsageItem,
     ProjectUsageDetail,
@@ -33,8 +30,6 @@ import type {
     OverviewCardRow,
     PersistedUsageScope,
     ProjectCatalogEntryRow,
-    ProjectModelRow,
-    ProjectRow,
     ProjectUsageRow,
     SchemaVersionRow,
     ScopeInteractionRow,
@@ -55,13 +50,11 @@ import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import {
     createEmptyLoadUsageResult,
-    createEmptyProjectPlatformUsage,
     normalizeProjectUsageDetail,
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { roundCurrency } from '#shared/utils/usage-dashboard'
 
-const CACHE_SCHEMA_VERSION = 10
+const CACHE_SCHEMA_VERSION = 11
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -105,7 +98,6 @@ const CACHE_SCHEMA_SQL = `
         platform TEXT NOT NULL,
         payload_hash TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        today_total_cost REAL NOT NULL,
         today_total_tokens INTEGER NOT NULL,
         today_top_model TEXT,
         today_top_model_total_tokens INTEGER,
@@ -144,7 +136,6 @@ const CACHE_SCHEMA_SQL = `
         output_tokens INTEGER NOT NULL,
         reasoning_output_tokens INTEGER NOT NULL,
         total_tokens INTEGER NOT NULL,
-        cost_usd REAL NOT NULL,
         PRIMARY KEY (scope_key, bucket, row_id),
         FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
     );
@@ -185,7 +176,6 @@ const CACHE_SCHEMA_SQL = `
         output_tokens INTEGER NOT NULL,
         reasoning_output_tokens INTEGER NOT NULL,
         total_tokens INTEGER NOT NULL,
-        cost_usd REAL NOT NULL,
         PRIMARY KEY (scope_key, date),
         FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
     );
@@ -203,7 +193,6 @@ const CACHE_SCHEMA_SQL = `
         output_tokens INTEGER NOT NULL,
         reasoning_output_tokens INTEGER NOT NULL,
         total_tokens INTEGER NOT NULL,
-        cost_usd REAL NOT NULL,
         is_fallback INTEGER NOT NULL,
         PRIMARY KEY (scope_key, date, model),
         FOREIGN KEY (scope_key, date)
@@ -235,7 +224,6 @@ const CACHE_SCHEMA_SQL = `
         repository TEXT NOT NULL,
         sessions INTEGER NOT NULL,
         token_total INTEGER NOT NULL,
-        cost_usd REAL NOT NULL,
         PRIMARY KEY (scope_key, label, repository),
         FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
     );
@@ -263,7 +251,6 @@ const CACHE_SCHEMA_SQL = `
         output_tokens INTEGER NOT NULL,
         reasoning_output_tokens INTEGER NOT NULL,
         token_total INTEGER NOT NULL,
-        cost_usd REAL NOT NULL,
         last_activity TEXT NOT NULL,
         top_model TEXT NOT NULL,
         PRIMARY KEY (scope_key, session_key),
@@ -292,7 +279,6 @@ const CACHE_SCHEMA_SQL = `
         interaction_order INTEGER NOT NULL,
         interaction_index INTEGER NOT NULL,
         content TEXT NOT NULL,
-        cost_usd REAL NOT NULL,
         model TEXT,
         role TEXT NOT NULL,
         timestamp TEXT,
@@ -303,7 +289,6 @@ const CACHE_SCHEMA_SQL = `
         reasoning_output_tokens INTEGER,
         extra_total_tokens INTEGER,
         total_tokens INTEGER,
-        usage_cost_usd REAL,
         cache_creation_tokens INTEGER,
         cache_read_tokens INTEGER,
         tool_tokens INTEGER,
@@ -358,7 +343,6 @@ const CACHE_SCHEMA_SQL = `
         interaction_order INTEGER NOT NULL,
         interaction_index INTEGER NOT NULL,
         content TEXT NOT NULL,
-        cost_usd REAL NOT NULL,
         dedupe_key TEXT,
         fallback_dedupe_key TEXT,
         is_sidechain INTEGER,
@@ -372,7 +356,6 @@ const CACHE_SCHEMA_SQL = `
         reasoning_output_tokens INTEGER,
         extra_total_tokens INTEGER,
         total_tokens INTEGER,
-        usage_cost_usd REAL,
         cache_creation_tokens INTEGER,
         cache_read_tokens INTEGER,
         tool_tokens INTEGER,
@@ -421,65 +404,13 @@ export class UsageCacheRepository {
         }
     }
 
-    saveBootstrap(payload: TokensConsumptionResult) {
-        this.persistBootstrap(payload)
-    }
-
-    loadHomeDashboardTodayInsights(): HomeDashboardTodayInsights {
-        const { previousDayStartAt, todayStartAt, tomorrowStartAt } = getHomeInsightRange()
-        const promptCount = groupTodayInsightCounts(this.database.prepare<TodayInsightCountRow>(`
-            SELECT
-                CASE
-                    WHEN interaction.timestamp >= ? AND interaction.timestamp < ? THEN 'today'
-                    ELSE 'previous'
-                END AS period,
-                COUNT(*) AS total
-            FROM usage_scope_interactions AS interaction
-            JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
-            WHERE scope.scope_kind = 'bootstrap'
-              AND interaction.role = 'user'
-              AND interaction.timestamp IS NOT NULL
-              AND interaction.timestamp >= ?
-              AND interaction.timestamp < ?
-            GROUP BY period
-        `).all(todayStartAt, tomorrowStartAt, previousDayStartAt, tomorrowStartAt))
-        const sessionCount = groupTodayInsightCounts(this.database.prepare<TodayInsightCountRow>(`
-            SELECT
-                CASE
-                    WHEN session.started_at >= ? AND session.started_at < ? THEN 'today'
-                    ELSE 'previous'
-                END AS period,
-                COUNT(*) AS total
-            FROM usage_scope_sessions AS session
-            JOIN usage_scopes AS scope ON scope.scope_key = session.scope_key
-            WHERE scope.scope_kind = 'bootstrap'
-              AND session.started_at >= ?
-              AND session.started_at < ?
-            GROUP BY period
-        `).all(todayStartAt, tomorrowStartAt, previousDayStartAt, tomorrowStartAt))
-
-        return {
-            previousPromptCount: promptCount.previous,
-            previousSessionCount: sessionCount.previous,
-            promptCount: promptCount.today,
-            sessionCount: sessionCount.today,
-            todayHourlyUsage: buildTodayHourlyUsage(this.database.prepare<TodayHourlyUsageRow>(`
-                SELECT
-                    scope.platform AS platform,
-                    CAST(strftime('%H', interaction.timestamp, 'localtime') AS INTEGER) AS hour,
-                    ROUND(SUM(COALESCE(interaction.usage_cost_usd, 0)), 6) AS cost_usd,
-                    SUM(COALESCE(interaction.total_tokens, 0)) AS total_tokens
-                FROM usage_scope_interactions AS interaction
-                JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
-                WHERE scope.scope_kind = 'bootstrap'
-                  AND interaction.timestamp IS NOT NULL
-                  AND interaction.total_tokens IS NOT NULL
-                  AND interaction.timestamp >= ?
-                  AND interaction.timestamp < ?
-                GROUP BY scope.platform, hour
-                ORDER BY hour ASC, scope.platform ASC
-            `).all(todayStartAt, tomorrowStartAt)),
-        }
+    saveBootstrap(
+        payload: TokensConsumptionResult,
+        options: {
+            platforms?: ProjectUsagePlatform[]
+        } = {},
+    ) {
+        this.persistBootstrap(payload, options)
     }
 
     loadProjectCatalog() {
@@ -506,49 +437,14 @@ export class UsageCacheRepository {
         }
     }
 
-    saveProjectCatalog(payload: ProjectUsageCatalogItem[]) {
-        this.persistProjectCatalog(payload)
-    }
-
-    loadProjectDetails() {
-        const projects: ProjectRow[] = this.database.prepare<ProjectRow>(`
-            SELECT label, create_time, session_count
-            FROM projects
-            ORDER BY label ASC
-        `).all()
-
-        const projectModels = groupProjectModels(this.database.prepare<ProjectModelRow>(`
-            SELECT project_label, model, model_order
-            FROM project_models
-            ORDER BY project_label ASC, model_order ASC
-        `).all())
-        const scopes = this.loadHydratedUsageScopes('project')
-
-        return buildProjectUsageDetails(projects, projectModels, scopes)
-    }
-
-    loadProjectDetail(label: string) {
-        const project = this.database.prepare<ProjectRow>(`
-            SELECT label, create_time, session_count
-            FROM projects
-            WHERE label = ?
-        `).get(label)
-
-        if (!project) {
-            return null
-        }
-
-        const projectModels = groupProjectModels(this.database.prepare<ProjectModelRow>(`
-            SELECT project_label, model, model_order
-            FROM project_models
-            WHERE project_label = ?
-            ORDER BY model_order ASC
-        `).all(label))
-        const scopes = this.loadHydratedUsageScopes('project', {
-            projectLabel: label,
-        })
-
-        return buildProjectUsageDetails([project], projectModels, scopes).get(label) ?? null
+    saveProjectCatalog(
+        payload: ProjectUsageCatalogItem[],
+        options: {
+            changedEntries?: ProjectUsageCatalogItem[]
+            removedLabels?: string[]
+        } = {},
+    ) {
+        this.persistProjectCatalog(payload, options)
     }
 
     loadIndexedSourceFiles() {
@@ -588,7 +484,6 @@ export class UsageCacheRepository {
                 interaction_order,
                 interaction_index,
                 content,
-                cost_usd,
                 dedupe_key,
                 fallback_dedupe_key,
                 is_sidechain,
@@ -602,7 +497,6 @@ export class UsageCacheRepository {
                 reasoning_output_tokens,
                 extra_total_tokens,
                 total_tokens,
-                usage_cost_usd,
                 cache_creation_tokens,
                 cache_read_tokens,
                 tool_tokens,
@@ -675,7 +569,6 @@ export class UsageCacheRepository {
                 interaction_order,
                 interaction_index,
                 content,
-                cost_usd,
                 dedupe_key,
                 fallback_dedupe_key,
                 is_sidechain,
@@ -689,13 +582,12 @@ export class UsageCacheRepository {
                 reasoning_output_tokens,
                 extra_total_tokens,
                 total_tokens,
-                usage_cost_usd,
                 cache_creation_tokens,
                 cache_read_tokens,
                 tool_tokens,
                 is_fallback_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         this.database.exec('BEGIN')
@@ -729,7 +621,6 @@ export class UsageCacheRepository {
                             interactionOrder,
                             interaction.index,
                             interaction.content,
-                            interaction.costUSD,
                             interaction.dedupeKey ?? null,
                             interaction.fallbackDedupeKey ?? null,
                             interaction.isSidechain ? 1 : 0,
@@ -743,7 +634,6 @@ export class UsageCacheRepository {
                             interaction.usage?.reasoningOutputTokens ?? null,
                             interaction.usage?.extraTotalTokens ?? null,
                             interaction.usage?.totalTokens ?? null,
-                            interaction.usage?.costUSD ?? null,
                             interaction.usage?.cacheCreationTokens ?? null,
                             interaction.usage?.cacheReadTokens ?? null,
                             interaction.usage?.toolTokens ?? null,
@@ -782,7 +672,10 @@ export class UsageCacheRepository {
         }
     }
 
-    replaceProjectDetails(details: Map<string, ProjectUsageDetail>) {
+    replaceProjectDetails(
+        details: Map<string, ProjectUsageDetail>,
+        onProjectWritten?: (stats: { durationMs: number, label: string, total: number, written: number }) => void,
+    ) {
         const insertProjectStatement = this.database.prepare(`
             INSERT OR REPLACE INTO projects (label, create_time, session_count, updated_at)
             VALUES (?, ?, ?, ?)
@@ -798,28 +691,75 @@ export class UsageCacheRepository {
         try {
             this.database.prepare('DELETE FROM projects').run()
 
-            for (const [label, detail] of details.entries()) {
-                const sanitizedDetail = stripRawPayload(detail)
-                insertProjectStatement.run(
-                    label,
-                    sanitizedDetail.createTime,
-                    sanitizedDetail.sessionCound,
+            for (const [projectIndex, [label, detail]] of Array.from(details.entries()).entries()) {
+                const startedAt = Date.now()
+
+                this.insertProjectDetail(label, detail, {
+                    insertProjectModelStatement,
+                    insertProjectStatement,
                     now,
-                )
+                })
+                onProjectWritten?.({
+                    durationMs: Date.now() - startedAt,
+                    label,
+                    total: details.size,
+                    written: projectIndex + 1,
+                })
+            }
 
-                for (const [modelOrder, model] of sanitizedDetail.models.entries()) {
-                    insertProjectModelStatement.run(label, model, modelOrder)
-                }
+            this.database.exec('COMMIT')
+        }
+        catch (error) {
+            this.database.exec('ROLLBACK')
+            throw error
+        }
+    }
 
-                for (const platform of PROJECT_USAGE_PLATFORMS) {
-                    this.insertUsageScope({
-                        kind: 'project',
-                        platform,
-                        projectLabel: label,
-                        updatedAt: now,
-                        usage: sanitizedDetail.analyzing[platform],
+    patchProjectDetails(options: {
+        details: Map<string, ProjectUsageDetail>
+        onProjectWritten?: (stats: { durationMs: number, label: string, total: number, written: number }) => void
+        removedProjects: string[]
+        updatedProjects: string[]
+    }) {
+        const insertProjectStatement = this.database.prepare(`
+            INSERT OR REPLACE INTO projects (label, create_time, session_count, updated_at)
+            VALUES (?, ?, ?, ?)
+        `)
+        const insertProjectModelStatement = this.database.prepare(`
+            INSERT OR REPLACE INTO project_models (project_label, model, model_order)
+            VALUES (?, ?, ?)
+        `)
+        const deleteProjectStatement = this.database.prepare('DELETE FROM projects WHERE label = ?')
+        const now = new Date().toISOString()
+        const updatedProjects = options.updatedProjects.filter((projectName, index, projects) => projects.indexOf(projectName) === index)
+
+        this.database.exec('BEGIN')
+
+        try {
+            for (const projectName of options.removedProjects) {
+                deleteProjectStatement.run(projectName)
+            }
+
+            for (const [projectIndex, projectName] of updatedProjects.entries()) {
+                const startedAt = Date.now()
+                const detail = options.details.get(projectName)
+
+                deleteProjectStatement.run(projectName)
+
+                if (detail) {
+                    this.insertProjectDetail(projectName, detail, {
+                        insertProjectModelStatement,
+                        insertProjectStatement,
+                        now,
                     })
                 }
+
+                options.onProjectWritten?.({
+                    durationMs: Date.now() - startedAt,
+                    label: projectName,
+                    total: updatedProjects.length,
+                    written: projectIndex + 1,
+                })
             }
 
             this.database.exec('COMMIT')
@@ -832,6 +772,39 @@ export class UsageCacheRepository {
 
     close() {
         this.database.close()
+    }
+
+    private insertProjectDetail(
+        label: string,
+        detail: ProjectUsageDetail,
+        statements: {
+            insertProjectModelStatement: ReturnType<SqliteDatabase['prepare']>
+            insertProjectStatement: ReturnType<SqliteDatabase['prepare']>
+            now: string
+        },
+    ) {
+        const sanitizedDetail = stripRawPayload(detail)
+
+        statements.insertProjectStatement.run(
+            label,
+            sanitizedDetail.createTime,
+            sanitizedDetail.sessionCound,
+            statements.now,
+        )
+
+        for (const [modelOrder, model] of sanitizedDetail.models.entries()) {
+            statements.insertProjectModelStatement.run(label, model, modelOrder)
+        }
+
+        for (const platform of PROJECT_USAGE_PLATFORMS) {
+            this.insertUsageScope({
+                kind: 'project',
+                platform,
+                projectLabel: label,
+                updatedAt: statements.now,
+                usage: sanitizedDetail.analyzing[platform],
+            })
+        }
     }
 
     private initializeSchema() {
@@ -877,7 +850,6 @@ export class UsageCacheRepository {
         return this.hasTableColumns('indexed_files', ['cache_signature'])
             && this.hasTableColumns('project_catalog_entries', ['platforms_json', 'total_tokens'])
             && !this.hasTableColumns('project_catalog_entries', ['type'])
-            && this.hasTableColumns('usage_scope_daily_usage_models', ['cost_usd'])
             && this.hasTableColumns('usage_scope_overview_cards', ['subvalue_json'])
             && this.hasTableColumns('usage_scope_interactions', ['extra_total_tokens'])
             && this.hasTableColumns('indexed_fragment_interactions', ['extra_total_tokens', 'fallback_dedupe_key', 'is_sidechain'])
@@ -1022,20 +994,6 @@ export class UsageCacheRepository {
         }
     }
 
-    private ensureDailyUsageModelCostColumn() {
-        if (!this.hasTable('usage_scope_daily_usage_models')) {
-            return
-        }
-
-        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_daily_usage_models)').all()
-
-        if (columns.some(column => column.name === 'cost_usd')) {
-            return
-        }
-
-        this.database.exec('ALTER TABLE usage_scope_daily_usage_models ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0')
-    }
-
     private ensureOverviewCardSubvalueColumn() {
         if (!this.hasTable('usage_scope_overview_cards')) {
             return
@@ -1121,20 +1079,25 @@ export class UsageCacheRepository {
         payload: TokensConsumptionResult,
         options: {
             payloadHash?: string
+            platforms?: ProjectUsagePlatform[]
             updatedAt?: string
             version?: string
         } = {},
     ) {
         const updatedAt = options.updatedAt ?? new Date().toISOString()
         const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
+        const platforms = options.platforms?.length
+            ? PROJECT_USAGE_PLATFORMS.filter(platform => options.platforms!.includes(platform))
+            : PROJECT_USAGE_PLATFORMS
         const version = options.version ?? payload.version
 
         this.database.exec('BEGIN')
 
         try {
-            this.database.prepare(`DELETE FROM usage_scopes WHERE scope_kind = 'bootstrap'`).run()
+            const deleteScopeStatement = this.database.prepare('DELETE FROM usage_scopes WHERE scope_key = ?')
 
-            for (const platform of PROJECT_USAGE_PLATFORMS) {
+            for (const platform of platforms) {
+                deleteScopeStatement.run(createUsageScopeKey('bootstrap', platform))
                 this.insertUsageScope({
                     kind: 'bootstrap',
                     platform,
@@ -1155,13 +1118,17 @@ export class UsageCacheRepository {
     private persistProjectCatalog(
         payload: ProjectUsageCatalogItem[],
         options: {
+            changedEntries?: ProjectUsageCatalogItem[]
             payloadHash?: string
+            removedLabels?: string[]
             updatedAt?: string
         } = {},
     ) {
+        const changedEntries = options.changedEntries
         const updatedAt = options.updatedAt ?? new Date().toISOString()
         const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
-        const deleteStatement = this.database.prepare('DELETE FROM project_catalog_entries')
+        const deleteAllStatement = this.database.prepare('DELETE FROM project_catalog_entries')
+        const deleteEntryStatement = this.database.prepare('DELETE FROM project_catalog_entries WHERE label = ?')
         const insertStatement = this.database.prepare(`
             INSERT OR REPLACE INTO project_catalog_entries (label, platforms_json, total_tokens, updated_at)
             VALUES (?, ?, ?, ?)
@@ -1170,10 +1137,21 @@ export class UsageCacheRepository {
         this.database.exec('BEGIN')
 
         try {
-            deleteStatement.run()
+            if (changedEntries) {
+                for (const label of options.removedLabels ?? []) {
+                    deleteEntryStatement.run(label)
+                }
 
-            for (const item of payload) {
-                insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
+                for (const item of changedEntries) {
+                    insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
+                }
+            }
+            else {
+                deleteAllStatement.run()
+
+                for (const item of payload) {
+                    insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
+                }
             }
 
             this.upsertCacheState('project_catalog', payloadHash, updatedAt)
@@ -1218,14 +1196,13 @@ export class UsageCacheRepository {
                 platform,
                 payload_hash,
                 updated_at,
-                today_total_cost,
                 today_total_tokens,
                 today_top_model,
                 today_top_model_total_tokens,
                 today_top_project,
                 today_top_project_session_count
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertOverviewCardStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_overview_cards (
@@ -1254,10 +1231,9 @@ export class UsageCacheRepository {
                 cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens,
-                total_tokens,
-                cost_usd
+                total_tokens
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertTokenRowModelStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_token_row_models (
@@ -1288,10 +1264,9 @@ export class UsageCacheRepository {
                 cached_input_tokens,
                 output_tokens,
                 reasoning_output_tokens,
-                total_tokens,
-                cost_usd
+                total_tokens
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertDailyUsageModelStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_daily_usage_models (
@@ -1304,10 +1279,9 @@ export class UsageCacheRepository {
                 output_tokens,
                 reasoning_output_tokens,
                 total_tokens,
-                cost_usd,
                 is_fallback
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertMonthlyModelStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_monthly_model_usage (
@@ -1330,10 +1304,9 @@ export class UsageCacheRepository {
                 tone,
                 repository,
                 sessions,
-                token_total,
-                cost_usd
+                token_total
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertSessionStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_sessions (
@@ -1356,11 +1329,10 @@ export class UsageCacheRepository {
                 output_tokens,
                 reasoning_output_tokens,
                 token_total,
-                cost_usd,
                 last_activity,
                 top_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const insertSessionModelStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_session_models (
@@ -1378,7 +1350,6 @@ export class UsageCacheRepository {
                 interaction_order,
                 interaction_index,
                 content,
-                cost_usd,
                 model,
                 role,
                 timestamp,
@@ -1389,13 +1360,12 @@ export class UsageCacheRepository {
                 reasoning_output_tokens,
                 extra_total_tokens,
                 total_tokens,
-                usage_cost_usd,
                 cache_creation_tokens,
                 cache_read_tokens,
                 tool_tokens,
                 is_fallback_model
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
 
         insertScopeStatement.run(
@@ -1405,7 +1375,6 @@ export class UsageCacheRepository {
             options.platform,
             payloadHash,
             options.updatedAt,
-            options.usage.todayTotalCost,
             options.usage.todayTotalTokens,
             options.usage.todayTopModel?.model ?? null,
             options.usage.todayTopModel?.totalTokens ?? null,
@@ -1444,7 +1413,6 @@ export class UsageCacheRepository {
                     row.outputTokens,
                     row.reasoningOutputTokens,
                     row.totalTokens,
-                    row.costUSD,
                 )
 
                 for (const [modelOrder, model] of row.models.entries()) {
@@ -1467,7 +1435,6 @@ export class UsageCacheRepository {
                 row.outputTokens,
                 row.reasoningOutputTokens,
                 row.totalTokens,
-                row.costUSD,
             )
 
             for (const [modelOrder, [model, usage]] of Object.entries(row.models).entries()) {
@@ -1481,7 +1448,6 @@ export class UsageCacheRepository {
                     usage.outputTokens,
                     usage.reasoningOutputTokens,
                     usage.totalTokens,
-                    usage.costUSD,
                     usage.isFallback ? 1 : 0,
                 )
             }
@@ -1509,7 +1475,6 @@ export class UsageCacheRepository {
                 row.repository,
                 row.sessions,
                 row.tokenTotal,
-                row.costUSD,
             )
         }
 
@@ -1534,7 +1499,6 @@ export class UsageCacheRepository {
                 session.outputTokens,
                 session.reasoningOutputTokens,
                 session.tokenTotal,
-                session.costUSD,
                 session.lastActivity,
                 session.topModel,
             )
@@ -1550,7 +1514,6 @@ export class UsageCacheRepository {
                     interactionOrder,
                     interaction.index,
                     interaction.content,
-                    interaction.costUSD,
                     interaction.model,
                     interaction.role,
                     interaction.timestamp,
@@ -1561,7 +1524,6 @@ export class UsageCacheRepository {
                     interaction.usage?.reasoningOutputTokens ?? null,
                     interaction.usage?.extraTotalTokens ?? null,
                     interaction.usage?.totalTokens ?? null,
-                    interaction.usage?.costUSD ?? null,
                     interaction.usage?.cacheCreationTokens ?? null,
                     interaction.usage?.cacheReadTokens ?? null,
                     interaction.usage?.toolTokens ?? null,
@@ -1593,7 +1555,6 @@ export class UsageCacheRepository {
                 platform,
                 payload_hash,
                 updated_at,
-                today_total_cost,
                 today_total_tokens,
                 today_top_model,
                 today_top_model_total_tokens,
@@ -1630,8 +1591,7 @@ export class UsageCacheRepository {
                     row.cached_input_tokens,
                     row.output_tokens,
                     row.reasoning_output_tokens,
-                    row.total_tokens,
-                    row.cost_usd
+                    row.total_tokens
                 FROM usage_scope_token_rows AS row
                 JOIN usage_scopes AS scope ON scope.scope_key = row.scope_key
                 WHERE ${joinedScopeWhere}
@@ -1662,8 +1622,7 @@ export class UsageCacheRepository {
                     daily.cached_input_tokens,
                     daily.output_tokens,
                     daily.reasoning_output_tokens,
-                    daily.total_tokens,
-                    daily.cost_usd
+                    daily.total_tokens
                 FROM usage_scope_daily_usage AS daily
                 JOIN usage_scopes AS scope ON scope.scope_key = daily.scope_key
                 WHERE ${joinedScopeWhere}
@@ -1680,7 +1639,6 @@ export class UsageCacheRepository {
                     model.output_tokens,
                     model.reasoning_output_tokens,
                     model.total_tokens,
-                    model.cost_usd,
                     model.is_fallback
                 FROM usage_scope_daily_usage_models AS model
                 JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
@@ -1706,8 +1664,7 @@ export class UsageCacheRepository {
                 usage.tone,
                 usage.repository,
                 usage.sessions,
-                usage.token_total,
-                usage.cost_usd
+                usage.token_total
             FROM usage_scope_project_usage AS usage
             JOIN usage_scopes AS scope ON scope.scope_key = usage.scope_key
             WHERE ${joinedScopeWhere}
@@ -1735,7 +1692,6 @@ export class UsageCacheRepository {
                     session.output_tokens,
                     session.reasoning_output_tokens,
                     session.token_total,
-                    session.cost_usd,
                     session.last_activity,
                     session.top_model
                 FROM usage_scope_sessions AS session
@@ -1758,7 +1714,6 @@ export class UsageCacheRepository {
                         interaction.interaction_order,
                         interaction.interaction_index,
                         interaction.content,
-                        interaction.cost_usd,
                         interaction.model,
                         interaction.role,
                         interaction.timestamp,
@@ -1769,7 +1724,6 @@ export class UsageCacheRepository {
                         interaction.reasoning_output_tokens,
                         interaction.extra_total_tokens,
                         interaction.total_tokens,
-                        interaction.usage_cost_usd,
                         interaction.cache_creation_tokens,
                         interaction.cache_read_tokens,
                         interaction.tool_tokens,
@@ -1812,7 +1766,7 @@ export class UsageCacheRepository {
                             sessionCount: scope.today_top_project_session_count ?? 0,
                         }
                     : null,
-                todayTotalCost: scope.today_total_cost,
+                todayTotalCost: 0,
                 todayTotalTokens: scope.today_total_tokens,
                 weeklyRows: scopeTokenRows?.weekly ?? [],
             })
@@ -1905,106 +1859,6 @@ function getTokenRowsByBucket(usage: PersistedUsageScope, bucket: TokenRowBucket
     }
 }
 
-function buildTodayHourlyUsage(rows: TodayHourlyUsageRow[]): HourlyUsagePoint[] {
-    const grouped = new Map<number, HourlyUsagePoint>()
-
-    for (const row of rows) {
-        const item = grouped.get(row.hour) ?? {
-            agents: {},
-            costUSD: 0,
-            hour: row.hour,
-            label: `${String(row.hour).padStart(2, '0')}:00`,
-            totalTokens: 0,
-        }
-
-        item.agents[row.platform] = {
-            costUSD: row.cost_usd,
-            totalTokens: row.total_tokens,
-        }
-        item.costUSD = roundCurrency(item.costUSD + row.cost_usd)
-        item.totalTokens += row.total_tokens
-        grouped.set(row.hour, item)
-    }
-
-    return Array.from({ length: 24 }, (_, hour) => grouped.get(hour) ?? {
-        agents: {},
-        costUSD: 0,
-        hour,
-        label: `${String(hour).padStart(2, '0')}:00`,
-        totalTokens: 0,
-    })
-}
-
-function groupTodayInsightCounts(rows: TodayInsightCountRow[]) {
-    return rows.reduce((result, row) => {
-        result[row.period] = row.total
-        return result
-    }, {
-        previous: 0,
-        today: 0,
-    })
-}
-
-function getHomeInsightRange() {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-
-    return {
-        previousDayStartAt: new Date(today.getTime() - 24 * 60 * 60 * 1000).toISOString(),
-        todayStartAt: today.toISOString(),
-        tomorrowStartAt: new Date(today.getTime() + 24 * 60 * 60 * 1000).toISOString(),
-    }
-}
-
-function groupProjectModels(rows: ProjectModelRow[]) {
-    const grouped = new Map<string, string[]>()
-
-    for (const row of rows) {
-        const models = grouped.get(row.project_label) ?? []
-        models.push(row.model)
-        grouped.set(row.project_label, models)
-    }
-
-    return grouped
-}
-
-function buildProjectUsageDetails(
-    projects: ProjectRow[],
-    projectModels: Map<string, string[]>,
-    scopes: Map<string, PersistedUsageScope>,
-) {
-    const details = new Map<string, ProjectUsageDetail>()
-
-    for (const project of projects) {
-        const analyzing = Object.fromEntries(
-            PROJECT_USAGE_PLATFORMS.map((platform) => {
-                const scopeKey = createUsageScopeKey('project', platform, project.label)
-                const usage = scopes.get(scopeKey)
-
-                return [
-                    platform,
-                    usage
-                        ? {
-                                ...usage,
-                                sessions: usage.sessionUsage,
-                            }
-                        : createEmptyProjectPlatformUsage(),
-                ]
-            }),
-        ) as ProjectUsagePlatformRecord<ProjectPlatformUsage>
-
-        details.set(project.label, normalizeProjectUsageDetail({
-            analyzing,
-            createTime: project.create_time,
-            label: project.label,
-            models: projectModels.get(project.label) ?? [],
-            sessionCound: project.session_count,
-        }))
-    }
-
-    return details
-}
-
 function groupIndexedFileProjects(rows: IndexedFileProjectRow[]) {
     const grouped = new Map<string, string[]>()
 
@@ -2024,7 +1878,7 @@ function groupIndexedInteractions(rows: IndexedInteractionRow[]) {
         const interactions = grouped.get(row.fragment_id) ?? []
         interactions.push({
             content: row.content,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             dedupeKey: row.dedupe_key,
             fallbackDedupeKey: row.fallback_dedupe_key,
             index: row.interaction_index,
@@ -2111,7 +1965,7 @@ function groupTokenRows(
 
         buckets[row.bucket].push({
             cachedInputTokens: row.cached_input_tokens,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             id: row.row_id,
             inputTokens: row.input_tokens,
             label: row.label,
@@ -2137,7 +1991,7 @@ function groupDailyUsage(rows: DailyUsageRow[], modelRows: DailyUsageModelRow[])
         const models = modelsByRow.get(key) ?? {}
         models[row.model] = {
             cachedInputTokens: row.cached_input_tokens,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             inputTokens: row.input_tokens,
             isFallback: Boolean(row.is_fallback),
             outputTokens: row.output_tokens,
@@ -2153,7 +2007,7 @@ function groupDailyUsage(rows: DailyUsageRow[], modelRows: DailyUsageModelRow[])
         const items = grouped.get(row.scope_key) ?? []
         items.push({
             cachedInputTokens: row.cached_input_tokens,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             date: row.date,
             inputTokens: row.input_tokens,
             models: modelsByRow.get(createCompositeKey(row.scope_key, row.date)) ?? {},
@@ -2189,7 +2043,7 @@ function groupProjectUsage(rows: ProjectUsageRow[]) {
     for (const row of rows) {
         const items = grouped.get(row.scope_key) ?? []
         items.push({
-            costUSD: row.cost_usd,
+            costUSD: 0,
             detail: row.detail,
             label: row.label,
             percent: row.percent,
@@ -2225,7 +2079,7 @@ function groupSessions(
         const items = interactions.get(key) ?? []
         items.push({
             content: row.content,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             index: row.interaction_index,
             model: row.model,
             raw: null,
@@ -2245,7 +2099,7 @@ function groupSessions(
 
         items.push({
             cachedInputTokens: row.cached_input_tokens,
-            costUSD: row.cost_usd,
+            costUSD: 0,
             date: row.date,
             duration: row.duration,
             durationMinutes: row.duration_minutes,
@@ -2284,7 +2138,6 @@ function buildInteractionUsage(row: {
     reasoning_output_tokens: number | null
     tool_tokens: number | null
     total_tokens: number | null
-    usage_cost_usd: number | null
 }) {
     if (
         row.input_tokens === null
@@ -2292,14 +2145,13 @@ function buildInteractionUsage(row: {
         || row.output_tokens === null
         || row.reasoning_output_tokens === null
         || row.total_tokens === null
-        || row.usage_cost_usd === null
     ) {
         return null
     }
 
     const usage: ProjectInteractionUsage = {
         cachedInputTokens: row.cached_input_tokens,
-        costUSD: row.usage_cost_usd,
+        costUSD: 0,
         inputTokens: row.input_tokens,
         outputTokens: row.output_tokens,
         reasoningOutputTokens: row.reasoning_output_tokens,
@@ -2379,18 +2231,6 @@ function createCompositeKey(...parts: Array<string | number>) {
 
 function createPayloadHash(value: string) {
     return createHash('sha1').update(value).digest('hex')
-}
-
-interface TodayInsightCountRow {
-    period: 'previous' | 'today'
-    total: number
-}
-
-interface TodayHourlyUsageRow {
-    cost_usd: number
-    hour: number
-    platform: ProjectUsagePlatform
-    total_tokens: number
 }
 
 function normalizeProjectCatalogItems(value: unknown): ProjectUsageCatalogItem[] {

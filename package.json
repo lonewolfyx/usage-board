@@ -47,6 +47,7 @@
         "access": "public"
     },
     "dependencies": {
+        "@clack/prompts": "^1.4.0",
         "cac": "^7.0.0",
         "crossws": "^0.4.5",
         "glob": "^13.0.6",

@@ -1,5 +1,7 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { prepareUsageStartupReady } from '#server/services/usage-startup-state'
+import { log } from '@clack/prompts'
 import cac from 'cac'
 import { createRuntimeServer } from 'nuxt-devkit-server'
 import open from 'open'
@@ -22,17 +24,18 @@ cli.command('', 'Start tokens usage analysis')
         const root = dirname(fileURLToPath(import.meta.url))
         const outputDir = resolve(root, './')
 
-        await createRuntimeServer({
+        const app = await createRuntimeServer({
             path: outputDir,
             host: option.host,
             port: option.port,
-            onReady: async ({ app }) => {
-                if (option.open) {
-                    console.log(`Usage board is running at ${app.url}`)
-                    await open(app.url)
-                }
-            },
         })
+
+        await prepareUsageStartupReady()
+
+        if (option.open) {
+            log.success(`Usage board is running at: ${app.url}`)
+            await open(app.url)
+        }
     })
 
 cli.help()

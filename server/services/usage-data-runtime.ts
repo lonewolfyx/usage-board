@@ -1,3 +1,4 @@
+import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { HomeDashboardModules } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
@@ -12,12 +13,15 @@ import type { FSWatcher } from 'chokidar'
 import { accessSync, constants } from 'node:fs'
 import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
-import { buildIncrementalUsageIndex } from '#server/services/usage-indexer'
+import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-reporter'
+import {
+    buildIncrementalUsageIndex,
+    getUsageCacheUpdateState,
+} from '#server/services/usage-indexer'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import {
     buildProjectLoadUsageResult,
-    buildProjectUsageCatalogItemsFromDetails,
     buildProjectUsageDataModuleFromDetail,
     buildProjectUsageDetailFromPlatformSessions,
 } from '#shared/platform/project'
@@ -30,7 +34,9 @@ const WATCHER_DEBOUNCE_MS = 350
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
     hasIndexedCurrentProcess: boolean
+    hasLoadedAllProjectDetails: boolean
     hydratedAt: number
+    indexedFiles: IndexedUsageSourceFile[] | null
     projectCatalog: ProjectUsageCatalogItem[]
     projectDetails: Map<string, ProjectUsageDetail> | null
     refreshStartedAt: number
@@ -41,7 +47,9 @@ class UsageDataRuntime {
     private readonly state: UsageRuntimeState = {
         bootstrap: null,
         hasIndexedCurrentProcess: false,
+        hasLoadedAllProjectDetails: false,
         hydratedAt: 0,
+        indexedFiles: null,
         projectCatalog: [],
         projectDetails: null,
         refreshStartedAt: 0,
@@ -82,6 +90,20 @@ class UsageDataRuntime {
         return this.state.bootstrap!
     }
 
+    async ensureFreshBootstrapForStartup() {
+        await this.initialize()
+        const updateState = await getUsageCacheUpdateState(this.config, this.repository, this.state.hydratedAt)
+        const updatedPlatforms = updateState.updatedPlatforms.length > 0
+            ? updateState.updatedPlatforms
+            : PROJECT_USAGE_PLATFORMS
+
+        await this.refreshNow({
+            forceLog: !this.state.bootstrap || updateState.hasChanges,
+            hydrateCachedPricing: true,
+            updatedPlatforms,
+        })
+    }
+
     async getProjectCatalog() {
         await this.initialize()
 
@@ -102,7 +124,7 @@ class UsageDataRuntime {
     }
 
     async getHomeDashboardModules(): Promise<HomeDashboardModules> {
-        return buildHomeDashboardModules(await this.getBootstrap(), this.repository.loadHomeDashboardTodayInsights())
+        return buildHomeDashboardModules(await this.getBootstrap())
     }
 
     async getProjectDataModules(
@@ -115,24 +137,25 @@ class UsageDataRuntime {
             throw new Error('Missing project name for project data request.')
         }
 
-        const projectDetails = this.state.projectDetails ?? new Map<string, ProjectUsageDetail>()
-
-        if (!projectDetails.has(projectLabel)) {
-            const storedDetail = this.repository.loadProjectDetail(projectLabel)
-
-            if (storedDetail) {
-                projectDetails.set(projectLabel, storedDetail)
-                this.state.projectDetails = projectDetails
-            }
-            else {
-                await this.refreshNow()
-            }
-        }
-        else if (!this.state.hasIndexedCurrentProcess) {
+        if (!this.state.hasIndexedCurrentProcess) {
             void this.refreshInBackground()
         }
 
-        const hydratedDetail = this.state.projectDetails?.get(projectLabel) ?? null
+        let hydratedDetail = this.state.projectDetails?.get(projectLabel)
+            ?? getProjectDetailFromBootstrap(this.state.bootstrap, projectLabel)
+
+        if (!hydratedDetail) {
+            await this.refreshNow()
+            hydratedDetail = this.state.projectDetails?.get(projectLabel)
+                ?? getProjectDetailFromBootstrap(this.state.bootstrap, projectLabel)
+        }
+
+        if (hydratedDetail) {
+            const projectDetails = this.state.projectDetails ?? new Map<string, ProjectUsageDetail>()
+
+            projectDetails.set(projectLabel, hydratedDetail)
+            this.state.projectDetails = projectDetails
+        }
 
         if (!hydratedDetail) {
             return null
@@ -148,20 +171,24 @@ class UsageDataRuntime {
     }
 
     private async hydrateFromRepository() {
-        const bootstrap = this.repository.loadBootstrap()
-        const projectCatalog = this.repository.loadProjectCatalog()
+        const indexedFiles = this.repository.loadIndexedSourceFiles()
 
-        this.state.bootstrap = bootstrap?.payload ?? null
-        this.state.projectCatalog = projectCatalog?.payload ?? []
-        this.state.hydratedAt = Math.max(
-            bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
-            projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
-        )
+        this.state.indexedFiles = indexedFiles
+        this.state.hydratedAt = indexedFiles.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0)
+        this.state.bootstrap = null
+        this.state.projectCatalog = []
+        this.state.projectDetails = null
+        this.state.hasLoadedAllProjectDetails = false
     }
 
-    private async refreshNow() {
+    private async refreshNow(options: {
+        forceLog?: boolean
+        hydrateCachedPricing?: boolean
+        reparseAllFiles?: boolean
+        updatedPlatforms?: readonly ProjectUsagePlatform[]
+    } = {}) {
         if (!this.refreshPromise) {
-            this.refreshPromise = this.refresh()
+            this.refreshPromise = this.refresh(options)
                 .finally(() => {
                     this.refreshPromise = null
 
@@ -181,36 +208,74 @@ class UsageDataRuntime {
         })
     }
 
-    private async refresh() {
+    private async refresh(options: {
+        forceLog?: boolean
+        hydrateCachedPricing?: boolean
+        reparseAllFiles?: boolean
+        updatedPlatforms?: readonly ProjectUsagePlatform[]
+    } = {}) {
         this.state.refreshStartedAt = Date.now()
+        const reporter = new UsageCleaningConsoleReporter()
 
-        const indexed = await buildIncrementalUsageIndex(this.config, this.repository)
-        const { bootstrapByPlatform } = indexed
-        const bootstrap: TokensConsumptionResult = {
-            ...Object.fromEntries(
-                PROJECT_USAGE_PLATFORMS.map(platform => [
-                    platform,
-                    buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform),
-                ]),
-            ),
-            version: this.config.version,
-        } as TokensConsumptionResult
-        const projectDetails = this.state.projectDetails
-            ? patchProjectDetails(this.state.projectDetails, indexed.removedProjects, indexed.affectedProjects, bootstrapByPlatform)
-            : buildAllProjectDetails(bootstrapByPlatform)
-        const projectCatalog = buildProjectUsageCatalogItemsFromDetails(projectDetails.entries())
+        try {
+            const indexed = await buildIncrementalUsageIndex(this.config, this.repository, reporter, {
+                cachedFiles: this.state.indexedFiles ?? undefined,
+                cachedPlatformSessions: options.hydrateCachedPricing
+                    ? undefined
+                    : (this.state.bootstrap ? getCachedPlatformSessions(this.state.bootstrap) : undefined),
+                forceLog: options.forceLog,
+                hydrateCachedPricing: options.hydrateCachedPricing,
+                reparseAllFiles: options.reparseAllFiles,
+                updatedPlatforms: options.updatedPlatforms,
+            })
+            const { bootstrapByPlatform } = indexed
+            const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform)
+            const projectCatalog = buildProjectCatalogFromPlatformSessions(bootstrapByPlatform)
+            const shouldReport = options.forceLog || indexed.hasChanges
+            const cacheWriteStats = {
+                agentCount: PROJECT_USAGE_PLATFORMS.length,
+                projectCount: projectCatalog.length,
+                projectDetailsRemovedCount: 0,
+                projectDetailsWriteCount: 0,
+                sessionCount: getTotalSessionCount(bootstrapByPlatform),
+                sourceFileCount: indexed.indexedFiles.length,
+                updatedSessions: indexed.updatedSessions,
+            }
 
-        this.repository.saveBootstrap(bootstrap)
-        this.repository.saveProjectCatalog(projectCatalog)
-        this.repository.replaceProjectDetails(projectDetails)
+            if (shouldReport) {
+                reporter.finishCacheWrite(cacheWriteStats)
+            }
 
-        this.state.bootstrap = bootstrap
-        this.state.projectCatalog = projectCatalog
-        this.state.hasIndexedCurrentProcess = true
-        if (this.state.projectDetails) {
-            this.state.projectDetails = projectDetails
+            this.state.bootstrap = bootstrap
+            this.state.indexedFiles = indexed.indexedFiles
+            this.state.projectCatalog = projectCatalog
+            this.state.projectDetails = null
+            this.state.hasLoadedAllProjectDetails = false
+            this.state.hasIndexedCurrentProcess = true
+            this.state.hydratedAt = Date.now()
+            if (shouldReport) {
+                reporter.complete({
+                    agentCount: cacheWriteStats.agentCount,
+                    durationMs: Date.now() - this.state.refreshStartedAt,
+                    phaseDurations: {
+                        aggregateMs: indexed.timing.aggregateMs,
+                        cacheWriteMs: 0,
+                        discoveryMs: indexed.timing.discoveryMs,
+                        parseMs: indexed.timing.parseMs,
+                    },
+                    projectCount: cacheWriteStats.projectCount,
+                    projectDetailsRemovedCount: cacheWriteStats.projectDetailsRemovedCount,
+                    projectDetailsWriteCount: cacheWriteStats.projectDetailsWriteCount,
+                    sessionCount: cacheWriteStats.sessionCount,
+                    sourceFileCount: cacheWriteStats.sourceFileCount,
+                    updatedSessions: cacheWriteStats.updatedSessions,
+                })
+            }
         }
-        this.state.hydratedAt = Date.now()
+        catch (error) {
+            reporter.fail(error)
+            throw error
+        }
     }
 
     dispose() {
@@ -303,47 +368,49 @@ function getUsageWatchPatterns(config: IConfig) {
     return PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(config))
 }
 
-function patchProjectDetails(
-    currentDetails: Map<string, ProjectUsageDetail>,
-    removedProjects: string[],
-    affectedProjects: string[],
+function buildBootstrapFromPlatformSessions(
+    version: string,
     platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
 ) {
-    const details = new Map(currentDetails)
-
-    for (const projectName of removedProjects) {
-        details.delete(projectName)
-    }
-
-    for (const projectName of affectedProjects) {
-        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(platformSessions, projectName))
-
-        if (detail.sessionCound === 0) {
-            details.delete(projectName)
-            continue
-        }
-
-        details.set(projectName, detail)
-    }
-
-    return details
+    return {
+        ...Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                buildProjectLoadUsageResult(platformSessions[platform], platform),
+            ]),
+        ),
+        version,
+    } as TokensConsumptionResult
 }
 
-function buildAllProjectDetails(
+function buildProjectCatalogFromPlatformSessions(
     platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
 ) {
-    const projectNames = new Set(PROJECT_USAGE_PLATFORMS.flatMap(platform => platformSessions[platform].map(session => session.project)))
-    const details = new Map<string, ProjectUsageDetail>()
+    const projects = new Map<string, {
+        platforms: Set<ProjectUsagePlatform>
+        totalTokens: number
+    }>()
 
-    for (const projectName of projectNames) {
-        const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(platformSessions, projectName))
+    for (const platform of PROJECT_USAGE_PLATFORMS) {
+        for (const session of platformSessions[platform]) {
+            const project = projects.get(session.project) ?? {
+                platforms: new Set<ProjectUsagePlatform>(),
+                totalTokens: 0,
+            }
 
-        if (detail.sessionCound > 0) {
-            details.set(projectName, detail)
+            project.platforms.add(platform)
+            project.totalTokens += session.tokenTotal
+            projects.set(session.project, project)
         }
     }
 
-    return details
+    return Array.from(projects.entries())
+        .map(([label, project]) => ({
+            label,
+            platforms: Array.from(project.platforms).sort((a, b) => a.localeCompare(b)) as ProjectUsagePlatform[],
+            totalTokens: project.totalTokens,
+        }))
+        .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 function getProjectPlatformSessions(
@@ -355,5 +422,28 @@ function getProjectPlatformSessions(
             platform,
             platformSessions[platform].filter(session => session.project === projectName),
         ]),
+    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+}
+
+function getTotalSessionCount(platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>) {
+    return PROJECT_USAGE_PLATFORMS.reduce((sum, platform) => sum + platformSessions[platform].length, 0)
+}
+
+function getProjectDetailFromBootstrap(
+    bootstrap: TokensConsumptionResult | null,
+    projectName: string,
+) {
+    if (!bootstrap) {
+        return null
+    }
+
+    const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(getCachedPlatformSessions(bootstrap), projectName))
+
+    return detail.sessionCound > 0 ? detail : null
+}
+
+function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {
+    return Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map(platform => [platform, bootstrap[platform].sessionUsage as ProjectSessionUsageItem[]]),
     ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
 }
