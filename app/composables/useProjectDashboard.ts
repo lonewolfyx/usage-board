@@ -21,6 +21,7 @@ import type {
     ProjectUsageDataModulesResponse,
     ProjectWebSocketRequest,
     ProjectWebSocketResponse,
+    UsageUpdateMessage,
 } from '#shared/types/ws'
 import type { ShallowRef } from 'vue'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
@@ -48,6 +49,7 @@ const recentProjectDays = 30
 const yearlyProjectDays = 365
 const projectSelectionDebounceMs = 180
 const projectSelectionMaxWaitMs = 600
+const projectRealtimeRefreshDebounceMs = 300
 const websocketRequestTimeoutMs = 45_000
 
 const emptyDailyTrendPayload: ProjectDailyTrendModulePayload = {
@@ -122,6 +124,7 @@ export function useProjectDashboard() {
 
     let moduleLoadRunId = 0
     let requestIdCounter = 0
+    let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
     const pendingWebSocketRequests = new Map<string, ProjectPendingWebSocketRequest>()
 
     const wsUrl = computed(() => {
@@ -289,6 +292,11 @@ export function useProjectDashboard() {
     })
 
     onScopeDispose(() => {
+        if (realtimeRefreshTimer) {
+            clearTimeout(realtimeRefreshTimer)
+            realtimeRefreshTimer = null
+        }
+
         rejectPendingRequests(new Error('Project dashboard disposed.'))
     })
 
@@ -448,6 +456,11 @@ export function useProjectDashboard() {
             return
         }
 
+        if (isUsageUpdateMessage(parsed)) {
+            scheduleRealtimeRefresh(parsed.payload)
+            return
+        }
+
         if (!isProjectWebSocketResponse(parsed)) {
             return
         }
@@ -485,6 +498,38 @@ export function useProjectDashboard() {
         pendingWebSocketRequests.clear()
     }
 
+    function scheduleRealtimeRefresh(update: UsageUpdateMessage['payload']) {
+        if (realtimeRefreshTimer) {
+            clearTimeout(realtimeRefreshTimer)
+        }
+
+        realtimeRefreshTimer = setTimeout(() => {
+            realtimeRefreshTimer = null
+            void refreshProjectDashboardFromUsageUpdate(update)
+        }, projectRealtimeRefreshDebounceMs)
+    }
+
+    async function refreshProjectDashboardFromUsageUpdate(update: UsageUpdateMessage['payload']) {
+        const previousProjectId = selectedProjectId.value
+
+        await loadProjectCatalog()
+
+        const nextProjectId = selectedProjectId.value
+
+        if (!nextProjectId || nextProjectId !== previousProjectId) {
+            return
+        }
+
+        const shouldRefreshSelectedProject = update.affectedProjects.length === 0
+            || update.affectedProjects.includes(nextProjectId)
+
+        if (!shouldRefreshSelectedProject) {
+            return
+        }
+
+        await loadProjectModules(nextProjectId)
+    }
+
     function isWebSocketError(value: unknown): value is { message: string, type: 'error' } {
         if (!value || typeof value !== 'object') {
             return false
@@ -503,6 +548,18 @@ export function useProjectDashboard() {
         const record = value as Record<string, unknown>
 
         return typeof record.requestId === 'string' && 'data' in record
+    }
+
+    function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {
+        if (!value || typeof value !== 'object') {
+            return false
+        }
+
+        const record = value as Record<string, unknown>
+
+        return record.type === 'usage_update'
+            && typeof record.payload === 'object'
+            && record.payload !== null
     }
 
     function resetProjectModules() {

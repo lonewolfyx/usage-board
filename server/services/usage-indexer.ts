@@ -53,6 +53,7 @@ export async function buildIncrementalUsageIndex(
     options: {
         cachedFiles?: IndexedUsageSourceFile[]
         cachedPlatformSessions?: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>
+        discoveredFiles?: DiscoveredUsageFile[]
         forceLog?: boolean
         hydrateCachedPricing?: boolean
         reparseAllFiles?: boolean
@@ -70,7 +71,7 @@ export async function buildIncrementalUsageIndex(
         reporter!.start()
     }
     const discoveryStartedAt = Date.now()
-    const discoveredFiles = await discoverUsageFiles(config)
+    const discoveredFiles = options.discoveredFiles ?? await discoverUsageFiles(config)
 
     if (shouldStartReporter) {
         reporter!.discoveredFiles({
@@ -322,6 +323,7 @@ export async function getUsageCacheUpdateState(
         const discoveredFiles = await discoverUsageFiles(config)
 
         return {
+            discoveredFiles,
             hasChanges: true,
             updatedPlatforms: getUpdatedPlatforms(discoveredFiles, []),
         }
@@ -333,6 +335,7 @@ export async function getUsageCacheUpdateState(
     const staleFiles = discoveredFiles.filter(file => file.mtimeMs > cacheUpdatedAt)
 
     return {
+        discoveredFiles,
         hasChanges: changedFiles.length > 0 || removedFiles.length > 0 || staleFiles.length > 0,
         updatedPlatforms: getUpdatedPlatforms([...changedFiles, ...staleFiles], removedFiles),
     }

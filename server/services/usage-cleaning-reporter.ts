@@ -93,7 +93,15 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     private discoveryProgress: ReturnType<typeof progress> | null = null
     private platformProgress: ReturnType<typeof progress> | null = null
 
+    constructor(private readonly options: {
+        verboseProgress?: boolean
+    } = {}) {}
+
     start() {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         if (this.animated) {
             this.discoveryProgress = progress({
                 max: 2,
@@ -107,6 +115,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     discoveredFiles(stats: UsageCleaningScannedStats) {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         if (this.animated) {
             this.discoveryProgress?.advance(1, `查找到 ${stats.discoveredFiles} 个会话记录文件`)
             return
@@ -116,6 +128,14 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     foundFiles(stats: UsageCleaningDiscoveryStats) {
+        if (!this.options.verboseProgress) {
+            if (stats.updatedPlatforms.length > 0) {
+                log.info(`检测到更新的 agent：${stats.updatedPlatforms.map(platform => PROJECT_USAGE_PLATFORM_META[platform].label).join(' / ')}`)
+            }
+
+            return
+        }
+
         const summary = `查找到 ${stats.discoveredFiles} 个会话记录文件`
 
         if (this.animated) {
@@ -140,6 +160,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     startPlatform(platform: ProjectUsagePlatform) {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         const label = PROJECT_USAGE_PLATFORM_META[platform].label
 
         if (this.animated) {
@@ -159,6 +183,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     parsedPlatformFiles(platform: ProjectUsagePlatform) {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         const label = PROJECT_USAGE_PLATFORM_META[platform].label
 
         if (this.animated) {
@@ -184,6 +212,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     startCacheWrite(stats: UsageCleaningCacheWriteStats) {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         const sessionSummary = formatUpdatedSessionSummary(stats.updatedSessions)
         const message = `cache.sqlite 写入中：${stats.sessionCount} 条会话记录，${stats.projectCount} 个项目${sessionSummary}`
 
@@ -236,6 +268,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     private advanceCacheStep(message: string) {
+        if (!this.options.verboseProgress) {
+            return
+        }
+
         if (this.animated) {
             this.cacheProgress?.advance(1, message)
             return

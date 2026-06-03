@@ -21,6 +21,8 @@ cli.command('', 'Start tokens usage analysis')
     .option('--port <port>', 'Port', { default: 7777 })
     .option('--open', 'Open browser', { default: true })
     .action(async (option: IOptions) => {
+        process.env.USAGE_BOARD_STARTUP_VERBOSE = '1'
+
         const root = dirname(fileURLToPath(import.meta.url))
         const outputDir = resolve(root, './')
 
