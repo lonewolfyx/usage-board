@@ -1,5 +1,6 @@
+import type { UsageRuntimeUpdate } from '#server/services/usage-data-runtime'
 import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
-import type { ProjectUsageDataModule, ProjectWebSocketRequest } from '#shared/types/ws'
+import type { ProjectUsageDataModule, ProjectWebSocketRequest, UsageUpdateMessage } from '#shared/types/ws'
 import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
 import { resolveConfig } from '#shared/utils/configs'
 import {
@@ -7,9 +8,11 @@ import {
     normalizeStringValue,
 } from '#shared/utils/normalize'
 
+const peerSubscriptions = new Map<string, () => void>()
+
 export default defineWebSocketHandler({
     open(peer) {
-        console.log(`[ws] opened: ${peer.id}`)
+        subscribePeerToUsageUpdates(peer)
     },
     async message(peer, message) {
         try {
@@ -30,8 +33,8 @@ export default defineWebSocketHandler({
         }
     },
 
-    close(peer, details) {
-        console.log(`[ws] close connection: ${peer.id}`, details)
+    close(peer) {
+        unsubscribePeer(peer.id)
     },
 
     error(peer, error) {
@@ -142,4 +145,34 @@ function sendData(
         data,
         requestId: request.requestId,
     }))
+}
+
+function subscribePeerToUsageUpdates(peer: { id: string, send: (data: string) => void }) {
+    unsubscribePeer(peer.id)
+
+    const runtimeConfig = useRuntimeConfig()
+    const config = resolveConfig(runtimeConfig.public)
+    const runtime = getUsageDataRuntime(config)
+    const unsubscribe = runtime.subscribeToUpdates((update) => {
+        peer.send(JSON.stringify(toUsageUpdateMessage(update)))
+    })
+
+    peerSubscriptions.set(peer.id, unsubscribe)
+}
+
+function unsubscribePeer(peerId: string) {
+    peerSubscriptions.get(peerId)?.()
+    peerSubscriptions.delete(peerId)
+}
+
+function toUsageUpdateMessage(update: UsageRuntimeUpdate): UsageUpdateMessage {
+    return {
+        payload: {
+            affectedProjects: update.affectedProjects,
+            updatedAt: update.updatedAt,
+            updatedPlatforms: [...update.updatedPlatforms],
+            updatedSessions: update.updatedSessions,
+        },
+        type: 'usage_update',
+    }
 }

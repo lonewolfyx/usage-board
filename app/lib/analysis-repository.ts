@@ -8,6 +8,7 @@ import type {
     AnalysisAgentTokenType,
     AnalysisCacheResponse,
     AnalysisDailyTokenPageResponse,
+    AnalysisLiveStateResponse,
     AnalysisSessionResponse,
     HomeDashboardCoreModules,
     HomeDashboardUsageModules,
@@ -23,6 +24,7 @@ const analysisRouteMap = {
     cache: '/api/analysis/cache.json',
     dailyTokenUsage: '/api/analysis/token/daily.json',
     hotProject: '/api/analysis/hot-project.json',
+    liveState: '/api/analysis/live-state.json',
     model: '/api/analysis/model.json',
     overviewCards: '/api/analysis/overview-cards.json',
     session: '/api/analysis/session.json',
@@ -68,6 +70,10 @@ export async function fetchHomeDashboardUsageModules(): Promise<HomeDashboardUsa
 
 export function fetchHomeDashboardSessionAnalysis() {
     return requestAnalysis<AnalysisSessionResponse>('session')
+}
+
+export function fetchAnalysisLiveState() {
+    return requestAnalysis<AnalysisLiveStateResponse>('liveState')
 }
 
 export function fetchHomeDashboardDailyTokenPage(page = 1) {

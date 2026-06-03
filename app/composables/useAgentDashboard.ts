@@ -71,6 +71,14 @@ export function useAgentDashboard(agent: MaybeRefOrGetter<ProjectUsagePlatform>)
         ]),
     })
 
+    useUsageLiveUpdate((update) => {
+        if (!update.updatedPlatforms.includes(agentKey.value)) {
+            return
+        }
+
+        return refresh()
+    })
+
     return {
         dailyRows: computed(() => coreDashboard.value.dailyRows),
         dailyRowsPagination: computed(() => coreDashboard.value.dailyRowsPagination),

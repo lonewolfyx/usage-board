@@ -1,4 +1,5 @@
-import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
+import type { DiscoveredUsageFile } from '#server/services/usage-indexer/platform-adapter'
+import type { IndexedUsageSourceFile, UpdatedUsageSession } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { HomeDashboardModules } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
@@ -10,7 +11,7 @@ import type {
     ProjectWebSocketRequest,
 } from '#shared/types/ws'
 import type { FSWatcher } from 'chokidar'
-import { accessSync, constants } from 'node:fs'
+import { accessSync, constants, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
 import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-reporter'
@@ -31,8 +32,16 @@ import chokidar from 'chokidar'
 
 const WATCHER_DEBOUNCE_MS = 350
 
+export interface UsageRuntimeUpdate {
+    affectedProjects: string[]
+    updatedAt: string
+    updatedPlatforms: readonly ProjectUsagePlatform[]
+    updatedSessions: UpdatedUsageSession[]
+}
+
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
+    discoveredFiles: DiscoveredUsageFile[] | null
     hasIndexedCurrentProcess: boolean
     hasLoadedAllProjectDetails: boolean
     hydratedAt: number
@@ -46,6 +55,7 @@ class UsageDataRuntime {
     private readonly repository: UsageCacheRepository
     private readonly state: UsageRuntimeState = {
         bootstrap: null,
+        discoveredFiles: null,
         hasIndexedCurrentProcess: false,
         hasLoadedAllProjectDetails: false,
         hydratedAt: 0,
@@ -56,8 +66,10 @@ class UsageDataRuntime {
     }
 
     private initializePromise: Promise<void> | null = null
+    private pendingWatcherPaths = new Map<string, 'add' | 'change' | 'unlink'>()
     private refreshPromise: Promise<void> | null = null
     private refreshRequestedWhileBusy = false
+    private readonly updateListeners = new Set<(update: UsageRuntimeUpdate) => void>()
     private watcher: FSWatcher | null = null
     private watcherDebounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -90,16 +102,25 @@ class UsageDataRuntime {
         return this.state.bootstrap!
     }
 
-    async ensureFreshBootstrapForStartup() {
+    async ensureFreshBootstrapForStartup(options: {
+        verboseWhenChanged?: boolean
+    } = {}) {
         await this.initialize()
         const updateState = await getUsageCacheUpdateState(this.config, this.repository, this.state.hydratedAt)
+
+        if (this.state.bootstrap && !updateState.hasChanges) {
+            this.state.hasIndexedCurrentProcess = true
+            return
+        }
+
         const updatedPlatforms = updateState.updatedPlatforms.length > 0
             ? updateState.updatedPlatforms
             : PROJECT_USAGE_PLATFORMS
 
         await this.refreshNow({
-            forceLog: !this.state.bootstrap || updateState.hasChanges,
-            hydrateCachedPricing: true,
+            discoveredFiles: updateState.discoveredFiles,
+            forceLog: !this.state.bootstrap || (options.verboseWhenChanged !== false && updateState.hasChanges),
+            hydrateCachedPricing: !this.state.bootstrap,
             updatedPlatforms,
         })
     }
@@ -125,6 +146,20 @@ class UsageDataRuntime {
 
     async getHomeDashboardModules(): Promise<HomeDashboardModules> {
         return buildHomeDashboardModules(await this.getBootstrap())
+    }
+
+    async getLiveState() {
+        await this.initialize()
+
+        if (this.state.hydratedAt <= 0 && !this.state.bootstrap) {
+            await this.refreshNow()
+        }
+
+        return {
+            updatedAt: this.state.hydratedAt > 0
+                ? new Date(this.state.hydratedAt).toISOString()
+                : '',
+        }
     }
 
     async getProjectDataModules(
@@ -170,18 +205,34 @@ class UsageDataRuntime {
         })
     }
 
+    subscribeToUpdates(listener: (update: UsageRuntimeUpdate) => void) {
+        this.updateListeners.add(listener)
+
+        return () => {
+            this.updateListeners.delete(listener)
+        }
+    }
+
     private async hydrateFromRepository() {
         const indexedFiles = this.repository.loadIndexedSourceFiles()
+        const bootstrap = this.repository.loadBootstrap()
+        const projectCatalog = this.repository.loadProjectCatalog()
 
+        this.state.bootstrap = bootstrap?.payload ?? null
+        this.state.discoveredFiles = toDiscoveredUsageFiles(indexedFiles)
         this.state.indexedFiles = indexedFiles
-        this.state.hydratedAt = indexedFiles.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0)
-        this.state.bootstrap = null
-        this.state.projectCatalog = []
+        this.state.hydratedAt = [
+            indexedFiles.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0),
+            bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
+            projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
+        ].reduce((latest, value) => Math.max(latest, value), 0)
+        this.state.projectCatalog = projectCatalog?.payload ?? []
         this.state.projectDetails = null
         this.state.hasLoadedAllProjectDetails = false
     }
 
     private async refreshNow(options: {
+        discoveredFiles?: DiscoveredUsageFile[]
         forceLog?: boolean
         hydrateCachedPricing?: boolean
         reparseAllFiles?: boolean
@@ -209,20 +260,25 @@ class UsageDataRuntime {
     }
 
     private async refresh(options: {
+        discoveredFiles?: DiscoveredUsageFile[]
         forceLog?: boolean
         hydrateCachedPricing?: boolean
         reparseAllFiles?: boolean
         updatedPlatforms?: readonly ProjectUsagePlatform[]
     } = {}) {
         this.state.refreshStartedAt = Date.now()
-        const reporter = new UsageCleaningConsoleReporter()
+        const reporter = new UsageCleaningConsoleReporter({
+            verboseProgress: Boolean(options.forceLog),
+        })
 
         try {
+            const discoveredFiles = options.discoveredFiles ?? this.consumeWatcherDiscoveredFiles()
             const indexed = await buildIncrementalUsageIndex(this.config, this.repository, reporter, {
                 cachedFiles: this.state.indexedFiles ?? undefined,
                 cachedPlatformSessions: options.hydrateCachedPricing
                     ? undefined
                     : (this.state.bootstrap ? getCachedPlatformSessions(this.state.bootstrap) : undefined),
+                discoveredFiles,
                 forceLog: options.forceLog,
                 hydrateCachedPricing: options.hydrateCachedPricing,
                 reparseAllFiles: options.reparseAllFiles,
@@ -231,6 +287,7 @@ class UsageDataRuntime {
             const { bootstrapByPlatform } = indexed
             const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform)
             const projectCatalog = buildProjectCatalogFromPlatformSessions(bootstrapByPlatform)
+            const updatedAt = new Date().toISOString()
             const shouldReport = options.forceLog || indexed.hasChanges
             const cacheWriteStats = {
                 agentCount: PROJECT_USAGE_PLATFORMS.length,
@@ -242,17 +299,31 @@ class UsageDataRuntime {
                 updatedSessions: indexed.updatedSessions,
             }
 
+            this.repository.saveBootstrap(bootstrap)
+            this.repository.saveProjectCatalog(projectCatalog)
+
             if (shouldReport) {
                 reporter.finishCacheWrite(cacheWriteStats)
             }
 
             this.state.bootstrap = bootstrap
+            this.state.discoveredFiles = toDiscoveredUsageFiles(indexed.indexedFiles)
             this.state.indexedFiles = indexed.indexedFiles
             this.state.projectCatalog = projectCatalog
             this.state.projectDetails = null
             this.state.hasLoadedAllProjectDetails = false
             this.state.hasIndexedCurrentProcess = true
             this.state.hydratedAt = Date.now()
+
+            if (indexed.hasChanges) {
+                this.emitUpdate({
+                    affectedProjects: indexed.affectedProjects,
+                    updatedAt,
+                    updatedPlatforms: indexed.updatedPlatforms,
+                    updatedSessions: indexed.updatedSessions,
+                })
+            }
+
             if (shouldReport) {
                 reporter.complete({
                     agentCount: cacheWriteStats.agentCount,
@@ -308,9 +379,9 @@ class UsageDataRuntime {
         })
 
         watcher
-            .on('add', () => this.scheduleRefreshByWatcher())
-            .on('change', () => this.scheduleRefreshByWatcher())
-            .on('unlink', () => this.scheduleRefreshByWatcher())
+            .on('add', path => this.scheduleRefreshByWatcher('add', path))
+            .on('change', path => this.scheduleRefreshByWatcher('change', path))
+            .on('unlink', path => this.scheduleRefreshByWatcher('unlink', path))
             .on('error', (error) => {
                 console.error('[usage-runtime] watcher error', error)
             })
@@ -318,7 +389,9 @@ class UsageDataRuntime {
         this.watcher = watcher
     }
 
-    private scheduleRefreshByWatcher() {
+    private scheduleRefreshByWatcher(event: 'add' | 'change' | 'unlink', path: string) {
+        this.pendingWatcherPaths.set(path, event)
+
         if (this.watcherDebounceTimer) {
             clearTimeout(this.watcherDebounceTimer)
         }
@@ -333,6 +406,70 @@ class UsageDataRuntime {
 
             void this.refreshInBackground()
         }, WATCHER_DEBOUNCE_MS)
+    }
+
+    private consumeWatcherDiscoveredFiles() {
+        if (this.pendingWatcherPaths.size === 0) {
+            return undefined
+        }
+
+        const discoveredFiles = this.tryApplyWatcherPathsToDiscoveredFiles()
+        this.pendingWatcherPaths.clear()
+
+        return discoveredFiles
+    }
+
+    private tryApplyWatcherPathsToDiscoveredFiles() {
+        const cachedDiscoveredFiles = this.state.discoveredFiles
+
+        if (!cachedDiscoveredFiles || cachedDiscoveredFiles.length === 0) {
+            return undefined
+        }
+
+        const nextFilesByPath = new Map(cachedDiscoveredFiles.map(file => [file.path, file]))
+
+        for (const [filePath, event] of this.pendingWatcherPaths) {
+            const cachedFile = nextFilesByPath.get(filePath)
+
+            if (event === 'unlink') {
+                if (!cachedFile) {
+                    return undefined
+                }
+
+                nextFilesByPath.delete(filePath)
+                continue
+            }
+
+            if (!cachedFile) {
+                return undefined
+            }
+
+            try {
+                const stat = statSync(filePath)
+
+                nextFilesByPath.set(filePath, {
+                    ...cachedFile,
+                    mtimeMs: stat.mtimeMs,
+                    size: stat.size,
+                })
+            }
+            catch {
+                return undefined
+            }
+        }
+
+        return Array.from(nextFilesByPath.values()).sort((a, b) => a.path.localeCompare(b.path))
+    }
+
+    private emitUpdate(update: UsageRuntimeUpdate) {
+        for (const listener of this.updateListeners) {
+            try {
+                listener(update)
+            }
+            catch (error) {
+                console.error('[usage-runtime] update listener failed', error)
+            }
+        }
     }
 }
 
@@ -446,4 +583,14 @@ function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {
     return Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [platform, bootstrap[platform].sessionUsage as ProjectSessionUsageItem[]]),
     ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+}
+
+function toDiscoveredUsageFiles(indexedFiles: IndexedUsageSourceFile[]): DiscoveredUsageFile[] {
+    return indexedFiles.map(file => ({
+        cacheSignature: file.cacheSignature,
+        mtimeMs: file.mtimeMs,
+        path: file.path,
+        platform: file.platform,
+        size: file.size,
+    }))
 }

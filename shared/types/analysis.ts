@@ -17,6 +17,10 @@ export interface AnalysisCacheResponse {
     items: RankedUsageItem[]
 }
 
+export interface AnalysisLiveStateResponse {
+    updatedAt: string
+}
+
 export interface AnalysisSessionResponse {
     items: SessionUsageItem[]
     totalSessions: number

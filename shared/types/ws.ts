@@ -48,6 +48,21 @@ export interface ProjectWebSocketResponse<T = unknown> {
     requestId: string
 }
 
+export interface UsageUpdatedSession {
+    platform: ProjectUsagePlatform
+    sessionId: string
+}
+
+export interface UsageUpdateMessage {
+    payload: {
+        affectedProjects: string[]
+        updatedAt: string
+        updatedPlatforms: ProjectUsagePlatform[]
+        updatedSessions: UsageUpdatedSession[]
+    }
+    type: 'usage_update'
+}
+
 export type ProjectWebSocketRequest
     = | {
         requestId?: string

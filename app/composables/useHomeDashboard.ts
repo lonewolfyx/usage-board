@@ -74,6 +74,8 @@ export function useHomeDashboard() {
         ]),
     })
 
+    useUsageLiveUpdate(() => refresh())
+
     watch(usageStatus, (status) => {
         if (status === 'success' && dailyTokenUsagePageStatus.value === 'idle') {
             void executeDailyTokenUsagePage()
