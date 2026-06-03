@@ -11,7 +11,6 @@ import type {
     ProjectUsageDetail,
 } from '#shared/types/usage-dashboard'
 import type {
-    ProjectUsageCatalogItem,
     ProjectUsageDataModule,
     ProjectUsageDataModulePayloadMap,
     ProjectUsageDataModuleResponse,
@@ -95,20 +94,6 @@ export function buildProjectUsageDetailFromPlatformSessions(
         models: collectSessionModels(sessions),
         sessionCound: sessions.length,
     }
-}
-
-export function buildProjectUsageCatalogItemsFromDetails(
-    details: Iterable<[string, ProjectUsageDetail]>,
-): ProjectUsageCatalogItem[] {
-    return Array.from(details)
-        .map(([label, detail]) => {
-            return {
-                label,
-                platforms: getProjectDetailPlatforms(detail),
-                totalTokens: getProjectDetailTotalTokens(detail),
-            }
-        })
-        .sort((a, b) => a.label.localeCompare(b.label))
 }
 
 function buildProjectPlatformModule(
@@ -201,14 +186,6 @@ function assertProjectUsagePlatformScope(platform: string): asserts platform is 
     if (platform !== 'all' && !PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform)) {
         throw new Error(`Unsupported project data platform: ${platform}.`)
     }
-}
-
-function getProjectDetailPlatforms(detail: ProjectUsageDetail): ProjectUsagePlatform[] {
-    return PROJECT_USAGE_PLATFORMS.filter(platform => (detail.analyzing[platform] ?? createEmptyProjectPlatformUsage()).sessions.length > 0)
-}
-
-function getProjectDetailTotalTokens(detail: ProjectUsageDetail) {
-    return getProjectDetailSessions(detail).reduce((sum, session) => sum + session.tokenTotal, 0)
 }
 
 function buildSessionListModulePayload(

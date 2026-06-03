@@ -33,11 +33,6 @@ export interface ProjectCatalogEntryRow {
     total_tokens: number
 }
 
-export interface LegacyProjectCatalogTypeRow {
-    label: string
-    type: string
-}
-
 export interface ProjectRow {
     create_time: string | null
     label: string
@@ -255,24 +250,4 @@ export interface IndexedInteractionRow {
     tool_tokens: number | null
     total_tokens: number | null
     type: string
-}
-
-export interface LegacySnapshotRow {
-    payload: string
-    payload_hash: string
-    updated_at: string
-}
-
-export interface LegacyProjectSnapshotRow extends LegacySnapshotRow {
-    label: string
-}
-
-export interface LegacyIndexedSourceFileRow {
-    mtime_ms: number
-    path: string
-    payload: string
-    platform: IndexedUsageSourceFile['platform']
-    project_names: string
-    size: number
-    updated_at: string
 }

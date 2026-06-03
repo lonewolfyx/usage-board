@@ -1,7 +1,6 @@
 import type { ModelPricing, ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { statSync } from 'node:fs'
-import { basename } from 'node:path'
 import { calculateUsageCostUSD } from '#shared/platform/pricing'
 import { uniqueItems } from '#shared/utils/usage-dashboard'
 
@@ -163,10 +162,6 @@ export function getFileModifiedAtIso(filePath: string) {
     catch {
         return null
     }
-}
-
-export function getSessionIdFromFileName(filePath: string, extension: `.${string}`) {
-    return basename(filePath, extension)
 }
 
 function normalizeUsageNumber(value: number | undefined) {

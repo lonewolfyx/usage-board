@@ -22,10 +22,6 @@ import type {
     IndexedFileRow,
     IndexedFragmentRow,
     IndexedInteractionRow,
-    LegacyIndexedSourceFileRow,
-    LegacyProjectCatalogTypeRow,
-    LegacyProjectSnapshotRow,
-    LegacySnapshotRow,
     MonthlyModelUsageRow,
     OverviewCardRow,
     PersistedUsageScope,
@@ -50,7 +46,6 @@ import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import {
     createEmptyLoadUsageResult,
-    normalizeProjectUsageDetail,
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 
@@ -897,164 +892,10 @@ export class UsageCacheRepository {
         `).run(version)
     }
 
-    private migrateLegacyDataIfNeeded() {
-        if (!this.hasLegacyData()) {
-            return
-        }
-
-        this.clearNormalizedTables()
-
-        const hasLegacySnapshots = this.hasTable('cache_snapshots')
-        const hasLegacyProjectSnapshots = this.hasTable('project_snapshots')
-        const hasLegacyIndexedFiles = this.hasTable('indexed_source_files')
-
-        if (hasLegacySnapshots) {
-            const bootstrap = this.loadLegacyBootstrap()
-            const projectCatalog = this.loadLegacyProjectCatalog()
-
-            if (bootstrap) {
-                this.persistBootstrap(bootstrap.payload, {
-                    payloadHash: bootstrap.payloadHash,
-                    updatedAt: bootstrap.updatedAt,
-                    version: bootstrap.payload.version,
-                })
-            }
-
-            if (projectCatalog) {
-                this.persistProjectCatalog(projectCatalog.payload, {
-                    payloadHash: projectCatalog.payloadHash,
-                    updatedAt: projectCatalog.updatedAt,
-                })
-            }
-        }
-
-        if (hasLegacyProjectSnapshots) {
-            this.replaceProjectDetails(this.loadLegacyProjectDetails())
-        }
-
-        if (hasLegacyIndexedFiles) {
-            this.upsertIndexedSourceFiles(this.loadLegacyIndexedSourceFiles())
-        }
-
-        this.dropLegacyTables()
-    }
-
     private hasLegacyData() {
         return this.hasTable('cache_snapshots')
             || this.hasTable('project_snapshots')
             || this.hasTable('indexed_source_files')
-    }
-
-    private ensureIndexedFilesCacheSignatureColumn() {
-        if (!this.hasTable('indexed_files')) {
-            return
-        }
-
-        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(indexed_files)').all()
-
-        if (columns.some(column => column.name === 'cache_signature')) {
-            return
-        }
-
-        this.database.exec('ALTER TABLE indexed_files ADD COLUMN cache_signature TEXT NOT NULL DEFAULT \'\'')
-    }
-
-    private ensureProjectCatalogColumns() {
-        if (!this.hasTable('project_catalog_entries')) {
-            return
-        }
-
-        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(project_catalog_entries)').all()
-
-        if (!columns.some(column => column.name === 'platforms_json')) {
-            this.database.exec('ALTER TABLE project_catalog_entries ADD COLUMN platforms_json TEXT NOT NULL DEFAULT \'[]\'')
-        }
-
-        if (!columns.some(column => column.name === 'total_tokens')) {
-            this.database.exec('ALTER TABLE project_catalog_entries ADD COLUMN total_tokens INTEGER NOT NULL DEFAULT 0')
-        }
-
-        if (!columns.some(column => column.name === 'type')) {
-            return
-        }
-
-        const legacyRows = this.database.prepare<LegacyProjectCatalogTypeRow>(`
-            SELECT label, type
-            FROM project_catalog_entries
-        `).all()
-        const updateStatement = this.database.prepare(`
-            UPDATE project_catalog_entries
-            SET platforms_json = ?, total_tokens = 0
-            WHERE label = ?
-        `)
-
-        for (const row of legacyRows) {
-            const platforms = row.type === 'mixed' ? [] : [row.type]
-            updateStatement.run(JSON.stringify(platforms), row.label)
-        }
-    }
-
-    private ensureOverviewCardSubvalueColumn() {
-        if (!this.hasTable('usage_scope_overview_cards')) {
-            return
-        }
-
-        const columns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_overview_cards)').all()
-
-        if (columns.some(column => column.name === 'subvalue_json')) {
-            return
-        }
-
-        this.database.exec('ALTER TABLE usage_scope_overview_cards ADD COLUMN subvalue_json TEXT')
-    }
-
-    private ensureInteractionExtraTotalTokenColumns() {
-        if (this.hasTable('usage_scope_interactions')) {
-            const usageScopeInteractionColumns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(usage_scope_interactions)').all()
-
-            if (!usageScopeInteractionColumns.some(column => column.name === 'extra_total_tokens')) {
-                this.database.exec('ALTER TABLE usage_scope_interactions ADD COLUMN extra_total_tokens INTEGER')
-            }
-        }
-
-        if (this.hasTable('indexed_fragment_interactions')) {
-            const indexedInteractionColumns = this.database.prepare<SqliteNameRow>('PRAGMA table_info(indexed_fragment_interactions)').all()
-
-            if (!indexedInteractionColumns.some(column => column.name === 'extra_total_tokens')) {
-                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN extra_total_tokens INTEGER')
-            }
-            if (!indexedInteractionColumns.some(column => column.name === 'fallback_dedupe_key')) {
-                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN fallback_dedupe_key TEXT')
-            }
-            if (!indexedInteractionColumns.some(column => column.name === 'is_sidechain')) {
-                this.database.exec('ALTER TABLE indexed_fragment_interactions ADD COLUMN is_sidechain INTEGER')
-            }
-        }
-    }
-
-    private clearNormalizedTables() {
-        this.database.exec('BEGIN')
-
-        try {
-            this.database.prepare('DELETE FROM cache_state').run()
-            this.database.prepare('DELETE FROM project_catalog_entries').run()
-            this.database.prepare('DELETE FROM projects').run()
-            this.database.prepare('DELETE FROM usage_scopes').run()
-            this.database.prepare('DELETE FROM indexed_files').run()
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    private dropLegacyTables() {
-        this.database.exec(`
-            DROP TABLE IF EXISTS cache_snapshots;
-            DROP TABLE IF EXISTS project_snapshots;
-            DROP TABLE IF EXISTS indexed_source_files;
-        `)
     }
 
     private hasTable(tableName: string) {
@@ -1774,76 +1615,6 @@ export class UsageCacheRepository {
 
         return hydrated
     }
-
-    private loadLegacyBootstrap() {
-        const row: LegacySnapshotRow | undefined = this.database.prepare<LegacySnapshotRow>(`
-            SELECT payload, payload_hash, updated_at
-            FROM cache_snapshots
-            WHERE key = ?
-        `).get('bootstrap')
-
-        if (!row) {
-            return null
-        }
-
-        return {
-            payload: JSON.parse(row.payload) as TokensConsumptionResult,
-            payloadHash: row.payload_hash,
-            updatedAt: row.updated_at,
-        }
-    }
-
-    private loadLegacyProjectCatalog() {
-        const row: LegacySnapshotRow | undefined = this.database.prepare<LegacySnapshotRow>(`
-            SELECT payload, payload_hash, updated_at
-            FROM cache_snapshots
-            WHERE key = ?
-        `).get('project_catalog')
-
-        if (!row) {
-            return null
-        }
-
-        return {
-            payload: normalizeProjectCatalogItems(JSON.parse(row.payload) as unknown),
-            payloadHash: row.payload_hash,
-            updatedAt: row.updated_at,
-        }
-    }
-
-    private loadLegacyProjectDetails() {
-        const rows: LegacyProjectSnapshotRow[] = this.database.prepare<LegacyProjectSnapshotRow>(`
-            SELECT label, payload, payload_hash, updated_at
-            FROM project_snapshots
-            ORDER BY label ASC
-        `).all()
-        const details = new Map<string, ProjectUsageDetail>()
-
-        for (const row of rows) {
-            details.set(row.label, normalizeProjectUsageDetail(JSON.parse(row.payload) as ProjectUsageDetail))
-        }
-
-        return details
-    }
-
-    private loadLegacyIndexedSourceFiles() {
-        const rows: LegacyIndexedSourceFileRow[] = this.database.prepare<LegacyIndexedSourceFileRow>(`
-            SELECT path, platform, payload, project_names, size, mtime_ms, updated_at
-            FROM indexed_source_files
-            ORDER BY path ASC
-        `).all()
-
-        return rows.map(row => ({
-            cacheSignature: '',
-            mtimeMs: row.mtime_ms,
-            path: row.path,
-            payload: JSON.parse(row.payload) as IndexedUsageSourceFile['payload'],
-            platform: row.platform,
-            projectNames: JSON.parse(row.project_names) as string[],
-            size: row.size,
-            updatedAt: row.updated_at,
-        } satisfies IndexedUsageSourceFile))
-    }
 }
 
 function getTokenRowsByBucket(usage: PersistedUsageScope, bucket: TokenRowBucket): TokenUsageRow[] {
@@ -2233,42 +2004,6 @@ function createPayloadHash(value: string) {
     return createHash('sha1').update(value).digest('hex')
 }
 
-function normalizeProjectCatalogItems(value: unknown): ProjectUsageCatalogItem[] {
-    if (!Array.isArray(value)) {
-        return []
-    }
-
-    return value.flatMap((item) => {
-        if (!item || typeof item !== 'object') {
-            return []
-        }
-
-        const record = item as Record<string, unknown>
-
-        if (typeof record.label !== 'string') {
-            return []
-        }
-
-        if (Array.isArray(record.platforms)) {
-            return [{
-                label: record.label,
-                platforms: normalizeProjectCatalogPlatforms(record.platforms),
-                totalTokens: normalizeProjectCatalogTotalTokens(record.totalTokens),
-            }]
-        }
-
-        if (typeof record.type === 'string') {
-            return [{
-                label: record.label,
-                platforms: normalizeProjectCatalogPlatforms(record.type === 'mixed' ? [] : [record.type]),
-                totalTokens: normalizeProjectCatalogTotalTokens(record.totalTokens),
-            }]
-        }
-
-        return []
-    })
-}
-
 function parseProjectCatalogPlatforms(value: string) {
     try {
         return normalizeProjectCatalogPlatforms(JSON.parse(value) as unknown)
@@ -2286,10 +2021,6 @@ function normalizeProjectCatalogPlatforms(value: unknown): ProjectUsagePlatform[
     return value.filter((platform): platform is ProjectUsagePlatform =>
         typeof platform === 'string' && PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform),
     )
-}
-
-function normalizeProjectCatalogTotalTokens(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, value) : 0
 }
 
 function mkdirParentDirectory(filePath: string) {
