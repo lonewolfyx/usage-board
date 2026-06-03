@@ -96,10 +96,38 @@ const paginationByTab = computed<Record<TokenTabValue, PaginatedResponse<UsageAn
     session: props.sessionPagination ?? buildLocalPagination(props.sessionItems),
     week: props.weeklyPagination ?? buildLocalPagination(props.weeklyItems),
 }))
+const pageDataByTab = shallowReactive<Record<TokenTabValue, PaginatedResponse<UsageAnalyticsTokenUsageRow>>>({
+    day: {
+        items: [],
+        pagination: buildLocalPagination([]),
+    },
+    month: {
+        items: [],
+        pagination: buildLocalPagination([]),
+    },
+    session: {
+        items: [],
+        pagination: buildLocalPagination([]),
+    },
+    week: {
+        items: [],
+        pagination: buildLocalPagination([]),
+    },
+})
+
+watch([itemsByTab, paginationByTab], () => {
+    for (const tab of tabs) {
+        pageDataByTab[tab.value] = {
+            items: itemsByTab.value[tab.value],
+            pagination: paginationByTab.value[tab.value],
+        }
+    }
+}, {
+    immediate: true,
+})
 
 const tabState = computed<Record<TokenTabValue, TokenTabState>>(() => Object.fromEntries(tabs.map((tab) => {
-    const items = itemsByTab.value[tab.value]
-    const pagination = paginationByTab.value[tab.value]
+    const { items, pagination } = pageDataByTab[tab.value]
 
     return [tab.value, {
         items,
@@ -177,14 +205,14 @@ const columnsByTab = computed<Record<TokenTabValue, ColumnDef<UsageAnalyticsToke
 ])) as Record<TokenTabValue, ColumnDef<UsageAnalyticsTokenUsageRow>[]>)
 
 async function setPage(tab: TokenTabValue, page: number) {
-    if (!props.fetchPage) {
+    if (!props.fetchPage || page === pageDataByTab[tab].pagination.page) {
         return
     }
 
     tableError.value = null
 
     try {
-        await props.fetchPage(tab, page)
+        pageDataByTab[tab] = await props.fetchPage(tab, page)
     }
     catch (error) {
         tableError.value = error instanceof Error ? error : new Error('Failed to load token usage page.')
