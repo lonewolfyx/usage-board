@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -15,6 +16,7 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -53,7 +55,7 @@ export const kimiUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = normalizeUnknownRecord(parseJson(lines[index]!))
+            const record = normalizeUnknownRecord(parse(lines[index]!))
             const message = normalizeUnknownRecord(record?.message)
             const payload = normalizeUnknownRecord(message?.payload)
             const tokenUsage = normalizeUnknownRecord(payload?.token_usage)
@@ -64,11 +66,11 @@ export const kimiUsageAdapter = {
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: getNumber(tokenUsage.input_cache_creation),
-                    cacheReadTokens: getNumber(tokenUsage.input_cache_read),
-                    inputTokens: getNumber(tokenUsage.input_other),
-                    outputTokens: getNumber(tokenUsage.output),
-                    totalTokens: getNumber(tokenUsage.total),
+                    cacheCreationTokens: normalizeUsageNumber(tokenUsage.input_cache_creation as number | undefined),
+                    cacheReadTokens: normalizeUsageNumber(tokenUsage.input_cache_read as number | undefined),
+                    inputTokens: normalizeUsageNumber(tokenUsage.input_other as number | undefined),
+                    outputTokens: normalizeUsageNumber(tokenUsage.output as number | undefined),
+                    totalTokens: normalizeUsageNumber(tokenUsage.total as number | undefined),
                 }),
             })
 
@@ -112,15 +114,6 @@ export const kimiUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseJson(value: string) {
-    try {
-        return JSON.parse(value) as unknown
-    }
-    catch {
-        return null
-    }
-}
-
 function getKimiModel(filePath: string) {
     const config = parseJsonFile(join(dirname(dirname(dirname(filePath))), 'config.json'))
     return normalizeStringValue(normalizeUnknownRecord(config)?.model) || KIMI_DEFAULT_MODEL
@@ -140,8 +133,4 @@ function isKimiWireFile(sessionsPath: string, filePath: string) {
     }
 
     return normalizedFile.slice(startIndex + 1).length === 3 && normalizedFile[normalizedFile.length - 1] === 'wire.jsonl'
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

@@ -13,6 +13,7 @@ import {
     applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -73,9 +74,9 @@ export const ampUsageAdapter = {
                 ...applyTotalUsageAsExtra({
                     cacheCreationTokens,
                     cacheReadTokens,
-                    inputTokens: getNumber(tokens.input),
-                    outputTokens: getNumber(tokens.output),
-                    totalTokens: getNumber(tokens.total),
+                    inputTokens: normalizeUsageNumber(tokens.input as number | undefined),
+                    outputTokens: normalizeUsageNumber(tokens.output as number | undefined),
+                    totalTokens: normalizeUsageNumber(tokens.total as number | undefined),
                 }),
             })
 
@@ -126,14 +127,10 @@ function getAmpCacheTokens(messages: unknown) {
         const usage = normalizeUnknownRecord(record.usage)
 
         cacheTokens.set(Number(record.messageId), [
-            getNumber(usage?.cacheCreationInputTokens),
-            getNumber(usage?.cacheReadInputTokens),
+            normalizeUsageNumber(usage?.cacheCreationInputTokens as number | undefined),
+            normalizeUsageNumber(usage?.cacheReadInputTokens as number | undefined),
         ])
     }
 
     return cacheTokens
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

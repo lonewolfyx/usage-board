@@ -12,6 +12,7 @@ import {
     applyTotalUsageAsExtra,
     createZeroPricingResolver,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -55,11 +56,11 @@ export const piUsageAdapter = {
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: getNumber(usageRecord.cacheWrite),
-                    cacheReadTokens: getNumber(usageRecord.cacheRead),
-                    inputTokens: getNumber(usageRecord.input),
-                    outputTokens: getNumber(usageRecord.output),
-                    totalTokens: getNumber(usageRecord.totalTokens),
+                    cacheCreationTokens: normalizeUsageNumber(usageRecord.cacheWrite as number | undefined),
+                    cacheReadTokens: normalizeUsageNumber(usageRecord.cacheRead as number | undefined),
+                    inputTokens: normalizeUsageNumber(usageRecord.input as number | undefined),
+                    outputTokens: normalizeUsageNumber(usageRecord.output as number | undefined),
+                    totalTokens: normalizeUsageNumber(usageRecord.totalTokens as number | undefined),
                 }),
                 costUSD: normalizeFiniteNumberOrNull(normalizeUnknownRecord(usageRecord.cost)?.total) ?? 0,
             })
@@ -119,8 +120,4 @@ function getPiProject(filePath: string) {
     }
 
     return 'unknown'
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

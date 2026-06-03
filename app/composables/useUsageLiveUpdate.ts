@@ -1,4 +1,5 @@
 import type { UsageUpdateMessage } from '#shared/types/ws'
+import { parse } from '#shared/utils/parse'
 import { fetchAnalysisLiveState } from '~/lib/analysis-repository'
 
 const usageLiveUpdateDebounceMs = 300
@@ -150,16 +151,11 @@ function parseUsageUpdateMessage(data: unknown) {
         return null
     }
 
-    try {
-        const parsed = JSON.parse(data) as unknown
+    const parsed = parse(data) as UsageUpdateMessage | null
 
-        return isUsageUpdateMessage(parsed)
-            ? parsed
-            : null
-    }
-    catch {
-        return null
-    }
+    return isUsageUpdateMessage(parsed)
+        ? parsed
+        : null
 }
 
 function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {

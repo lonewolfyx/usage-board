@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import {
     addFragmentInteraction,
@@ -13,6 +14,7 @@ import {
     applyTotalUsageFallback,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -40,7 +42,7 @@ export const kiloUsageAdapter = {
             const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
             for (const row of rows) {
-                const record = parseUnknownJson(row.data)
+                const record = parse(row.data) as Record<string, unknown> | null
                 const parsed = record ? parseKiloMessage(record, row, filePath, resolvePricing) : null
 
                 if (!parsed) {
@@ -98,14 +100,14 @@ function parseKiloMessage(
         return null
     }
 
-    const extraTotalTokens = getNumber(tokens.reasoning)
+    const extraTotalTokens = normalizeUsageNumber(tokens.reasoning as number | undefined)
     const usage = toInteractionUsage({
         ...applyTotalUsageFallback({
-            cacheCreationTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.write),
-            cacheReadTokens: getNumber(normalizeUnknownRecord(tokens.cache)?.read),
-            inputTokens: getNumber(tokens.input),
-            outputTokens: getNumber(tokens.output),
-            totalTokens: Math.max(getNumber(tokens.total) - extraTotalTokens, 0),
+            cacheCreationTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.write as number | undefined),
+            cacheReadTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.read as number | undefined),
+            inputTokens: normalizeUsageNumber(tokens.input as number | undefined),
+            outputTokens: normalizeUsageNumber(tokens.output as number | undefined),
+            totalTokens: Math.max(normalizeUsageNumber(tokens.total as number | undefined) - extraTotalTokens, 0),
         }),
         extraTotalTokens,
     })
@@ -134,17 +136,4 @@ function parseKiloMessage(
 
 function getKiloCandidates(model: string, provider: string | null) {
     return provider ? [model, `${provider}/${model}`] : [model]
-}
-
-function parseUnknownJson(value: string) {
-    try {
-        return JSON.parse(value) as Record<string, unknown>
-    }
-    catch {
-        return null
-    }
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

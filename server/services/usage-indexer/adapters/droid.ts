@@ -15,6 +15,7 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -39,14 +40,14 @@ export const droidUsageAdapter = {
             return []
         }
 
-        const extraTotalTokens = getNumber(tokenUsage.thinkingTokens)
+        const extraTotalTokens = normalizeUsageNumber(tokenUsage.thinkingTokens as number | undefined)
         const usage = toInteractionUsage({
             ...applyTotalUsageFallback({
-                cacheCreationTokens: getNumber(tokenUsage.cacheCreationTokens),
-                cacheReadTokens: getNumber(tokenUsage.cacheReadTokens),
-                inputTokens: getNumber(tokenUsage.inputTokens),
-                outputTokens: getNumber(tokenUsage.outputTokens),
-                totalTokens: Math.max(getNumber(tokenUsage.totalTokens) - extraTotalTokens, 0),
+                cacheCreationTokens: normalizeUsageNumber(tokenUsage.cacheCreationTokens as number | undefined),
+                cacheReadTokens: normalizeUsageNumber(tokenUsage.cacheReadTokens as number | undefined),
+                inputTokens: normalizeUsageNumber(tokenUsage.inputTokens as number | undefined),
+                outputTokens: normalizeUsageNumber(tokenUsage.outputTokens as number | undefined),
+                totalTokens: Math.max(normalizeUsageNumber(tokenUsage.totalTokens as number | undefined) - extraTotalTokens, 0),
             }),
             extraTotalTokens,
         })
@@ -239,10 +240,6 @@ function extractDroidModelFromSidecar(settingsPath: string) {
     }
 
     return null
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }
 
 function selectLatestDroidSettingsFiles(filePaths: string[]) {

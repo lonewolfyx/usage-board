@@ -83,6 +83,7 @@
 </template>
 
 <script setup lang="ts">
+import { formatDuration } from '#shared/utils/date'
 import { VisAxis, VisStackedBar, VisStackedBarSelectors, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { computed } from 'vue'
 import { escapeHtml } from '~/lib/chart'
@@ -210,21 +211,6 @@ function parseDurationMinutes(duration: string) {
     const minutes = duration.match(/(\d+)m/)?.[1]
 
     return Number(hours ?? 0) * 60 + Number(minutes ?? 0)
-}
-
-function formatDuration(minutes: number) {
-    const hours = Math.floor(minutes / 60)
-    const remainingMinutes = minutes % 60
-
-    if (hours === 0) {
-        return `${remainingMinutes}m`
-    }
-
-    if (remainingMinutes === 0) {
-        return `${hours}h`
-    }
-
-    return `${hours}h ${remainingMinutes}m`
 }
 
 function normalizeScore(value: number, maxValue: number) {

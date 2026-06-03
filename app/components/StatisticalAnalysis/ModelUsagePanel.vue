@@ -37,7 +37,7 @@
                     />
                     <VisAxis
                         :num-ticks="4"
-                        :tick-format="formatTokenAxis"
+                        :tick-format="formatCompactAxisTick"
                         type="y"
                     />
                     <VisTooltip v-if="hasChartData" />
@@ -105,7 +105,7 @@
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
-import { clampNumber, escapeHtml } from '~/lib/chart'
+import { clampNumber, createStackedAreaChartColors, escapeHtml, formatCompactAxisTick } from '~/lib/chart'
 
 defineOptions({
     name: 'StatisticalAnalysisModelUsagePanel',
@@ -129,8 +129,6 @@ const chartHeight = 288
 const yDomain = [0, undefined] satisfies [number, undefined]
 const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
 const { width: chartWidth } = useElementSize(chartRoot)
-const hoverDatumIndex = shallowRef<number | null>(null)
-const hoverPointerY = shallowRef<number | null>(null)
 
 const selectedYear = computed(() => props.year ?? getLatestUsageYear(props.monthlyItems) ?? new Date().getFullYear())
 
@@ -188,7 +186,17 @@ const chartConfig = computed<ChartConfig>(() => Object.fromEntries(
         label: series.model,
     }]),
 ))
-
+const {
+    getAreaColor,
+    getCrosshairColor,
+    getGradientId,
+    getLineColor,
+} = createStackedAreaChartColors(() => modelSeries.value, {
+    fallbackColor: getModelColor(0),
+    getColor: series => series.color,
+    getKey: series => series.model,
+    gradientPrefix: 'model-usage',
+})
 const gradientSvgDefs = computed(() => modelSeries.value.map(series => `
     <linearGradient id="${getGradientId(series.model)}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${series.color}" stop-opacity="0.45" />
@@ -202,17 +210,39 @@ const plotWidth = computed(() => Math.max(chartWidth.value - chartMargin.left - 
 const plotHeight = computed(() => Math.max(chartHeight - chartMargin.top - chartMargin.bottom, 0))
 const plotBottom = computed(() => plotTop.value + plotHeight.value)
 const maxTotalTokens = computed(() => Math.max(...chartData.value.map(item => item.totalTokens), 0))
+const {
+    clearHoverGuide,
+    handlePointerMove,
+    hoverPointerY,
+    hoverSelection,
+} = useChartHoverGuide({
+    chartRoot,
+    isEnabled: () => hasChartData.value && months.value.length > 0 && plotWidth.value > 0,
+    resolveBounds: () => ({
+        bottom: plotBottom.value,
+        left: plotLeft.value,
+        right: plotLeft.value + plotWidth.value,
+        top: plotTop.value,
+    }),
+    resolveSelection(pointerX) {
+        const relativeX = clampNumber((pointerX - plotLeft.value) / Math.max(plotWidth.value, 1), 0, 1)
+
+        return months.value.length <= 1
+            ? 0
+            : Math.round(relativeX * (months.value.length - 1))
+    },
+})
 const hoverGuide = computed(() => {
-    if (hoverDatumIndex.value === null || hoverPointerY.value === null) {
+    if (hoverSelection.value === null || hoverPointerY.value === null) {
         return null
     }
 
-    const point = chartData.value[hoverDatumIndex.value]
+    const point = chartData.value[hoverSelection.value]
     if (!point || plotWidth.value <= 0 || plotHeight.value <= 0) {
         return null
     }
 
-    const xRatio = months.value.length <= 1 ? 0 : hoverDatumIndex.value / (months.value.length - 1)
+    const xRatio = months.value.length <= 1 ? 0 : hoverSelection.value / (months.value.length - 1)
     const x = plotLeft.value + (xRatio * plotWidth.value)
     const y = clampNumber(hoverPointerY.value, plotTop.value, plotBottom.value)
     const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
@@ -225,20 +255,6 @@ const hoverGuide = computed(() => {
         yLabel: formatCompactNumber(yValue),
     }
 })
-
-function getAreaColor(_: ModelSeriesDatum[], index: number) {
-    const series = modelSeries.value[index]
-
-    return series ? `url(#${getGradientId(series.model)})` : getModelColor(0)
-}
-
-function getLineColor(_: ModelSeriesDatum[], index: number) {
-    return modelSeries.value[index]?.color ?? getModelColor(0)
-}
-
-function getCrosshairColor(_: ModelSeriesDatum, index: number) {
-    return modelSeries.value[index]?.color ?? getModelColor(0)
-}
 
 function getMonthIndex(item: ModelSeriesDatum) {
     return item.monthIndex
@@ -287,14 +303,6 @@ function formatMonthAxis(tick: number | Date) {
     return formatMonthLabel(month)
 }
 
-function formatTokenAxis(tick: number | Date) {
-    if (tick instanceof Date) {
-        return ''
-    }
-
-    return formatCompactNumber(tick)
-}
-
 function formatMonthLabel(month: string) {
     const [year, monthNumber] = month.split('-')
     const date = new Date(Number(year), Number(monthNumber) - 1, 1)
@@ -306,51 +314,11 @@ function formatTooltipMonth(month: string) {
     return `${formatMonthLabel(month)} ${month.slice(0, 4)}`
 }
 
-function handlePointerMove(event: PointerEvent) {
-    const rect = chartRoot.value?.getBoundingClientRect()
-
-    if (!rect) {
-        return
-    }
-
-    const pointerX = event.clientX - rect.left
-    const pointerY = event.clientY - rect.top
-    const plotRight = plotLeft.value + plotWidth.value
-
-    if (
-        pointerX < plotLeft.value
-        || pointerX > plotRight
-        || pointerY < plotTop.value
-        || pointerY > plotBottom.value
-        || plotWidth.value <= 0
-        || !hasChartData.value
-        || months.value.length === 0
-    ) {
-        clearHoverGuide()
-        return
-    }
-
-    const relativeX = clampNumber((pointerX - plotLeft.value) / Math.max(plotWidth.value, 1), 0, 1)
-    hoverDatumIndex.value = months.value.length <= 1
-        ? 0
-        : Math.round(relativeX * (months.value.length - 1))
-    hoverPointerY.value = pointerY
-}
-
-function clearHoverGuide() {
-    hoverDatumIndex.value = null
-    hoverPointerY.value = null
-}
-
 function getLatestUsageYear(items: MonthlyModelUsage[]) {
     const latestMonth = [...items].sort((a, b) => b.month.localeCompare(a.month))[0]?.month
     const year = latestMonth?.split('-')[0]
 
     return year ? Number(year) : null
-}
-
-function getGradientId(model: string) {
-    return `model-usage-${model.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
 }
 
 function getModelColor(index: number) {

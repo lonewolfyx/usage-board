@@ -164,7 +164,7 @@ export function getFileModifiedAtIso(filePath: string) {
     }
 }
 
-function normalizeUsageNumber(value: number | undefined) {
+export function normalizeUsageNumber(value: number | undefined) {
     return Number.isFinite(value) && value! > 0 ? Math.trunc(value!) : 0
 }
 

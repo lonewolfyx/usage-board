@@ -41,7 +41,7 @@
                     />
                     <VisAxis
                         :num-ticks="4"
-                        :tick-format="formatYAxis"
+                        :tick-format="formatCompactAxisTick"
                         type="y"
                     />
                     <VisTooltip v-if="orderedAgents.length > 0" />
@@ -116,7 +116,7 @@ import { formatCompactNumber, formatCurrency } from '#shared/utils/usage-dashboa
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
-import { clampNumber, escapeHtml } from '~/lib/chart'
+import { clampNumber, createStackedAreaChartColors, escapeHtml, formatCompactAxisTick } from '~/lib/chart'
 
 interface ChartPoint {
     costUSD: number
@@ -144,10 +144,6 @@ const chartHeight = 288
 const yDomain = [0, undefined] satisfies [number, undefined]
 const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
 const { width: chartWidth } = useElementSize(chartRoot)
-const hoverGuideState = reactive({
-    hour: null as number | null,
-    pointerY: null as number | null,
-})
 
 const orderedAgents = computed(() => PROJECT_USAGE_PLATFORMS
     .map((platform) => {
@@ -178,6 +174,16 @@ const chartConfig = computed<ChartConfig>(() => Object.fromEntries(
         label: agent.label,
     }]),
 ))
+const {
+    getAreaColor,
+    getCrosshairColor,
+    getGradientId,
+    getLineColor,
+} = createStackedAreaChartColors(() => orderedAgents.value, {
+    getColor: agent => agent.color,
+    getKey: agent => agent.key,
+    gradientPrefix: 'today-usage-trend',
+})
 const gradientSvgDefs = computed(() => orderedAgents.value.map(agent => `
     <linearGradient id="${getGradientId(agent.key)}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${agent.color}" stop-opacity="0.42" />
@@ -193,18 +199,44 @@ const plotHeight = computed(() => Math.max(chartHeight - chartMargin.top - chart
 const plotBottom = computed(() => plotTop.value + plotHeight.value)
 const plotInnerWidth = computed(() => Math.max(plotWidth.value - chartPadding.left - chartPadding.right, 0))
 const maxTotalTokens = computed(() => Math.max(...chartData.value.map(point => point.totalTokens), 0))
+const {
+    clearHoverGuide,
+    handlePointerMove,
+    hoverPointerY,
+    hoverSelection,
+} = useChartHoverGuide({
+    chartRoot,
+    isEnabled: () => props.items.length > 0 && plotInnerWidth.value > 0,
+    resolveBounds: () => ({
+        bottom: plotBottom.value,
+        left: plotLeft.value,
+        right: plotLeft.value + plotWidth.value,
+        top: plotTop.value,
+    }),
+    resolveSelection(pointerX) {
+        const plotRight = plotLeft.value + plotWidth.value
+        const plotInnerLeft = plotLeft.value + chartPadding.left
+        const plotInnerRight = plotRight - chartPadding.right
+
+        return Math.round(clampNumber(
+            ((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1)) * 23,
+            0,
+            23,
+        ))
+    },
+})
 const hoverGuide = computed(() => {
-    if (hoverGuideState.hour === null || hoverGuideState.pointerY === null) {
+    if (hoverSelection.value === null || hoverPointerY.value === null) {
         return null
     }
 
-    const point = chartData.value[hoverGuideState.hour]
+    const point = chartData.value[hoverSelection.value]
     if (!point || plotWidth.value <= 0 || plotHeight.value <= 0) {
         return null
     }
 
-    const x = plotLeft.value + chartPadding.left + ((hoverGuideState.hour / 23) * plotInnerWidth.value)
-    const y = clampNumber(hoverGuideState.pointerY, plotTop.value, plotBottom.value)
+    const x = plotLeft.value + chartPadding.left + ((hoverSelection.value / 23) * plotInnerWidth.value)
+    const y = clampNumber(hoverPointerY.value, plotTop.value, plotBottom.value)
     const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
 
     return {
@@ -215,28 +247,12 @@ const hoverGuide = computed(() => {
     }
 })
 
-function getAreaColor(_: ChartPoint[], index: number) {
-    return orderedAgents.value[index] ? `url(#${getGradientId(orderedAgents.value[index]!.key)})` : '#2563eb'
-}
-
 function getPointHour(point: ChartPoint | undefined) {
     return point?.hour ?? 0
 }
 
-function getLineColor(_: ChartPoint[], index: number) {
-    return orderedAgents.value[index]?.color ?? '#2563eb'
-}
-
-function getCrosshairColor(_: ChartPoint | undefined, index: number) {
-    return orderedAgents.value[index]?.color ?? '#2563eb'
-}
-
 function formatXAxis(value: number | Date) {
     return value instanceof Date ? '' : props.items[value]?.label ?? ''
-}
-
-function formatYAxis(value: number | Date) {
-    return value instanceof Date ? '' : formatCompactNumber(value)
 }
 
 function formatTooltip(point: ChartPoint | undefined) {
@@ -277,46 +293,5 @@ function formatTooltip(point: ChartPoint | undefined) {
             </div>
         </div>
     `
-}
-
-function handlePointerMove(event: PointerEvent) {
-    const rect = chartRoot.value?.getBoundingClientRect()
-
-    if (!rect || props.items.length === 0) {
-        return
-    }
-
-    const pointerX = event.clientX - rect.left
-    const pointerY = event.clientY - rect.top
-    const plotRight = plotLeft.value + plotWidth.value
-    const plotInnerLeft = plotLeft.value + chartPadding.left
-    const plotInnerRight = plotRight - chartPadding.right
-
-    if (
-        pointerX < plotLeft.value
-        || pointerX > plotRight
-        || pointerY < plotTop.value
-        || pointerY > plotBottom.value
-        || plotInnerWidth.value <= 0
-    ) {
-        clearHoverGuide()
-        return
-    }
-
-    hoverGuideState.hour = Math.round(clampNumber(
-        ((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1)) * 23,
-        0,
-        23,
-    ))
-    hoverGuideState.pointerY = pointerY
-}
-
-function clearHoverGuide() {
-    hoverGuideState.hour = null
-    hoverGuideState.pointerY = null
-}
-
-function getGradientId(value: string) {
-    return `today-usage-trend-${value}`
 }
 </script>

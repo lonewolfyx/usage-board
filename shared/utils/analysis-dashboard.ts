@@ -14,6 +14,7 @@ import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, Ranked
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
+import { formatDuration } from '#shared/utils/date'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -199,21 +200,6 @@ function buildHomeSessionAnalysisItems(sessionUsage: HomeSessionUsageItem[]) {
             repository: project.repository,
             tokenTotal: project.tokenTotal,
         }))
-}
-
-function formatDuration(minutes: number) {
-    const hours = Math.floor(minutes / 60)
-    const remainingMinutes = minutes % 60
-
-    if (hours === 0) {
-        return `${remainingMinutes}m`
-    }
-
-    if (remainingMinutes === 0) {
-        return `${hours}h`
-    }
-
-    return `${hours}h ${remainingMinutes}m`
 }
 
 function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>) {

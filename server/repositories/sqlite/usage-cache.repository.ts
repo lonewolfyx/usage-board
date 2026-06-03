@@ -48,6 +48,7 @@ import {
     createEmptyLoadUsageResult,
 } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { parse } from '#shared/utils/parse'
 
 const CACHE_SCHEMA_VERSION = 11
 const ROW_KEY_SEPARATOR = '\u001F'
@@ -1691,14 +1692,9 @@ function parseOverviewCardSubvalue(value: string | null): UsageOverviewCard['sub
         return undefined
     }
 
-    try {
-        const subvalue = JSON.parse(value) as UsageOverviewCard['subvalue']
+    const subvalue = parse(value) as UsageOverviewCard['subvalue'] | null
 
-        return Array.isArray(subvalue?.items) ? subvalue : undefined
-    }
-    catch {
-        return undefined
-    }
+    return Array.isArray(subvalue?.items) ? subvalue : undefined
 }
 
 function groupTokenRows(
@@ -2005,12 +2001,7 @@ function createPayloadHash(value: string) {
 }
 
 function parseProjectCatalogPlatforms(value: string) {
-    try {
-        return normalizeProjectCatalogPlatforms(JSON.parse(value) as unknown)
-    }
-    catch {
-        return []
-    }
+    return normalizeProjectCatalogPlatforms(parse(value))
 }
 
 function normalizeProjectCatalogPlatforms(value: unknown): ProjectUsagePlatform[] {

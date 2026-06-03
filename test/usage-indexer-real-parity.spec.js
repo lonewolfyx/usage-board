@@ -6,6 +6,7 @@ import { buildProjectLoadUsageResult } from '../shared/platform/project.ts'
 import { PROJECT_USAGE_PLATFORMS } from '../shared/types/ai.ts'
 import { buildHomeDashboardModules } from '../shared/utils/analysis-dashboard.ts'
 import { resolveConfig } from '../shared/utils/configs.ts'
+import { parse } from '../shared/utils/parse.ts'
 import { getDateKeyFromLabel } from '../shared/utils/usage-dashboard.ts'
 
 describe('usage indexer real parity with installed ccusage', () => {
@@ -18,10 +19,10 @@ describe('usage indexer real parity with installed ccusage', () => {
 
         for (const platform of PROJECT_USAGE_PLATFORMS) {
             const command = getCcusageCommand(platform)
-            const ccusageReport = JSON.parse(execFileSync('ccusage', [command, 'daily', '--json', '--offline', '-z', 'Asia/Shanghai'], {
+            const ccusageReport = parse(execFileSync('ccusage', [command, 'daily', '--json', '--offline', '-z', 'Asia/Shanghai'], {
                 cwd: process.cwd(),
                 encoding: 'utf8',
-            }))
+            })) ?? {}
             const usage = buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform)
             const actualDailyRows = normalizeDailyRows(usage.dailyRows)
             const expectedDailyRows = normalizeCcusageDailyRows(ccusageReport.daily ?? [])
@@ -56,10 +57,10 @@ describe('usage indexer real parity with installed ccusage', () => {
             ]),
         )
         const usage = buildHomeDashboardModules(dashboardsByPlatform)
-        const ccusageReport = JSON.parse(execFileSync('ccusage', ['--json'], {
+        const ccusageReport = parse(execFileSync('ccusage', ['--json'], {
             cwd: process.cwd(),
             encoding: 'utf8',
-        }))
+        })) ?? {}
         const actualDailyRows = normalizeDailyTokenUsageRows(usage.dailyTokenUsage)
         const expectedDailyRows = normalizeCcusageDailyRows(ccusageReport.daily ?? [], { includeReasoningOutputTokens: false })
         const actualTotals = normalizeCcusageVisibleTotalsFromRows(actualDailyRows)
