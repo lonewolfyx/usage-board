@@ -90,14 +90,7 @@ class UsageDataRuntime {
     }
 
     async getBootstrap() {
-        await this.initialize()
-
-        if (!this.state.bootstrap) {
-            await this.refreshNow()
-        }
-        else if (!this.state.hasIndexedCurrentProcess) {
-            void this.refreshInBackground()
-        }
+        await this.ensureHydratedCurrentProcessState()
 
         return this.state.bootstrap!
     }
@@ -108,11 +101,6 @@ class UsageDataRuntime {
         await this.initialize()
         const updateState = await getUsageCacheUpdateState(this.config, this.repository, this.state.hydratedAt)
 
-        if (this.state.bootstrap && !updateState.hasChanges) {
-            this.state.hasIndexedCurrentProcess = true
-            return
-        }
-
         const updatedPlatforms = updateState.updatedPlatforms.length > 0
             ? updateState.updatedPlatforms
             : PROJECT_USAGE_PLATFORMS
@@ -120,20 +108,13 @@ class UsageDataRuntime {
         await this.refreshNow({
             discoveredFiles: updateState.discoveredFiles,
             forceLog: !this.state.bootstrap || (options.verboseWhenChanged !== false && updateState.hasChanges),
-            hydrateCachedPricing: !this.state.bootstrap,
+            hydrateCachedPricing: true,
             updatedPlatforms,
         })
     }
 
     async getProjectCatalog() {
-        await this.initialize()
-
-        if (this.state.projectCatalog.length === 0) {
-            await this.refreshNow()
-        }
-        else if (!this.state.hasIndexedCurrentProcess) {
-            void this.refreshInBackground()
-        }
+        await this.ensureHydratedCurrentProcessState()
 
         return this.state.projectCatalog
     }
@@ -149,11 +130,7 @@ class UsageDataRuntime {
     }
 
     async getLiveState() {
-        await this.initialize()
-
-        if (this.state.hydratedAt <= 0 && !this.state.bootstrap) {
-            await this.refreshNow()
-        }
+        await this.ensureHydratedCurrentProcessState()
 
         return {
             updatedAt: this.state.hydratedAt > 0
@@ -165,15 +142,11 @@ class UsageDataRuntime {
     async getProjectDataModules(
         request: Pick<Extract<ProjectWebSocketRequest, { type: 'project_data' }>, 'module' | 'modules' | 'page' | 'pageSize' | 'platform' | 'project'>,
     ): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
-        await this.initialize()
+        await this.ensureHydratedCurrentProcessState()
         const projectLabel = (request.project || '').trim()
 
         if (!projectLabel) {
             throw new Error('Missing project name for project data request.')
-        }
-
-        if (!this.state.hasIndexedCurrentProcess) {
-            void this.refreshInBackground()
         }
 
         let hydratedDetail = this.state.projectDetails?.get(projectLabel)
@@ -211,6 +184,18 @@ class UsageDataRuntime {
         return () => {
             this.updateListeners.delete(listener)
         }
+    }
+
+    private async ensureHydratedCurrentProcessState() {
+        await this.initialize()
+
+        if (this.state.bootstrap && this.state.hasIndexedCurrentProcess) {
+            return
+        }
+
+        await this.refreshNow({
+            hydrateCachedPricing: true,
+        })
     }
 
     private async hydrateFromRepository() {

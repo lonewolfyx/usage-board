@@ -2,6 +2,7 @@ import type { TokensConsumptionResult } from '../shared/types/usage-dashboard'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it } from 'vitest'
 import { UsageCacheRepository } from '../server/repositories/sqlite/usage-cache.repository'
 import { createEmptyLoadUsageResult } from '../shared/platform/defaults'
@@ -319,5 +320,47 @@ describe('home dashboard today insights', () => {
                 totalTokens: 300,
             },
         ])
+    })
+
+    it('drops retired usage_scope_project_usage during schema migration', () => {
+        const root = mkdtempSync(join(tmpdir(), 'usage-board-schema-migration-'))
+        createdRoots.push(root)
+
+        const databasePath = join(root, 'cache.sqlite')
+        const database = new DatabaseSync(databasePath)
+
+        database.exec(`
+            CREATE TABLE cache_schema_meta (
+                id INTEGER PRIMARY KEY CHECK (id = 1),
+                schema_version INTEGER NOT NULL
+            );
+            INSERT INTO cache_schema_meta (id, schema_version) VALUES (1, 11);
+            CREATE TABLE usage_scope_project_usage (
+                scope_key TEXT NOT NULL,
+                row_order INTEGER NOT NULL
+            );
+            CREATE INDEX idx_usage_scope_project_usage_order
+                ON usage_scope_project_usage(scope_key, row_order);
+        `)
+        database.close()
+
+        const repository = new UsageCacheRepository(databasePath)
+        repository.close()
+
+        const migratedDatabase = new DatabaseSync(databasePath)
+        const retiredTable = migratedDatabase.prepare(`
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'usage_scope_project_usage'
+        `).get()
+        const retiredIndex = migratedDatabase.prepare(`
+            SELECT name
+            FROM sqlite_master
+            WHERE type = 'index' AND name = 'idx_usage_scope_project_usage_order'
+        `).get()
+        migratedDatabase.close()
+
+        expect(retiredTable).toBeUndefined()
+        expect(retiredIndex).toBeUndefined()
     })
 })
