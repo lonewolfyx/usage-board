@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -15,6 +16,7 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -50,20 +52,20 @@ export const qwenUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = normalizeUnknownRecord(parseJson(lines[index]!))
+            const record = normalizeUnknownRecord(parse(lines[index]!))
             const usageRecord = normalizeUnknownRecord(record?.usageMetadata)
 
             if (!record || normalizeStringValue(record.type) !== 'assistant' || !usageRecord) {
                 continue
             }
 
-            const extraTotalTokens = getNumber(usageRecord.thoughtsTokenCount)
+            const extraTotalTokens = normalizeUsageNumber(usageRecord.thoughtsTokenCount as number | undefined)
             const usage = toInteractionUsage({
                 ...applyTotalUsageFallback({
-                    cacheReadTokens: getNumber(usageRecord.cachedContentTokenCount),
-                    inputTokens: getNumber(usageRecord.promptTokenCount),
-                    outputTokens: getNumber(usageRecord.candidatesTokenCount),
-                    totalTokens: Math.max(getNumber(usageRecord.totalTokenCount) - extraTotalTokens, 0),
+                    cacheReadTokens: normalizeUsageNumber(usageRecord.cachedContentTokenCount as number | undefined),
+                    inputTokens: normalizeUsageNumber(usageRecord.promptTokenCount as number | undefined),
+                    outputTokens: normalizeUsageNumber(usageRecord.candidatesTokenCount as number | undefined),
+                    totalTokens: Math.max(normalizeUsageNumber(usageRecord.totalTokenCount as number | undefined) - extraTotalTokens, 0),
                 }),
                 extraTotalTokens,
             })
@@ -104,15 +106,6 @@ export const qwenUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseJson(value: string) {
-    try {
-        return JSON.parse(value) as unknown
-    }
-    catch {
-        return null
-    }
-}
-
 function getQwenProject(filePath: string) {
     const parts = filePath.split('/').filter(Boolean)
 
@@ -127,8 +120,4 @@ function getQwenProject(filePath: string) {
 
 function getQwenSessionId(filePath: string, project: string) {
     return basename(filePath, '.jsonl') ? `${project}-${basename(filePath, '.jsonl')}` : project
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

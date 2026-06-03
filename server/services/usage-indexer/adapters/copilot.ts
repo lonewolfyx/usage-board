@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -69,7 +70,7 @@ export const copilotUsageAdapter = {
             .map(line => line.trim())
             .filter(line => line.includes('"attributes"'))
         const records = lines
-            .map(parseCopilotJson)
+            .map(line => parse(line) as Record<string, unknown> | null)
             .filter((record): record is Record<string, unknown> => record !== null)
         const traceContexts = collectCopilotTraceContexts(records)
         const fallbackTimestamp = getFileModifiedAtIso(filePath)
@@ -115,15 +116,6 @@ export const copilotUsageAdapter = {
         return config.copilotPaths.map(path => path.endsWith('.jsonl') ? path : join(path, '**', '*.jsonl'))
     },
 } satisfies UsagePlatformAdapter
-
-function parseCopilotJson(value: string) {
-    try {
-        return JSON.parse(value) as Record<string, unknown>
-    }
-    catch {
-        return null
-    }
-}
 
 function collectCopilotTraceContexts(records: Record<string, unknown>[]) {
     const contexts = new Map<string, { model: string | null, priority: number, sessionId: string | null }>()

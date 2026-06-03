@@ -38,7 +38,7 @@
                     />
                     <VisAxis
                         :num-ticks="4"
-                        :tick-format="formatYAxis"
+                        :tick-format="formatCompactAxisTick"
                         type="y"
                     />
                     <VisTooltip v-if="hasChartData" />
@@ -108,17 +108,12 @@ import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
-import { clampNumber, escapeHtml } from '~/lib/chart'
+import { clampNumber, createStackedAreaChartColors, escapeHtml, formatCompactAxisTick } from '~/lib/chart'
 
 interface ChartPoint {
     index: number
     label: string
     values: Record<string, number>
-}
-
-interface HoverGuideState {
-    datumIndex: number | null
-    pointerY: number | null
 }
 
 const props = defineProps<{
@@ -156,10 +151,6 @@ const axisMonthFormatter = new Intl.DateTimeFormat('en-US', {
 })
 const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
 const { width: chartWidth } = useElementSize(chartRoot)
-const hoverGuideState = reactive<HoverGuideState>({
-    datumIndex: null,
-    pointerY: null,
-})
 
 const chartData = computed<ChartPoint[]>(() => props.xLabels.map((label, index) => ({
     index,
@@ -181,6 +172,16 @@ const chartConfig = computed<ChartConfig>(() => Object.fromEntries(
         label: series.label,
     }]),
 ))
+const {
+    getAreaColor,
+    getCrosshairColor,
+    getGradientId,
+    getLineColor,
+} = createStackedAreaChartColors(() => orderedSeries.value, {
+    getColor: series => series.color,
+    getKey: series => series.label,
+    gradientPrefix: 'project-line',
+})
 const gradientSvgDefs = computed(() => orderedSeries.value.map(series => `
     <linearGradient id="${getGradientId(series.label)}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${series.color}" stop-opacity="0.42" />
@@ -196,19 +197,44 @@ const plotHeight = computed(() => Math.max(chartHeight - chartMargin.top - chart
 const plotBottom = computed(() => plotTop.value + plotHeight.value)
 const plotInnerWidth = computed(() => Math.max(plotWidth.value - chartPadding.left - chartPadding.right, 0))
 const maxStackedValue = computed(() => Math.max(...chartData.value.map(point => Object.values(point.values).reduce((sum, value) => sum + value, 0)), 0))
+const {
+    clearHoverGuide,
+    handlePointerMove,
+    hoverPointerY,
+    hoverSelection,
+} = useChartHoverGuide({
+    chartRoot,
+    isEnabled: () => props.xLabels.length > 0 && plotInnerWidth.value > 0,
+    resolveBounds: () => ({
+        bottom: plotBottom.value,
+        left: plotLeft.value,
+        right: plotLeft.value + plotWidth.value,
+        top: plotTop.value,
+    }),
+    resolveSelection(pointerX) {
+        const plotRight = plotLeft.value + plotWidth.value
+        const plotInnerLeft = plotLeft.value + chartPadding.left
+        const plotInnerRight = plotRight - chartPadding.right
+        const relativeX = clampNumber((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1), 0, 1)
+
+        return props.xLabels.length <= 1
+            ? 0
+            : Math.round(relativeX * (props.xLabels.length - 1))
+    },
+})
 const hoverGuide = computed(() => {
-    if (hoverGuideState.datumIndex === null || hoverGuideState.pointerY === null) {
+    if (hoverSelection.value === null || hoverPointerY.value === null) {
         return null
     }
 
-    const point = chartData.value[hoverGuideState.datumIndex]
+    const point = chartData.value[hoverSelection.value]
     if (!point || plotWidth.value <= 0 || plotHeight.value <= 0) {
         return null
     }
 
-    const xRatio = props.xLabels.length <= 1 ? 0 : hoverGuideState.datumIndex / (props.xLabels.length - 1)
+    const xRatio = props.xLabels.length <= 1 ? 0 : hoverSelection.value / (props.xLabels.length - 1)
     const x = plotLeft.value + chartPadding.left + (xRatio * plotInnerWidth.value)
-    const y = clampNumber(hoverGuideState.pointerY, plotTop.value, plotBottom.value)
+    const y = clampNumber(hoverPointerY.value, plotTop.value, plotBottom.value)
     const yRatio = plotHeight.value <= 0 ? 0 : 1 - ((y - plotTop.value) / plotHeight.value)
     const yValue = yRatio * maxStackedValue.value
 
@@ -236,34 +262,12 @@ function getPointIndex(point: ChartPoint | undefined) {
     return point?.index ?? 0
 }
 
-function getAreaColor(_: ChartPoint[], index: number) {
-    const series = orderedSeries.value[index]
-
-    return series ? `url(#${getGradientId(series.label)})` : '#2563eb'
-}
-
-function getLineColor(_: ChartPoint[], index: number) {
-    return orderedSeries.value[index]?.color ?? '#2563eb'
-}
-
-function getCrosshairColor(_: ChartPoint | undefined, index: number) {
-    return orderedSeries.value[index]?.color ?? '#2563eb'
-}
-
 function formatXAxis(tick: number | Date) {
     if (tick instanceof Date) {
         return ''
     }
 
     return axisLabels.value[tick] ?? ''
-}
-
-function formatYAxis(tick: number | Date) {
-    if (tick instanceof Date) {
-        return ''
-    }
-
-    return formatCompactNumber(tick)
 }
 
 function formatTooltip(point: ChartPoint | undefined) {
@@ -296,45 +300,6 @@ function formatTooltip(point: ChartPoint | undefined) {
     `
 }
 
-function handlePointerMove(event: PointerEvent) {
-    const rect = chartRoot.value?.getBoundingClientRect()
-
-    if (!rect) {
-        return
-    }
-
-    const pointerX = event.clientX - rect.left
-    const pointerY = event.clientY - rect.top
-    const plotRight = plotLeft.value + plotWidth.value
-    const plotInnerLeft = plotLeft.value + chartPadding.left
-    const plotInnerRight = plotRight - chartPadding.right
-
-    if (
-        pointerX < plotLeft.value
-        || pointerX > plotRight
-        || pointerY < plotTop.value
-        || pointerY > plotBottom.value
-        || plotInnerWidth.value <= 0
-        || props.xLabels.length === 0
-    ) {
-        clearHoverGuide()
-        return
-    }
-
-    const relativeX = clampNumber((pointerX - plotInnerLeft) / Math.max(plotInnerRight - plotInnerLeft, 1), 0, 1)
-    const datumIndex = props.xLabels.length <= 1
-        ? 0
-        : Math.round(relativeX * (props.xLabels.length - 1))
-
-    hoverGuideState.datumIndex = datumIndex
-    hoverGuideState.pointerY = pointerY
-}
-
-function clearHoverGuide() {
-    hoverGuideState.datumIndex = null
-    hoverGuideState.pointerY = null
-}
-
 function formatAxisLabel(label: string, index: number, total: number) {
     const date = new Date(label)
     if (Number.isNaN(date.getTime())) {
@@ -347,10 +312,6 @@ function formatAxisLabel(label: string, index: number, total: number) {
     }
 
     return axisMonthDayFormatter.format(date)
-}
-
-function getGradientId(label: string) {
-    return `project-line-${label.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`
 }
 
 function getThemeAwareColor(color: string) {

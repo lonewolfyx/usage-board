@@ -2,6 +2,7 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import {
     addFragmentInteraction,
@@ -11,6 +12,7 @@ import {
 import {
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -83,7 +85,7 @@ export const gooseUsageAdapter = {
 
 function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
     const sessionId = normalizeStringValue(row.id)
-    const modelConfig = parseUnknownJson(normalizeStringValue(row.model_config_json) ?? null)
+    const modelConfig = parse(normalizeStringValue(row.model_config_json)) as Record<string, unknown> | null
     const model = normalizeStringValue(normalizeUnknownRecord(modelConfig)?.model_name)
     const timestamp = toIsoString(row.created_at)
 
@@ -91,9 +93,9 @@ function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<
         return null
     }
 
-    const inputTokens = getNumber(row.accumulated_input_tokens) || getNumber(row.input_tokens)
-    const outputTokens = getNumber(row.accumulated_output_tokens) || getNumber(row.output_tokens)
-    const totalTokens = getNumber(row.accumulated_total_tokens) || getNumber(row.total_tokens) || (inputTokens + outputTokens)
+    const inputTokens = normalizeUsageNumber(row.accumulated_input_tokens as number | undefined) || normalizeUsageNumber(row.input_tokens as number | undefined)
+    const outputTokens = normalizeUsageNumber(row.accumulated_output_tokens as number | undefined) || normalizeUsageNumber(row.output_tokens as number | undefined)
+    const totalTokens = normalizeUsageNumber(row.accumulated_total_tokens as number | undefined) || normalizeUsageNumber(row.total_tokens as number | undefined) || (inputTokens + outputTokens)
     const extraTotalTokens = Math.max(0, totalTokens - inputTokens - outputTokens)
     const usage = toInteractionUsage({
         extraTotalTokens,
@@ -141,21 +143,4 @@ function normalizeGooseProvider(provider: string | null, model: string) {
     }
 
     return 'goose'
-}
-
-function parseUnknownJson(value: string | null) {
-    if (!value) {
-        return null
-    }
-
-    try {
-        return JSON.parse(value) as unknown
-    }
-    catch {
-        return null
-    }
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

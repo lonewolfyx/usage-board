@@ -25,7 +25,9 @@ import type {
 } from '#shared/types/usage-dashboard'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
+import { cloneDate, formatDuration, formatMonthLabel } from '#shared/utils/date'
 import { normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -66,11 +68,10 @@ export function parseJsonlFile<T = unknown>(filePath: string) {
             continue
         }
 
-        try {
-            lines.push(JSON.parse(line) as T)
-        }
-        catch {
+        const parsed = parse(line) as T | null
 
+        if (parsed !== null) {
+            lines.push(parsed)
         }
     }
 
@@ -87,7 +88,7 @@ export function parseJsonlFile<T = unknown>(filePath: string) {
  */
 export function parseJsonFile(filePath: string) {
     try {
-        return JSON.parse(readFileSync(filePath, 'utf8')) as unknown
+        return parse(readFileSync(filePath, 'utf8'))
     }
     catch {
         return null
@@ -768,50 +769,6 @@ export function getWeekLabel(date: Date) {
 }
 
 /**
- * Formats a yyyy-MM month key into an English display label.
- *
- * @example
- * ```ts
- * formatMonthLabel('2026-04')
- * // 'Apr 2026'
- * ```
- */
-export function formatMonthLabel(monthKey: string) {
-    const [year, month] = monthKey.split('-').map(value => Number.parseInt(value, 10))
-    const date = new Date(Date.UTC(year || 0, (month || 1) - 1, 1))
-
-    return new Intl.DateTimeFormat('en-US', {
-        month: 'short',
-        timeZone: 'UTC',
-        year: 'numeric',
-    }).format(date)
-}
-
-/**
- * Formats a minute count into compact duration text.
- *
- * @example
- * ```ts
- * formatDuration(125)
- * // '2h 5m'
- * ```
- */
-export function formatDuration(minutes: number) {
-    const hours = Math.floor(minutes / 60)
-    const remainingMinutes = minutes % 60
-
-    if (hours === 0) {
-        return `${remainingMinutes}m`
-    }
-
-    if (remainingMinutes === 0) {
-        return `${hours}h`
-    }
-
-    return `${hours}h ${remainingMinutes}m`
-}
-
-/**
  * Normalizes a raw Codex token snapshot into a complete RawUsage shape.
  *
  * @example
@@ -1265,16 +1222,4 @@ function getNumericProperty(value: object, key: string) {
     const property = record[key]
 
     return typeof property === 'number' && Number.isFinite(property) ? property : 0
-}
-
-/**
- * Clones only the year, month, and day parts of a Date to avoid mutating the input instance.
- *
- * @example
- * ```ts
- * const cloned = cloneDate(new Date())
- * ```
- */
-function cloneDate(date: Date) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }

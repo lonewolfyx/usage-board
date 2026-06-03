@@ -160,6 +160,7 @@
 
 <script setup lang="ts">
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
+import { cloneDate } from '#shared/utils/date'
 import { computed } from 'vue'
 
 defineOptions({
@@ -358,10 +359,6 @@ const summaryCards = computed<SummaryCard[]>(() => (
 
 function parseUsageDate(value: string) {
     return new Date(value)
-}
-
-function cloneDate(date: Date) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate())
 }
 
 function formatDateKey(date: Date) {

@@ -109,7 +109,6 @@
                         v-else
                         :items="dailyTokenUsage"
                         class="md:col-span-12"
-                        heat-metric="cost"
                         title="Usage Trend"
                     />
                     <StatisticalAnalysisSessionAnalysisPanel

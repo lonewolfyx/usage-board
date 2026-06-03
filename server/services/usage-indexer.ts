@@ -15,9 +15,9 @@ import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#sh
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { calculateUsageCostUSD } from '#shared/platform/pricing'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { formatDuration } from '#shared/utils/date'
 import { normalizeTimestampValue } from '#shared/utils/normalize'
 import {
-    formatDuration,
     getDurationMinutes,
     getMonthKey,
     getWeekLabel,

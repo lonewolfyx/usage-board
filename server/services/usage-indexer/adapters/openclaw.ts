@@ -2,6 +2,7 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
+import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -14,6 +15,7 @@ import {
     createZeroPricingResolver,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
+    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -48,7 +50,7 @@ export const openClawUsageAdapter = {
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
-            const record = normalizeUnknownRecord(parseJson(line))
+            const record = normalizeUnknownRecord(parse(line))
 
             if (!record) {
                 continue
@@ -74,11 +76,11 @@ export const openClawUsageAdapter = {
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: getNumber(usageRecord.cacheWrite),
-                    cacheReadTokens: getNumber(usageRecord.cacheRead),
-                    inputTokens: getNumber(usageRecord.input),
-                    outputTokens: getNumber(usageRecord.output),
-                    totalTokens: getNumber(usageRecord.totalTokens),
+                    cacheCreationTokens: normalizeUsageNumber(usageRecord.cacheWrite as number | undefined),
+                    cacheReadTokens: normalizeUsageNumber(usageRecord.cacheRead as number | undefined),
+                    inputTokens: normalizeUsageNumber(usageRecord.input as number | undefined),
+                    outputTokens: normalizeUsageNumber(usageRecord.output as number | undefined),
+                    totalTokens: normalizeUsageNumber(usageRecord.totalTokens as number | undefined),
                 }),
                 costUSD: normalizeFiniteNumberOrNull(normalizeUnknownRecord(usageRecord.cost)?.total) ?? 0,
             })
@@ -125,15 +127,6 @@ export const openClawUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseJson(value: string) {
-    try {
-        return JSON.parse(value) as unknown
-    }
-    catch {
-        return null
-    }
-}
-
 function isOpenClawModelChange(record: Record<string, unknown>) {
     const type = normalizeStringValue(record.type)
 
@@ -158,8 +151,4 @@ function getOpenClawSessionId(filePath: string) {
     const filename = basename(filePath)
     const index = filename.indexOf('.jsonl')
     return index > 0 ? filename.slice(0, index) : basename(filePath)
-}
-
-function getNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
 }

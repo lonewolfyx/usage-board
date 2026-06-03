@@ -1,5 +1,5 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
-import type { PaginatedResponse, PaginationMeta } from '#shared/types/pagination'
+import type { PaginatedResponse } from '#shared/types/pagination'
 import type {
     ProjectDailyTrendModulePayload,
     ProjectDashboardPlatformTab,
@@ -28,6 +28,8 @@ import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
+import { createEmptyPaginationMeta } from '#shared/utils/analysis-dashboard'
+import { parse } from '#shared/utils/parse'
 import {
     buildMonthlyTickIndexes,
     buildProjectDailyModelUsageChart,
@@ -91,15 +93,6 @@ interface ProjectModulePayloadMap {
 
 type ProjectModuleStateMap = {
     [TModule in keyof ProjectModulePayloadMap]: ShallowRef<ProjectPlatformModulePayload<ProjectModulePayloadMap[TModule]> | null>
-}
-
-function createEmptyPaginationMeta(): PaginationMeta {
-    return {
-        page: 1,
-        pageCount: 1,
-        pageSize: DEFAULT_PAGE_SIZE,
-        total: 0,
-    }
 }
 
 function createEmptyPaginatedResponse<T>(): PaginatedResponse<T> {
@@ -445,7 +438,7 @@ export function useProjectDashboard() {
             return
         }
 
-        const parsed = parseWebSocketData(rawData)
+        const parsed = parse(rawData)
 
         if (!parsed) {
             return
@@ -473,15 +466,6 @@ export function useProjectDashboard() {
 
         pendingWebSocketRequests.delete(parsed.requestId)
         pendingRequest.resolve(parsed.data)
-    }
-
-    function parseWebSocketData(data: string) {
-        try {
-            return JSON.parse(data) as unknown
-        }
-        catch {
-            return null
-        }
     }
 
     function createRequestId() {
