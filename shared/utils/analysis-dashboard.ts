@@ -2,7 +2,6 @@ import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/t
 import type {
     AgentDashboardCoreModules,
     AgentDashboardInsightsModules,
-    AgentDashboardModules,
     AgentDashboardSessionModules,
     HomeDashboardCoreModules,
     HomeDashboardModules,
@@ -34,14 +33,6 @@ import { formatNumber } from '@lonewolfyx/utils'
 
 const TOP_PROJECT_LIMIT = 10
 
-export function createEmptyHomeDashboardModules(): HomeDashboardModules {
-    return {
-        ...createEmptyHomeDashboardCoreModules(),
-        ...createEmptyHomeDashboardUsageModules(),
-        ...createEmptyHomeDashboardSessionModules(),
-    }
-}
-
 export function createEmptyHomeDashboardCoreModules(): HomeDashboardCoreModules {
     return {
         hotProjects: [],
@@ -64,14 +55,6 @@ export function createEmptyHomeDashboardSessionModules(): HomeDashboardSessionMo
             items: [],
             totalSessions: 0,
         },
-    }
-}
-
-export function createEmptyAgentDashboardModules(): AgentDashboardModules {
-    return {
-        ...createEmptyAgentDashboardCoreModules(),
-        ...createEmptyAgentDashboardInsightsModules(),
-        ...createEmptyAgentDashboardSessionModules(),
     }
 }
 

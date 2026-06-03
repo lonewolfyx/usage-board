@@ -4,7 +4,6 @@ import type {
     ProjectSessionListItem,
     ProjectSessionSummary,
     ProjectSessionTableRow,
-    ProjectTokenUsageRow,
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
@@ -138,25 +137,6 @@ export function buildProjectDailyModelUsageChart(items: DailyTokenUsage[], label
     }))
 
     return { labels, series }
-}
-
-export function toProjectDisplayDailyUsageRows(
-    items: DailyTokenUsage[],
-    sessions: ProjectSessionListItem[],
-): ProjectTokenUsageRow[] {
-    const sessionCountByDate = buildSessionCountByDate(sessions)
-
-    return items.map(item => ({
-        cacheTokens: formatNumber(item.cachedInputTokens),
-        cost: formatCurrency(item.costUSD),
-        inputTokens: formatNumber(item.inputTokens),
-        label: item.date,
-        models: Object.keys(item.models).sort((a, b) => a.localeCompare(b)).join(', ') || '-',
-        outputTokens: formatNumber(item.outputTokens),
-        reasoningTokens: formatNumber(item.reasoningOutputTokens),
-        sessions: String(sessionCountByDate.get(item.date) ?? 0),
-        tokens: formatNumber(item.totalTokens),
-    }))
 }
 
 export function toProjectSessionTableRow(

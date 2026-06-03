@@ -308,12 +308,6 @@ export async function hydrateIndexedUsageSourceFiles(files: IndexedUsageSourceFi
     })
 }
 
-export function buildPlatformSessionsSnapshot(indexedFiles: IndexedUsageSourceFile[]) {
-    return Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map(platform => [platform, buildPlatformSessionsFromFiles(indexedFiles, platform)]),
-    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-}
-
 export async function getUsageCacheUpdateState(
     config: IConfig,
     repository: UsageCacheRepository,
