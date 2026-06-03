@@ -134,19 +134,6 @@ export interface MonthlyModelUsageRow {
     token_total: number
 }
 
-export interface ProjectUsageRow {
-    detail: string
-    label: string
-    percent: number
-    repository: string
-    row_order: number
-    scope_key: string
-    sessions: number
-    token_total: number
-    tone: string | null
-    value: string
-}
-
 export interface SessionRow {
     cached_input_tokens: number
     date: string

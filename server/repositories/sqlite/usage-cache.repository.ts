@@ -26,7 +26,6 @@ import type {
     OverviewCardRow,
     PersistedUsageScope,
     ProjectCatalogEntryRow,
-    ProjectUsageRow,
     SchemaVersionRow,
     ScopeInteractionRow,
     SessionModelRow,
@@ -50,7 +49,7 @@ import {
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { parse } from '#shared/utils/parse'
 
-const CACHE_SCHEMA_VERSION = 11
+const CACHE_SCHEMA_VERSION = 12
 const ROW_KEY_SEPARATOR = '\u001F'
 const CACHE_SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS cache_schema_meta (
@@ -208,24 +207,6 @@ const CACHE_SCHEMA_SQL = `
 
     CREATE INDEX IF NOT EXISTS idx_usage_scope_monthly_model_usage_order
         ON usage_scope_monthly_model_usage(scope_key, row_order);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_project_usage (
-        scope_key TEXT NOT NULL,
-        row_order INTEGER NOT NULL,
-        label TEXT NOT NULL,
-        value TEXT NOT NULL,
-        detail TEXT NOT NULL,
-        percent REAL NOT NULL,
-        tone TEXT,
-        repository TEXT NOT NULL,
-        sessions INTEGER NOT NULL,
-        token_total INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, label, repository),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_project_usage_order
-        ON usage_scope_project_usage(scope_key, row_order);
 
     CREATE TABLE IF NOT EXISTS usage_scope_sessions (
         scope_key TEXT NOT NULL,
@@ -812,6 +793,9 @@ export class UsageCacheRepository {
             this.resetCacheDatabase()
             this.database.exec(CACHE_SCHEMA_SQL)
         }
+        else {
+            this.applySchemaMigrations(currentSchemaVersion)
+        }
 
         this.setSchemaVersion(CACHE_SCHEMA_VERSION)
     }
@@ -835,11 +819,16 @@ export class UsageCacheRepository {
             return true
         }
 
-        if (currentSchemaVersion === CACHE_SCHEMA_VERSION) {
-            return false
-        }
+        return currentSchemaVersion > CACHE_SCHEMA_VERSION
+    }
 
-        return currentSchemaVersion !== 0 || this.hasCachedData()
+    private applySchemaMigrations(currentSchemaVersion: number) {
+        if (currentSchemaVersion < 12) {
+            this.database.exec(`
+                DROP INDEX IF EXISTS idx_usage_scope_project_usage_order;
+                DROP TABLE IF EXISTS usage_scope_project_usage;
+            `)
+        }
     }
 
     private hasCompatibleNormalizedSchema() {
@@ -1135,21 +1124,6 @@ export class UsageCacheRepository {
             )
             VALUES (?, ?, ?, ?, ?)
         `)
-        const insertProjectUsageStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_project_usage (
-                scope_key,
-                row_order,
-                label,
-                value,
-                detail,
-                percent,
-                tone,
-                repository,
-                sessions,
-                token_total
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
         const insertSessionStatement = this.database.prepare(`
             INSERT OR REPLACE INTO usage_scope_sessions (
                 scope_key,
@@ -1224,7 +1198,7 @@ export class UsageCacheRepository {
             options.usage.todayTopProject?.sessionCount ?? null,
         )
 
-        for (const [position, card] of options.usage.overviewCards.entries()) {
+        for (const [position, card] of getPersistedOverviewCards(options.usage.overviewCards).entries()) {
             insertOverviewCardStatement.run(
                 scopeKey,
                 position,
@@ -1301,21 +1275,6 @@ export class UsageCacheRepository {
                 rowOrder,
                 row.month,
                 row.model,
-                row.tokenTotal,
-            )
-        }
-
-        for (const [rowOrder, row] of options.usage.projectUsage.entries()) {
-            insertProjectUsageStatement.run(
-                scopeKey,
-                rowOrder,
-                row.label,
-                row.value,
-                row.detail,
-                row.percent,
-                row.tone ?? null,
-                row.repository,
-                row.sessions,
                 row.tokenTotal,
             )
         }
@@ -1495,23 +1454,6 @@ export class UsageCacheRepository {
             WHERE ${joinedScopeWhere}
             ORDER BY monthly.scope_key ASC, monthly.row_order ASC
         `).all(...scopeParameters))
-        const projectUsage = groupProjectUsage(this.database.prepare<ProjectUsageRow>(`
-            SELECT
-                usage.scope_key,
-                usage.row_order,
-                usage.label,
-                usage.value,
-                usage.detail,
-                usage.percent,
-                usage.tone,
-                usage.repository,
-                usage.sessions,
-                usage.token_total
-            FROM usage_scope_project_usage AS usage
-            JOIN usage_scopes AS scope ON scope.scope_key = usage.scope_key
-            WHERE ${joinedScopeWhere}
-            ORDER BY usage.scope_key ASC, usage.row_order ASC
-        `).all(...scopeParameters))
         const sessions = groupSessions(
             this.database.prepare<SessionRow>(`
                 SELECT
@@ -1593,7 +1535,7 @@ export class UsageCacheRepository {
                 monthlyModelUsage: monthlyUsage.get(scope.scope_key) ?? [],
                 monthlyRows: scopeTokenRows?.monthly ?? [],
                 overviewCards: overviewCards.get(scope.scope_key) ?? [],
-                projectUsage: projectUsage.get(scope.scope_key) ?? [],
+                projectUsage: [],
                 sessionRows: scopeTokenRows?.session ?? [],
                 sessionUsage,
                 todayTopModel: scope.today_top_model
@@ -1616,6 +1558,10 @@ export class UsageCacheRepository {
 
         return hydrated
     }
+}
+
+function getPersistedOverviewCards(cards: UsageOverviewCard[]) {
+    return cards.filter(card => card.name !== 'Today Spend')
 }
 
 function getTokenRowsByBucket(usage: PersistedUsageScope, bucket: TokenRowBucket): TokenUsageRow[] {
@@ -1797,28 +1743,6 @@ function groupMonthlyModelUsage(rows: MonthlyModelUsageRow[]) {
             model: row.model,
             month: row.month,
             tokenTotal: row.token_total,
-        })
-        grouped.set(row.scope_key, items)
-    }
-
-    return grouped
-}
-
-function groupProjectUsage(rows: ProjectUsageRow[]) {
-    const grouped = new Map<string, LoadUsageResult['projectUsage']>()
-
-    for (const row of rows) {
-        const items = grouped.get(row.scope_key) ?? []
-        items.push({
-            costUSD: 0,
-            detail: row.detail,
-            label: row.label,
-            percent: row.percent,
-            repository: row.repository,
-            sessions: row.sessions,
-            tokenTotal: row.token_total,
-            tone: row.tone as LoadUsageResult['projectUsage'][number]['tone'],
-            value: row.value,
         })
         grouped.set(row.scope_key, items)
     }
