@@ -219,8 +219,9 @@ function getOpenCodeMessageEntry(
 }
 
 function getOpenCodeLookupCandidates(model: string) {
-    const normalizedModel = normalizeOpenCodeModelName(resolveOpenCodeModelName(model.trim()))
-    return [model.trim(), normalizedModel]
+    const resolvedModel = resolveOpenCodeModelName(model.trim())
+    const normalizedModel = normalizeOpenCodeModelName(resolvedModel)
+    return Array.from(new Set([resolvedModel, normalizedModel]))
 }
 
 function isDuplicatedByOpenCodeDatabase(filePath: string, interactionId: string) {
@@ -251,19 +252,31 @@ function isDuplicatedByOpenCodeDatabase(filePath: string, interactionId: string)
 }
 
 function getOpenCodeModelCandidates(model: string, provider: string) {
-    const normalizedModel = normalizeOpenCodeModelName(resolveOpenCodeModelName(model))
-    const candidates = [model, normalizedModel]
+    const resolvedModel = resolveOpenCodeModelName(model)
+    const normalizedModel = normalizeOpenCodeModelName(resolvedModel)
+    const candidates = Array.from(new Set([resolvedModel, normalizedModel]))
 
     if (provider !== 'unknown') {
         const normalizedProvider = provider.replaceAll('-', '_')
-        candidates.push(`${normalizedProvider}/${model}`, `${normalizedProvider}/${normalizedModel}`)
+        candidates.push(...Array.from(new Set([
+            `${normalizedProvider}/${resolvedModel}`,
+            `${normalizedProvider}/${normalizedModel}`,
+        ])))
     }
 
     return candidates
 }
 
 function resolveOpenCodeModelName(model: string) {
-    return model === 'gemini-3-pro-high' ? 'gemini-3-pro-preview' : model
+    if (model === 'gemini-3-pro-high') {
+        return 'gemini-3-pro-preview'
+    }
+
+    if (model === 'k2p6') {
+        return 'kimi-k2.6'
+    }
+
+    return model
 }
 
 function normalizeOpenCodeModelName(model: string) {
