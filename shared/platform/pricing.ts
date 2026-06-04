@@ -18,10 +18,35 @@ const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
 /** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 
+/** Secondary pricing source used to fill models that LiteLLM does not currently expose. */
+const DEFAULT_MODELS_DEV_PRICING_URL = 'https://models.dev/api.json'
+
 interface PricingCacheEntry {
     fetchedAt: number
     promise?: Promise<LiteLLMPricingDataset>
     value?: LiteLLMPricingDataset
+}
+
+interface ModelsDevPricingCacheEntry {
+    fetchedAt: number
+    promise?: Promise<LiteLLMPricingDataset>
+    value?: LiteLLMPricingDataset
+}
+
+interface ModelsDevModelCost {
+    cache_read?: number
+    cache_write?: number
+    input?: number
+    output?: number
+}
+
+interface ModelsDevModelRecord {
+    cost?: ModelsDevModelCost
+    id?: string
+}
+
+interface ModelsDevProviderRecord {
+    models?: Record<string, ModelsDevModelRecord>
 }
 
 const FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
@@ -33,6 +58,7 @@ const FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
 const FAST_MULTIPLIER_PREFIX_OVERRIDES: Record<string, number> = {
     'claude-opus-4-6': 6,
     'claude-opus-4-7': 6,
+    'claude-opus-4-8': 2,
 }
 
 /** Built-in fallback prices so common models can still be estimated offline or when remote data is missing. */
@@ -92,6 +118,13 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
         inputCostPerMTokens: 5,
         outputCostPerMTokens: 25,
     },
+    'claude-opus-4-8': {
+        cachedInputCostPerMTokens: 0.5,
+        cacheCreationInputCostPerMTokens: 6.25,
+        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-8'],
+        inputCostPerMTokens: 5,
+        outputCostPerMTokens: 25,
+    },
     'claude-sonnet-4-5': {
         cachedInputCostPerMTokens: 0.3,
         cachedInputCostPerMTokensAbove200K: 0.6,
@@ -106,6 +139,7 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
 
 /** Caches the fetched dataset and in-flight request to avoid duplicate network calls. */
 let pricingCache: PricingCacheEntry | undefined
+let modelsDevPricingCache: ModelsDevPricingCacheEntry | undefined
 
 /**
  * Fetches the LiteLLM model pricing dataset and falls back to the built-in dataset on failure.
@@ -177,6 +211,59 @@ async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOpt
     return promise
 }
 
+async function fetchModelsDevPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
+    const now = Date.now()
+    const cacheEntry = modelsDevPricingCache
+
+    if (!options.forceRefresh && cacheEntry?.value && now - cacheEntry.fetchedAt < DEFAULT_PRICING_CACHE_TTL_MS) {
+        return cacheEntry.value
+    }
+
+    if (!options.forceRefresh && cacheEntry?.promise) {
+        return cacheEntry.promise
+    }
+
+    const fetcher = options.fetcher ?? globalThis.fetch
+
+    if (typeof fetcher !== 'function') {
+        return {}
+    }
+
+    const promise = fetcher(DEFAULT_MODELS_DEV_PRICING_URL)
+        .then(async (response) => {
+            if (!response.ok) {
+                throw new Error(`Failed to fetch models.dev pricing dataset: ${response.status} ${response.statusText}`)
+            }
+
+            const data = await response.json()
+            const dataset = createModelsDevPricingDataset(data)
+
+            modelsDevPricingCache = {
+                fetchedAt: Date.now(),
+                value: dataset,
+            }
+
+            return dataset
+        })
+        .catch(() => {
+            const fallback = cacheEntry?.value ?? {}
+            modelsDevPricingCache = {
+                fetchedAt: Date.now(),
+                value: fallback,
+            }
+
+            return fallback
+        })
+
+    modelsDevPricingCache = {
+        fetchedAt: cacheEntry?.fetchedAt ?? 0,
+        promise,
+        value: cacheEntry?.value,
+    }
+
+    return promise
+}
+
 /**
  * Creates a model pricing resolver with support for aliases, platform-specific lookup candidates, fallback models, and zero-cost models.
  *
@@ -190,7 +277,14 @@ async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOpt
  * ```
  */
 export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricingResolverOptions = {}): Promise<ModelPricingResolver> {
-    const dataset = await fetchLiteLLMPricingDataset(options)
+    const [liteLLMDataset, modelsDevDataset] = await Promise.all([
+        fetchLiteLLMPricingDataset(options),
+        fetchModelsDevPricingDataset(options),
+    ])
+    const dataset = {
+        ...modelsDevDataset,
+        ...liteLLMDataset,
+    }
     const aliases = options.aliases ?? {}
     const fallbackPricingTable = {
         ...DEFAULT_FALLBACK_PRICING_TABLE,
@@ -323,6 +417,15 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
                 fast: 6,
             },
         },
+        'claude-opus-4-8': {
+            input_cost_per_token: 5e-6,
+            output_cost_per_token: 25e-6,
+            cache_creation_input_token_cost: 6.25e-6,
+            cache_read_input_token_cost: 0.5e-6,
+            provider_specific_entry: {
+                fast: 2,
+            },
+        },
         'claude-sonnet-4-5': {
             input_cost_per_token: 3e-6,
             output_cost_per_token: 15e-6,
@@ -334,6 +437,47 @@ function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
             cache_read_input_token_cost_above_200k_tokens: 0.6e-6,
         },
     }
+}
+
+function createModelsDevPricingDataset(value: unknown): LiteLLMPricingDataset {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {}
+    }
+
+    const dataset: LiteLLMPricingDataset = {}
+
+    for (const provider of Object.values(value as Record<string, unknown>)) {
+        const models = (provider as ModelsDevProviderRecord)?.models
+
+        if (!models || typeof models !== 'object') {
+            continue
+        }
+
+        for (const [modelKey, modelRecord] of Object.entries(models)) {
+            const modelCost = modelRecord?.cost
+            const inputCostPerMToken = modelCost?.input
+            const outputCostPerMToken = modelCost?.output
+
+            if (inputCostPerMToken == null || outputCostPerMToken == null) {
+                continue
+            }
+
+            const modelId = (modelRecord?.id || modelKey).trim()
+
+            if (!modelId || dataset[modelId]) {
+                continue
+            }
+
+            dataset[modelId] = {
+                cache_creation_input_token_cost: (modelCost?.cache_write ?? inputCostPerMToken * 1.25) / MILLION,
+                cache_read_input_token_cost: (modelCost?.cache_read ?? inputCostPerMToken * 0.1) / MILLION,
+                input_cost_per_token: inputCostPerMToken / MILLION,
+                output_cost_per_token: outputCostPerMToken / MILLION,
+            }
+        }
+    }
+
+    return dataset
 }
 
 /**
