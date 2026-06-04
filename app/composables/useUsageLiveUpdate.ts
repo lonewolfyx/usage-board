@@ -130,7 +130,9 @@ export function useUsageLiveUpdate(onUpdate: (update: UsageUpdateMessage['payloa
             })
         }
         catch (error) {
-            console.error('[usage-live-update] failed to fetch live state', error)
+            if (!isTransientLiveStateFetchError(error)) {
+                console.error('[usage-live-update] failed to fetch live state', error)
+            }
         }
         finally {
             isPolling = false
@@ -168,4 +170,28 @@ function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {
     return record.type === 'usage_update'
         && typeof record.payload === 'object'
         && record.payload !== null
+}
+
+function isTransientLiveStateFetchError(error: unknown) {
+    const messages = collectErrorMessages(error)
+
+    return messages.some(message => message.includes('Failed to fetch') || message.includes('<no response>'))
+}
+
+function collectErrorMessages(error: unknown, messages: string[] = []): string[] {
+    if (!error || typeof error !== 'object') {
+        return typeof error === 'string' ? [...messages, error] : messages
+    }
+
+    const record = error as Record<string, unknown>
+
+    if (typeof record.message === 'string') {
+        messages.push(record.message)
+    }
+
+    if (record.cause) {
+        return collectErrorMessages(record.cause, messages)
+    }
+
+    return messages
 }

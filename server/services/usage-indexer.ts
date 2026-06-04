@@ -6,6 +6,7 @@ import type {
     IndexedUsageInteraction,
     IndexedUsageSessionFragment,
     IndexedUsageSourceFile,
+    IndexedUsageSourceFileMeta,
     UpdatedUsageSession,
 } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
@@ -72,22 +73,26 @@ export async function buildIncrementalUsageIndex(
     }
     const discoveryStartedAt = Date.now()
     const discoveredFiles = options.discoveredFiles ?? await discoverUsageFiles(config)
+    const discoveryFinishedAt = Date.now()
 
     if (shouldStartReporter) {
         reporter!.discoveredFiles({
             discoveredFiles: discoveredFiles.length,
         })
     }
-    const cachedFiles = options.cachedFiles ?? repository.loadIndexedSourceFiles()
     const cachedFilesStartedAt = Date.now()
+    const cachedFiles = options.cachedFiles ?? repository.loadIndexedSourceFiles()
     const hydratedCachedFiles = options.hydrateCachedPricing
         ? await hydrateIndexedUsageSourceFiles(cachedFiles)
         : cachedFiles
-
-    timing.parseMs += Date.now() - cachedFilesStartedAt
+    const cachedFilesFinishedAt = Date.now()
+    const compareStartedAt = Date.now()
     const { cachedFilesByPath, changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, hydratedCachedFiles)
+    const compareFinishedAt = Date.now()
+
+    timing.parseMs += cachedFilesFinishedAt - cachedFilesStartedAt
     const filesToParse = options.reparseAllFiles ? discoveredFiles : changedFiles
-    timing.discoveryMs = Date.now() - discoveryStartedAt
+    timing.discoveryMs = (discoveryFinishedAt - discoveryStartedAt) + (compareFinishedAt - compareStartedAt)
     const affectedProjects = new Set<string>(removedFiles.flatMap(file => file.projectNames))
     const hasFileChanges = changedFiles.length > 0 || removedFiles.length > 0
     const shouldReport = Boolean(reporter && (options.forceLog || hasFileChanges))
@@ -136,8 +141,8 @@ export async function buildIncrementalUsageIndex(
     }
 
     const parsedFiles: IndexedUsageSourceFile[] = []
+    const pricingResolvers = new Map<ProjectUsagePlatform, ModelPricingResolver>()
     const updatedPlatformSessions: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>> = {}
-    const pricingResolvers = await createPricingResolversForPlatforms(filesToParse.map(file => file.platform))
     const parsedByPath = new Map<string, IndexedUsageSourceFile>()
 
     for (const platform of updatedPlatforms) {
@@ -151,9 +156,13 @@ export async function buildIncrementalUsageIndex(
         }
 
         const parseStartedAt = Date.now()
+        if (!pricingResolvers.has(platform)) {
+            pricingResolvers.set(platform, await usagePlatformAdapters[platform].createPricingResolver())
+        }
         const parsedPlatformFiles = await Promise.all(platformFilesToParse.map(file => parseUsageFile(file, pricingResolvers)))
+        const parseDurationMs = Date.now() - parseStartedAt
 
-        timing.parseMs += Date.now() - parseStartedAt
+        timing.parseMs += parseDurationMs
 
         for (const file of parsedPlatformFiles) {
             parsedFiles.push(file)
@@ -162,6 +171,7 @@ export async function buildIncrementalUsageIndex(
 
         if (discoveredFilesForPlatform > 0) {
             activeReporter?.parsedPlatformFiles(platform, {
+                durationMs: parseDurationMs,
                 parsedFiles: parsedPlatformFiles.length,
             })
         }
@@ -179,10 +189,12 @@ export async function buildIncrementalUsageIndex(
         if (discoveredFilesForPlatform > 0) {
             const deltaStats = getPlatformDeltaStats(platform, parsedPlatformFiles, cachedFilesByPath)
             activeReporter?.finishPlatform(platform, {
+                durationMs: Date.now() - parseStartedAt,
                 interactions: platformSessions.reduce((sum, session) => sum + session.interactions.length, 0),
                 newInteractions: deltaStats.newInteractions,
                 newSessions: deltaStats.newSessions,
                 sessions: platformSessions.length,
+                updatedSessionIds: deltaStats.updatedSessionIds,
                 updatedSessions: deltaStats.updatedSessions,
             })
         }
@@ -312,6 +324,7 @@ export async function getUsageCacheUpdateState(
     config: IConfig,
     repository: UsageCacheRepository,
     cacheUpdatedAt: number,
+    cachedFiles: IndexedUsageSourceFileMeta[] | IndexedUsageSourceFile[] = repository.loadIndexedSourceFileMetas(),
 ) {
     if (cacheUpdatedAt <= 0) {
         const discoveredFiles = await discoverUsageFiles(config)
@@ -324,7 +337,6 @@ export async function getUsageCacheUpdateState(
     }
 
     const discoveredFiles = await discoverUsageFiles(config)
-    const cachedFiles = repository.loadIndexedSourceFiles()
     const { changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, cachedFiles)
     const staleFiles = discoveredFiles.filter(file => file.mtimeMs > cacheUpdatedAt)
 
@@ -335,9 +347,9 @@ export async function getUsageCacheUpdateState(
     }
 }
 
-function getUsageFileChanges(
+function getUsageFileChanges<TFile extends IndexedUsageSourceFileMeta>(
     discoveredFiles: DiscoveredUsageFile[],
-    cachedFiles: IndexedUsageSourceFile[],
+    cachedFiles: TFile[],
 ) {
     const cachedFilesByPath = new Map(cachedFiles.map(file => [file.path, file]))
     const discoveredFilePaths = new Set(discoveredFiles.map(file => file.path))
@@ -478,6 +490,7 @@ function getPlatformDeltaStats(
     return {
         newInteractions,
         newSessions,
+        updatedSessionIds: Array.from(updatedSessions).sort((a, b) => a.localeCompare(b)),
         updatedSessions: updatedSessions.size,
     }
 }

@@ -1,4 +1,4 @@
-import type { IndexedUsageSourceFile } from '#server/types/usage-indexer'
+import type { IndexedUsageSourceFile, IndexedUsageSourceFileMeta } from '#server/types/usage-indexer'
 import type { SqliteDatabase } from '#server/utils/sqlite'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type {
@@ -425,21 +425,12 @@ export class UsageCacheRepository {
     }
 
     loadIndexedSourceFiles() {
-        const files: IndexedFileRow[] = this.database.prepare<IndexedFileRow>(`
-            SELECT path, platform, cache_signature, size, mtime_ms, updated_at
-            FROM indexed_files
-            ORDER BY path ASC
-        `).all()
+        const files = this.loadIndexedSourceFileMetas()
 
         if (files.length === 0) {
             return []
         }
 
-        const projectNamesByPath = groupIndexedFileProjects(this.database.prepare<IndexedFileProjectRow>(`
-            SELECT path, project_name, project_order
-            FROM indexed_file_projects
-            ORDER BY path ASC, project_order ASC
-        `).all())
         const fragments = this.database.prepare<IndexedFragmentRow>(`
             SELECT
                 fragment_id,
@@ -501,15 +492,36 @@ export class UsageCacheRepository {
         }
 
         return files.map(file => ({
+            ...file,
+            payload: fragmentsByPath.get(file.path) ?? [],
+        } satisfies IndexedUsageSourceFile))
+    }
+
+    loadIndexedSourceFileMetas() {
+        const files: IndexedFileRow[] = this.database.prepare<IndexedFileRow>(`
+            SELECT path, platform, cache_signature, size, mtime_ms, updated_at
+            FROM indexed_files
+            ORDER BY path ASC
+        `).all()
+
+        if (files.length === 0) {
+            return []
+        }
+
+        const projectNamesByPath = groupIndexedFileProjects(this.database.prepare<IndexedFileProjectRow>(`
+            SELECT path, project_name, project_order
+            FROM indexed_file_projects
+            ORDER BY path ASC, project_order ASC
+        `).all())
+        return files.map(file => ({
             cacheSignature: file.cache_signature,
             mtimeMs: file.mtime_ms,
             path: file.path,
-            payload: fragmentsByPath.get(file.path) ?? [],
             platform: file.platform,
             projectNames: projectNamesByPath.get(file.path) ?? [],
             size: file.size,
             updatedAt: file.updated_at,
-        } satisfies IndexedUsageSourceFile))
+        } satisfies IndexedUsageSourceFileMeta))
     }
 
     upsertIndexedSourceFiles(files: IndexedUsageSourceFile[]) {
@@ -847,17 +859,6 @@ export class UsageCacheRepository {
 
         const columns = this.database.prepare<SqliteNameRow>(`PRAGMA table_info(${tableName})`).all()
         return columnNames.every(columnName => columns.some(column => column.name === columnName))
-    }
-
-    private hasCachedData() {
-        return ['cache_state', 'indexed_files', 'project_catalog_entries', 'projects', 'usage_scopes']
-            .some((tableName) => {
-                if (!this.hasTable(tableName)) {
-                    return false
-                }
-
-                return (this.database.prepare<{ total: number }>(`SELECT COUNT(*) AS total FROM ${tableName}`).get()?.total ?? 0) > 0
-            })
     }
 
     private resetCacheDatabase() {

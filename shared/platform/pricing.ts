@@ -14,6 +14,7 @@ const MILLION = 1_000_000
 
 /** Default in-memory cache duration for LiteLLM pricing data, in milliseconds. */
 const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
+const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 1500
 
 /** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
@@ -168,7 +169,7 @@ async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOpt
         return createFallbackLiteLLMPricingDataset()
     }
 
-    const promise = fetcher(DEFAULT_LITELLM_PRICING_URL)
+    const promise = fetchPricingDatasetResponse(fetcher, DEFAULT_LITELLM_PRICING_URL)
         .then(async (response) => {
             if (!response.ok) {
                 throw new Error(`Failed to fetch LiteLLM pricing dataset: ${response.status} ${response.statusText}`)
@@ -229,7 +230,7 @@ async function fetchModelsDevPricingDataset(options: FetchLiteLLMPricingDatasetO
         return {}
     }
 
-    const promise = fetcher(DEFAULT_MODELS_DEV_PRICING_URL)
+    const promise = fetchPricingDatasetResponse(fetcher, DEFAULT_MODELS_DEV_PRICING_URL)
         .then(async (response) => {
             if (!response.ok) {
                 throw new Error(`Failed to fetch models.dev pricing dataset: ${response.status} ${response.statusText}`)
@@ -262,6 +263,16 @@ async function fetchModelsDevPricingDataset(options: FetchLiteLLMPricingDatasetO
     }
 
     return promise
+}
+
+function fetchPricingDatasetResponse(fetcher: typeof fetch, url: string) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        return fetcher(url, {
+            signal: AbortSignal.timeout(DEFAULT_PRICING_FETCH_TIMEOUT_MS),
+        })
+    }
+
+    return fetcher(url)
 }
 
 /**
