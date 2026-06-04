@@ -1,5 +1,5 @@
 import type { DiscoveredUsageFile } from '#server/services/usage-indexer/platform-adapter'
-import type { IndexedUsageSourceFile, UpdatedUsageSession } from '#server/types/usage-indexer'
+import type { IndexedUsageSourceFile, IndexedUsageSourceFileMeta, UpdatedUsageSession } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { HomeDashboardModules } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
@@ -46,6 +46,7 @@ interface UsageRuntimeState {
     hasLoadedAllProjectDetails: boolean
     hydratedAt: number
     indexedFiles: IndexedUsageSourceFile[] | null
+    indexedFileMetas: IndexedUsageSourceFileMeta[] | null
     projectCatalog: ProjectUsageCatalogItem[]
     projectDetails: Map<string, ProjectUsageDetail> | null
     refreshStartedAt: number
@@ -60,6 +61,7 @@ class UsageDataRuntime {
         hasLoadedAllProjectDetails: false,
         hydratedAt: 0,
         indexedFiles: null,
+        indexedFileMetas: null,
         projectCatalog: [],
         projectDetails: null,
         refreshStartedAt: 0,
@@ -99,7 +101,18 @@ class UsageDataRuntime {
         verboseWhenChanged?: boolean
     } = {}) {
         await this.initialize()
-        const updateState = await getUsageCacheUpdateState(this.config, this.repository, this.state.hydratedAt)
+        const updateState = await getUsageCacheUpdateState(
+            this.config,
+            this.repository,
+            this.state.hydratedAt,
+            this.state.indexedFileMetas ?? undefined,
+        )
+
+        if (this.state.bootstrap && !updateState.hasChanges) {
+            this.state.discoveredFiles = updateState.discoveredFiles
+            this.state.hasIndexedCurrentProcess = true
+            return
+        }
 
         const updatedPlatforms = updateState.updatedPlatforms.length > 0
             ? updateState.updatedPlatforms
@@ -108,7 +121,7 @@ class UsageDataRuntime {
         await this.refreshNow({
             discoveredFiles: updateState.discoveredFiles,
             forceLog: !this.state.bootstrap || (options.verboseWhenChanged !== false && updateState.hasChanges),
-            hydrateCachedPricing: true,
+            hydrateCachedPricing: !this.state.bootstrap,
             updatedPlatforms,
         })
     }
@@ -194,20 +207,21 @@ class UsageDataRuntime {
         }
 
         await this.refreshNow({
-            hydrateCachedPricing: true,
+            hydrateCachedPricing: !this.state.bootstrap,
         })
     }
 
     private async hydrateFromRepository() {
-        const indexedFiles = this.repository.loadIndexedSourceFiles()
+        const indexedFileMetas = this.repository.loadIndexedSourceFileMetas()
         const bootstrap = this.repository.loadBootstrap()
         const projectCatalog = this.repository.loadProjectCatalog()
 
         this.state.bootstrap = bootstrap?.payload ?? null
-        this.state.discoveredFiles = toDiscoveredUsageFiles(indexedFiles)
-        this.state.indexedFiles = indexedFiles
+        this.state.discoveredFiles = toDiscoveredUsageFiles(indexedFileMetas)
+        this.state.indexedFiles = null
+        this.state.indexedFileMetas = indexedFileMetas
         this.state.hydratedAt = [
-            indexedFiles.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0),
+            indexedFileMetas.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0),
             bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
             projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
         ].reduce((latest, value) => Math.max(latest, value), 0)
@@ -294,6 +308,7 @@ class UsageDataRuntime {
             this.state.bootstrap = bootstrap
             this.state.discoveredFiles = toDiscoveredUsageFiles(indexed.indexedFiles)
             this.state.indexedFiles = indexed.indexedFiles
+            this.state.indexedFileMetas = toIndexedUsageSourceFileMetas(indexed.indexedFiles)
             this.state.projectCatalog = projectCatalog
             this.state.projectDetails = null
             this.state.hasLoadedAllProjectDetails = false
@@ -570,12 +585,26 @@ function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {
     ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
 }
 
-function toDiscoveredUsageFiles(indexedFiles: IndexedUsageSourceFile[]): DiscoveredUsageFile[] {
+function toDiscoveredUsageFiles(
+    indexedFiles: Array<Pick<IndexedUsageSourceFileMeta, 'cacheSignature' | 'mtimeMs' | 'path' | 'platform' | 'size'>>,
+): DiscoveredUsageFile[] {
     return indexedFiles.map(file => ({
         cacheSignature: file.cacheSignature,
         mtimeMs: file.mtimeMs,
         path: file.path,
         platform: file.platform,
         size: file.size,
+    }))
+}
+
+function toIndexedUsageSourceFileMetas(indexedFiles: IndexedUsageSourceFile[]): IndexedUsageSourceFileMeta[] {
+    return indexedFiles.map(file => ({
+        cacheSignature: file.cacheSignature,
+        mtimeMs: file.mtimeMs,
+        path: file.path,
+        platform: file.platform,
+        projectNames: file.projectNames,
+        size: file.size,
+        updatedAt: file.updatedAt,
     }))
 }

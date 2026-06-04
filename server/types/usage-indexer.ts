@@ -37,6 +37,11 @@ export interface IndexedUsageSourceFile {
     updatedAt: string
 }
 
+export type IndexedUsageSourceFileMeta = Pick<
+    IndexedUsageSourceFile,
+    'cacheSignature' | 'mtimeMs' | 'path' | 'platform' | 'projectNames' | 'size' | 'updatedAt'
+>
+
 export interface UpdatedUsageSession {
     platform: ProjectUsagePlatform
     sessionId: string

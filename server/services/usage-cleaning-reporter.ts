@@ -1,7 +1,7 @@
 import type { UpdatedUsageSession } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
-import { log, progress } from '@clack/prompts'
+import { log, progress, spinner } from '@clack/prompts'
 
 export interface UsageCleaningReporter {
     complete: (stats: UsageCleaningCompleteStats) => void
@@ -37,14 +37,17 @@ export interface UsageCleaningPlatformStartStats {
 }
 
 export interface UsageCleaningPlatformParseStats {
+    durationMs: number
     parsedFiles: number
 }
 
 export interface UsageCleaningPlatformFinishStats {
+    durationMs: number
     interactions: number
     newInteractions: number
     newSessions: number
     sessions: number
+    updatedSessionIds: string[]
     updatedSessions: number
 }
 
@@ -88,7 +91,10 @@ export interface UsageCleaningPhaseDurations {
 }
 
 export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
-    private readonly animated = !process.env.CI && process.env.TERM !== 'dumb'
+    private agentUpdateSpinner: ReturnType<typeof spinner> | null = null
+    private agentUpdateSpinnerMessage = ''
+    private readonly persistDetails = process.env.USAGE_BOARD_STARTUP_PERSISTENT_LOGS === '1'
+    private readonly animated = !this.persistDetails && !process.env.CI && process.env.TERM !== 'dumb'
     private cacheProgress: ReturnType<typeof progress> | null = null
     private discoveryProgress: ReturnType<typeof progress> | null = null
     private platformProgress: ReturnType<typeof progress> | null = null
@@ -119,12 +125,7 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
             return
         }
 
-        if (this.animated) {
-            this.discoveryProgress?.advance(1, `查找到 ${stats.discoveredFiles} 个会话记录文件`)
-            return
-        }
-
-        log.info(`查找到 ${stats.discoveredFiles} 个会话记录文件`)
+        this.discoveryProgress?.advance(1, `查找到 ${stats.discoveredFiles} 个会话记录文件`)
     }
 
     foundFiles(stats: UsageCleaningDiscoveryStats) {
@@ -139,16 +140,25 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
         const summary = `查找到 ${stats.discoveredFiles} 个会话记录文件`
 
         if (this.animated) {
-            this.discoveryProgress?.advance(1, '完成 cache.sqlite 对比')
+            this.discoveryProgress?.advance(1, '完成 DB 对比')
             this.discoveryProgress?.stop(summary)
             this.discoveryProgress = null
         }
         else {
-            log.info(`${summary}，${stats.cachedFiles} 个来自 cache.sqlite`)
+            log.info(`${summary}，${stats.cachedFiles} 个来自 DB`)
         }
 
         if (stats.updatedPlatforms.length > 0) {
-            log.info(`检测到更新的 agent：${stats.updatedPlatforms.map(platform => PROJECT_USAGE_PLATFORM_META[platform].label).join(' / ')}`)
+            const message = `正在处理更新的 agent：${stats.updatedPlatforms.map(platform => PROJECT_USAGE_PLATFORM_META[platform].label).join(' / ')}`
+
+            if (this.persistDetails) {
+                this.agentUpdateSpinnerMessage = message
+                this.agentUpdateSpinner = spinner()
+                this.agentUpdateSpinner.start(message)
+            }
+            else {
+                log.info(message)
+            }
         }
 
         if (stats.removedFiles > 0) {
@@ -164,11 +174,11 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
             return
         }
 
+        this.stopAgentUpdateSpinner()
+
         const label = PROJECT_USAGE_PLATFORM_META[platform].label
 
         if (this.animated) {
-            this.platformProgress?.stop('')
-
             this.platformProgress = progress({
                 style: 'block',
                 max: 3,
@@ -182,19 +192,20 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
         log.info(`${label} 数据清洗中：正在分析新增会话与交互`)
     }
 
-    parsedPlatformFiles(platform: ProjectUsagePlatform) {
+    parsedPlatformFiles(platform: ProjectUsagePlatform, stats: UsageCleaningPlatformParseStats) {
         if (!this.options.verboseProgress) {
             return
         }
 
         const label = PROJECT_USAGE_PLATFORM_META[platform].label
+        const message = `${label} 已完成 ${stats.parsedFiles} 个源文件解析，用时 ${formatDurationMs(stats.durationMs)}，正在比对增量`
 
         if (this.animated) {
-            this.platformProgress?.advance(1, `${label} 已完成源文件解析，正在比对增量`)
+            this.platformProgress?.advance(1, message)
             return
         }
 
-        log.info(`${label} 已完成源文件解析，正在比对增量`)
+        log.info(message)
     }
 
     finishPlatform(platform: ProjectUsagePlatform, stats: UsageCleaningPlatformFinishStats) {
@@ -260,10 +271,12 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     complete(stats: UsageCleaningCompleteStats) {
+        this.stopAgentUpdateSpinner()
         log.success(`数据清洗完成，用时 ${formatDurationMs(stats.durationMs)}（发现/对比 ${formatDurationMs(stats.phaseDurations.discoveryMs)}，解析 ${formatDurationMs(stats.phaseDurations.parseMs)}，聚合 ${formatDurationMs(stats.phaseDurations.aggregateMs)}，写库 ${formatDurationMs(stats.phaseDurations.cacheWriteMs)}）`)
     }
 
     fail(error: unknown) {
+        this.stopAgentUpdateSpinner()
         log.error(`数据清洗失败：${formatErrorMessage(error)}`)
     }
 
@@ -278,6 +291,16 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
         }
 
         log.info(message)
+    }
+
+    private stopAgentUpdateSpinner() {
+        if (!this.agentUpdateSpinner) {
+            return
+        }
+
+        this.agentUpdateSpinner.stop(this.agentUpdateSpinnerMessage)
+        this.agentUpdateSpinner = null
+        this.agentUpdateSpinnerMessage = ''
     }
 }
 
@@ -310,5 +333,21 @@ function formatUpdatedSessionSummary(updatedSessions: UpdatedUsageSession[]) {
 }
 
 function formatPlatformDeltaSummary(stats: UsageCleaningPlatformFinishStats) {
-    return `新增 ${stats.newSessions} 个会话，新增 ${stats.newInteractions} 条交互，影响 ${stats.updatedSessions} 个 session`
+    const sessionSummary = formatSessionIds(stats.updatedSessionIds)
+
+    return `新增 ${stats.newSessions} 个会话，新增 ${stats.newInteractions} 条交互，影响 ${stats.updatedSessions} 个 session${sessionSummary}，总用时 ${formatDurationMs(stats.durationMs)}`
+}
+
+function formatSessionIds(sessionIds: string[]) {
+    if (sessionIds.length === 0) {
+        return ''
+    }
+
+    const limit = 5
+    const labels = sessionIds.slice(0, limit)
+    const remainingCount = sessionIds.length - labels.length
+
+    return remainingCount > 0
+        ? `，session ids ${labels.join(', ')} 等 ${sessionIds.length} 个`
+        : `，session ids ${labels.join(', ')}`
 }
