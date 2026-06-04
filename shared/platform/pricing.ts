@@ -5,7 +5,6 @@ import type {
     LiteLLMPricingDataset,
     ModelPricing,
     ModelPricingResolver,
-    PricingCacheEntry,
     TokenCostUsage,
 } from '#shared/types/platform'
 import { uniqueItems } from '#shared/utils/usage-dashboard'
@@ -18,6 +17,12 @@ const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
 
 /** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+
+interface PricingCacheEntry {
+    fetchedAt: number
+    promise?: Promise<LiteLLMPricingDataset>
+    value?: LiteLLMPricingDataset
+}
 
 const FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
     'gpt-5.3-codex': 2,
@@ -99,8 +104,8 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     },
 }
 
-/** Caches fetched datasets and in-flight requests by pricing URL to avoid duplicate network calls. */
-const pricingCache = new Map<string, PricingCacheEntry>()
+/** Caches the fetched dataset and in-flight request to avoid duplicate network calls. */
+let pricingCache: PricingCacheEntry | undefined
 
 /**
  * Fetches the LiteLLM model pricing dataset and falls back to the built-in dataset on failure.
@@ -112,12 +117,10 @@ const pricingCache = new Map<string, PricingCacheEntry>()
  * ```
  */
 async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
-    const url = options.url ?? DEFAULT_LITELLM_PRICING_URL
-    const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_PRICING_CACHE_TTL_MS
     const now = Date.now()
-    const cacheEntry = pricingCache.get(url)
+    const cacheEntry = pricingCache
 
-    if (!options.forceRefresh && cacheEntry?.value && now - cacheEntry.fetchedAt < cacheTtlMs) {
+    if (!options.forceRefresh && cacheEntry?.value && now - cacheEntry.fetchedAt < DEFAULT_PRICING_CACHE_TTL_MS) {
         return cacheEntry.value
     }
 
@@ -131,7 +134,7 @@ async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOpt
         return createFallbackLiteLLMPricingDataset()
     }
 
-    const promise = fetcher(url)
+    const promise = fetcher(DEFAULT_LITELLM_PRICING_URL)
         .then(async (response) => {
             if (!response.ok) {
                 throw new Error(`Failed to fetch LiteLLM pricing dataset: ${response.status} ${response.statusText}`)
@@ -148,28 +151,28 @@ async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOpt
                 ...data,
             }
 
-            pricingCache.set(url, {
+            pricingCache = {
                 fetchedAt: Date.now(),
                 value: dataset,
-            })
+            }
 
             return dataset
         })
         .catch(() => {
             const fallback = createFallbackLiteLLMPricingDataset()
-            pricingCache.set(url, {
+            pricingCache = {
                 fetchedAt: Date.now(),
                 value: fallback,
-            })
+            }
 
             return fallback
         })
 
-    pricingCache.set(url, {
+    pricingCache = {
         fetchedAt: cacheEntry?.fetchedAt ?? 0,
         promise,
         value: cacheEntry?.value,
-    })
+    }
 
     return promise
 }

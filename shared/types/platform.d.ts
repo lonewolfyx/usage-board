@@ -266,17 +266,9 @@ export interface LiteLLMModelPricing {
 export type LiteLLMPricingDataset = Record<string, LiteLLMModelPricing>
 export type ModelPricingResolver = (model: string) => ModelPricing
 
-export interface PricingCacheEntry {
-    fetchedAt: number
-    promise?: Promise<LiteLLMPricingDataset>
-    value?: LiteLLMPricingDataset
-}
-
 export interface FetchLiteLLMPricingDatasetOptions {
-    cacheTtlMs?: number
     fetcher?: typeof fetch
     forceRefresh?: boolean
-    url?: string
 }
 
 export interface CreateLiteLLMPricingResolverOptions extends FetchLiteLLMPricingDatasetOptions {
