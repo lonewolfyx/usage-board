@@ -589,18 +589,40 @@ function buildPlatformSessionsFromFiles(
 }
 
 function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platform: ProjectUsagePlatform) {
-    const interactionsWithoutDedupeKey: Array<{
+    const seen = new Map<string, {
+        fragment: IndexedUsageSessionFragment
+        interaction: IndexedUsageInteraction
+    }>()
+    const result: Array<{
         fragment: IndexedUsageSessionFragment
         interaction: IndexedUsageInteraction
     }> = []
-    const interactionsByDedupeKey = new Map<string, {
-        fragment: IndexedUsageSessionFragment
-        interaction: IndexedUsageInteraction
-    }>()
-    const interactionsByFallbackDedupeKey = new Map<string, {
-        fragment: IndexedUsageSessionFragment
-        interaction: IndexedUsageInteraction
-    }>()
+
+    function lookupEntry(interaction: IndexedUsageInteraction) {
+        if (interaction.dedupeKey) {
+            const entry = seen.get(interaction.dedupeKey)
+
+            if (entry) {
+                return entry
+            }
+        }
+
+        if (interaction.fallbackDedupeKey) {
+            return seen.get(interaction.fallbackDedupeKey)
+        }
+
+        return undefined
+    }
+
+    function storeEntry(interaction: IndexedUsageInteraction, entry: { fragment: IndexedUsageSessionFragment, interaction: IndexedUsageInteraction }) {
+        if (interaction.dedupeKey) {
+            seen.set(interaction.dedupeKey, entry)
+        }
+
+        if (interaction.fallbackDedupeKey) {
+            seen.set(interaction.fallbackDedupeKey, entry)
+        }
+    }
 
     for (const file of indexedFiles) {
         if (file.platform !== platform) {
@@ -610,50 +632,28 @@ function selectDedupedInteractions(indexedFiles: IndexedUsageSourceFile[], platf
         for (const fragment of file.payload) {
             for (const interaction of fragment.interactions) {
                 if (!interaction.dedupeKey && !interaction.fallbackDedupeKey) {
-                    interactionsWithoutDedupeKey.push({ fragment, interaction })
+                    result.push({ fragment, interaction })
                     continue
                 }
 
-                const existing = (interaction.dedupeKey
-                    ? interactionsByDedupeKey.get(interaction.dedupeKey)
-                    : undefined)
-                ?? (interaction.fallbackDedupeKey
-                    ? interactionsByFallbackDedupeKey.get(interaction.fallbackDedupeKey)
-                    : undefined)
+                const existing = lookupEntry(interaction)
 
                 if (!existing) {
-                    if (interaction.dedupeKey) {
-                        interactionsByDedupeKey.set(interaction.dedupeKey, { fragment, interaction })
-                    }
-                    if (interaction.fallbackDedupeKey) {
-                        interactionsByFallbackDedupeKey.set(interaction.fallbackDedupeKey, { fragment, interaction })
-                    }
+                    storeEntry(interaction, { fragment, interaction })
                 }
                 else if (shouldReplaceDedupedInteraction(interaction, existing.interaction)) {
-                    // Pin attribution to the first-seen fragment so the winning interaction
-                    // doesn't migrate across sessions and silently empty the loser.
-                    const next = { fragment: existing.fragment, interaction }
-
-                    if (existing.interaction.dedupeKey) {
-                        interactionsByDedupeKey.set(existing.interaction.dedupeKey, next)
-                    }
-                    if (existing.interaction.fallbackDedupeKey) {
-                        interactionsByFallbackDedupeKey.set(existing.interaction.fallbackDedupeKey, next)
-                    }
-                    if (interaction.dedupeKey) {
-                        interactionsByDedupeKey.set(interaction.dedupeKey, next)
-                    }
-                    if (interaction.fallbackDedupeKey) {
-                        interactionsByFallbackDedupeKey.set(interaction.fallbackDedupeKey, next)
-                    }
+                    storeEntry(interaction, { fragment: existing.fragment, interaction })
                 }
             }
         }
     }
 
+    // Deduplicate entries (same entry can be referenced by multiple keys)
+    const unique = new Set(seen.values())
+
     return [
-        ...interactionsWithoutDedupeKey,
-        ...new Set(interactionsByDedupeKey.values()),
+        ...result,
+        ...unique,
     ]
 }
 

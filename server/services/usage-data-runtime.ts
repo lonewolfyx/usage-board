@@ -11,7 +11,7 @@ import type {
     ProjectWebSocketRequest,
 } from '#shared/types/ws'
 import type { FSWatcher } from 'chokidar'
-import { accessSync, constants, statSync } from 'node:fs'
+import { accessSync, constants, promises as fsPromises } from 'node:fs'
 import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
 import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-reporter'
@@ -305,7 +305,7 @@ class UsageDataRuntime {
         })
 
         try {
-            const discoveredFiles = options.discoveredFiles ?? this.consumeWatcherDiscoveredFiles()
+            const discoveredFiles = options.discoveredFiles ?? await this.consumeWatcherDiscoveredFiles()
             const indexed = await buildIncrementalUsageIndex(this.config, this.repository, reporter, {
                 cachedFiles: this.state.indexedFiles ?? undefined,
                 cachedPlatformSessions: options.hydrateCachedPricing
@@ -444,18 +444,18 @@ class UsageDataRuntime {
         }, WATCHER_DEBOUNCE_MS)
     }
 
-    private consumeWatcherDiscoveredFiles() {
+    private async consumeWatcherDiscoveredFiles() {
         if (this.pendingWatcherPaths.size === 0) {
             return undefined
         }
 
-        const discoveredFiles = this.tryApplyWatcherPathsToDiscoveredFiles()
+        const discoveredFiles = await this.tryApplyWatcherPathsToDiscoveredFiles()
         this.pendingWatcherPaths.clear()
 
         return discoveredFiles
     }
 
-    private tryApplyWatcherPathsToDiscoveredFiles() {
+    private async tryApplyWatcherPathsToDiscoveredFiles() {
         const cachedDiscoveredFiles = this.state.discoveredFiles
 
         if (!cachedDiscoveredFiles || cachedDiscoveredFiles.length === 0) {
@@ -481,7 +481,7 @@ class UsageDataRuntime {
             }
 
             try {
-                const stat = statSync(filePath)
+                const stat = await fsPromises.stat(filePath)
 
                 nextFilesByPath.set(filePath, {
                     ...cachedFile,
