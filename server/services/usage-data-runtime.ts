@@ -17,10 +17,13 @@ import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.re
 import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-reporter'
 import {
     buildIncrementalUsageIndex,
+    buildPlatformSessionsByPlatform,
     getUsageCacheUpdateState,
+    hydrateIndexedUsageSourceFiles,
 } from '#server/services/usage-indexer'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
+import { resetRemotePricingCache } from '#shared/platform/pricing'
 import {
     buildProjectLoadUsageResult,
     buildProjectUsageDataModuleFromDetail,
@@ -31,6 +34,7 @@ import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import chokidar from 'chokidar'
 
 const WATCHER_DEBOUNCE_MS = 350
+const LIVE_PRICING_BOOTSTRAP_DEDUPE_MS = 1000
 
 export interface UsageRuntimeUpdate {
     affectedProjects: string[]
@@ -68,6 +72,9 @@ class UsageDataRuntime {
     }
 
     private initializePromise: Promise<void> | null = null
+    private liveBootstrap: TokensConsumptionResult | null = null
+    private liveBootstrapFetchedAt = 0
+    private liveBootstrapPromise: Promise<TokensConsumptionResult> | null = null
     private pendingWatcherPaths = new Map<string, 'add' | 'change' | 'unlink'>()
     private refreshPromise: Promise<void> | null = null
     private refreshRequestedWhileBusy = false
@@ -94,7 +101,7 @@ class UsageDataRuntime {
     async getBootstrap() {
         await this.ensureHydratedCurrentProcessState()
 
-        return this.state.bootstrap!
+        return this.getLiveBootstrap()
     }
 
     async ensureFreshBootstrapForStartup(options: {
@@ -155,27 +162,17 @@ class UsageDataRuntime {
     async getProjectDataModules(
         request: Pick<Extract<ProjectWebSocketRequest, { type: 'project_data' }>, 'module' | 'modules' | 'page' | 'pageSize' | 'platform' | 'project'>,
     ): Promise<ProjectUsageDataModuleResponse | ProjectUsageDataModulesResponse | null> {
-        await this.ensureHydratedCurrentProcessState()
         const projectLabel = (request.project || '').trim()
 
         if (!projectLabel) {
             throw new Error('Missing project name for project data request.')
         }
 
-        let hydratedDetail = this.state.projectDetails?.get(projectLabel)
-            ?? getProjectDetailFromBootstrap(this.state.bootstrap, projectLabel)
+        let hydratedDetail = getProjectDetailFromBootstrap(await this.getBootstrap(), projectLabel)
 
         if (!hydratedDetail) {
             await this.refreshNow()
-            hydratedDetail = this.state.projectDetails?.get(projectLabel)
-                ?? getProjectDetailFromBootstrap(this.state.bootstrap, projectLabel)
-        }
-
-        if (hydratedDetail) {
-            const projectDetails = this.state.projectDetails ?? new Map<string, ProjectUsageDetail>()
-
-            projectDetails.set(projectLabel, hydratedDetail)
-            this.state.projectDetails = projectDetails
+            hydratedDetail = getProjectDetailFromBootstrap(await this.getBootstrap(), projectLabel)
         }
 
         if (!hydratedDetail) {
@@ -189,6 +186,41 @@ class UsageDataRuntime {
             pageSize: request.pageSize,
             platform: request.platform,
         })
+    }
+
+    private async getLiveBootstrap() {
+        const now = Date.now()
+
+        if (this.liveBootstrap && now - this.liveBootstrapFetchedAt < LIVE_PRICING_BOOTSTRAP_DEDUPE_MS) {
+            return this.liveBootstrap
+        }
+
+        if (this.liveBootstrapPromise) {
+            return this.liveBootstrapPromise
+        }
+
+        this.liveBootstrapPromise = this.buildLiveBootstrap()
+            .finally(() => {
+                this.liveBootstrapPromise = null
+            })
+
+        return this.liveBootstrapPromise
+    }
+
+    private async buildLiveBootstrap() {
+        const indexedFiles = this.state.indexedFiles ?? this.repository.loadIndexedSourceFiles()
+
+        resetRemotePricingCache()
+        const repricedFiles = await hydrateIndexedUsageSourceFiles(indexedFiles)
+        const bootstrapByPlatform = buildPlatformSessionsByPlatform(repricedFiles, {
+            updatedPlatforms: PROJECT_USAGE_PLATFORMS,
+        })
+        const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform)
+
+        this.liveBootstrap = bootstrap
+        this.liveBootstrapFetchedAt = Date.now()
+
+        return bootstrap
     }
 
     subscribeToUpdates(listener: (update: UsageRuntimeUpdate) => void) {
@@ -228,6 +260,8 @@ class UsageDataRuntime {
         this.state.projectCatalog = projectCatalog?.payload ?? []
         this.state.projectDetails = null
         this.state.hasLoadedAllProjectDetails = false
+        this.liveBootstrap = null
+        this.liveBootstrapFetchedAt = 0
     }
 
     private async refreshNow(options: {
@@ -314,6 +348,8 @@ class UsageDataRuntime {
             this.state.hasLoadedAllProjectDetails = false
             this.state.hasIndexedCurrentProcess = true
             this.state.hydratedAt = Date.now()
+            this.liveBootstrap = null
+            this.liveBootstrapFetchedAt = 0
 
             if (indexed.hasChanges) {
                 this.emitUpdate({

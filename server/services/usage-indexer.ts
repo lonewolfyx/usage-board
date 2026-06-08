@@ -415,7 +415,7 @@ function parseUsageFile(
     }
 }
 
-function buildPlatformSessionsByPlatform(
+export function buildPlatformSessionsByPlatform(
     indexedFiles: IndexedUsageSourceFile[],
     options: {
         cachedPlatformSessions?: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>
