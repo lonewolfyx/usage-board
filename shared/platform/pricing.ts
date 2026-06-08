@@ -142,6 +142,11 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
 let pricingCache: PricingCacheEntry | undefined
 let modelsDevPricingCache: ModelsDevPricingCacheEntry | undefined
 
+export function resetRemotePricingCache() {
+    pricingCache = undefined
+    modelsDevPricingCache = undefined
+}
+
 /**
  * Fetches the LiteLLM model pricing dataset and falls back to the built-in dataset on failure.
  *
