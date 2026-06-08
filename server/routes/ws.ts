@@ -26,7 +26,7 @@ export default defineWebSocketHandler({
     },
     async message(peer, message) {
         try {
-            const request = parseProjectRequest(message)
+            const request = parseProjectRequest(message.json<unknown>())
             const runtimeConfig = useRuntimeConfig()
             const config = resolveConfig(runtimeConfig.public)
             const runtime = getUsageDataRuntime(config)
@@ -52,58 +52,13 @@ export default defineWebSocketHandler({
     },
 })
 
-function parseProjectRequest(message: { json: <T>() => T, text: () => string }): ProjectWebSocketRequest {
-    const text = message.text().trim()
-
-    try {
-        return normalizeProjectRequest(message.json<unknown>())
-    }
-    catch {
-        return normalizeProjectRequest(parseTextRequest(text))
-    }
-}
-
-function sendError(peer: { send: (data: string) => void }, message: string) {
-    peer.send(JSON.stringify({
-        message,
-        type: 'error',
-    }))
-}
-
-function parseTextRequest(text: string): unknown {
-    if (text === 'project' || text === 'project_data') {
-        return { type: text }
-    }
-
-    const params = new URLSearchParams(text.startsWith('?') ? text.slice(1) : text)
-    const type = params.get('type')
-
-    if (!type) {
-        return null
-    }
-
-    return {
-        module: params.get('module') ?? undefined,
-        modules: params.getAll('modules').flatMap(item => normalizeStringList<ProjectUsageDataModule>(item) ?? []),
-        page: normalizeNumberValue(params.get('page')),
-        pageSize: clampPageSize(normalizeNumberValue(params.get('pageSize'))),
-        platform: params.get('platform') ?? undefined,
-        project: params.get('project') ?? undefined,
-        requestId: params.get('requestId') ?? undefined,
-        type,
-    }
-}
-
-function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
-    if (typeof value === 'string') {
-        return normalizeProjectRequest(parseTextRequest(value.trim()))
-    }
-
+function parseProjectRequest(value: unknown): ProjectWebSocketRequest {
     const record = normalizeUnknownRecord(value)
 
     if (!record) {
-        throw new Error('Websocket message must include a supported type.')
+        throw new Error('Websocket message must be a JSON object with a "type" field.')
     }
+
     const type = normalizeStringValue<string>(record.type) ?? ''
 
     if (type === 'project') {
@@ -127,6 +82,13 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
     }
 
     throw new Error(`Unsupported websocket request type: ${type || 'unknown'}.`)
+}
+
+function sendError(peer: { send: (data: string) => void }, message: string) {
+    peer.send(JSON.stringify({
+        message,
+        type: 'error',
+    }))
 }
 
 function normalizeNumberValue(value: unknown) {
