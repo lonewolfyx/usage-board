@@ -20,7 +20,6 @@ import type {
     ProjectUsageDataModule,
     ProjectUsageDataModulesResponse,
     ProjectWebSocketRequest,
-    ProjectWebSocketResponse,
     UsageUpdateMessage,
 } from '#shared/types/ws'
 import type { ShallowRef } from 'vue'
@@ -45,6 +44,11 @@ import {
     formatCurrency,
     mergeDailyTokenUsage,
 } from '#shared/utils/usage-dashboard'
+import {
+    isProjectWebSocketResponse,
+    isUsageUpdateMessage,
+    isWebSocketError,
+} from '#shared/utils/ws'
 import { formatNumber } from '@lonewolfyx/utils'
 
 const recentProjectDays = 30
@@ -120,15 +124,7 @@ export function useProjectDashboard() {
     let realtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
     const pendingWebSocketRequests = new Map<string, ProjectPendingWebSocketRequest>()
 
-    const wsUrl = computed(() => {
-        if (!import.meta.client) {
-            return ''
-        }
-
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-
-        return `${protocol}//${window.location.host}/ws`
-    })
+    const wsUrl = useWebSocketUrl()
 
     const { open, send, status } = useWebSocket(wsUrl, {
         immediate: false,
@@ -512,38 +508,6 @@ export function useProjectDashboard() {
         }
 
         await loadProjectModules(nextProjectId)
-    }
-
-    function isWebSocketError(value: unknown): value is { message: string, type: 'error' } {
-        if (!value || typeof value !== 'object') {
-            return false
-        }
-
-        const record = value as Record<string, unknown>
-
-        return record.type === 'error' && typeof record.message === 'string'
-    }
-
-    function isProjectWebSocketResponse(value: unknown): value is ProjectWebSocketResponse {
-        if (!value || typeof value !== 'object') {
-            return false
-        }
-
-        const record = value as Record<string, unknown>
-
-        return typeof record.requestId === 'string' && 'data' in record
-    }
-
-    function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {
-        if (!value || typeof value !== 'object') {
-            return false
-        }
-
-        const record = value as Record<string, unknown>
-
-        return record.type === 'usage_update'
-            && typeof record.payload === 'object'
-            && record.payload !== null
     }
 
     function resetProjectModules() {

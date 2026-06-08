@@ -1,5 +1,7 @@
 import type { UsageUpdateMessage } from '#shared/types/ws'
+import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
+import { isUsageUpdateMessage } from '#shared/utils/ws'
 import { fetchAnalysisLiveState } from '~/lib/analysis-repository'
 
 const usageLiveUpdateDebounceMs = 300
@@ -13,17 +15,9 @@ export function useUsageLiveUpdate(onUpdate: (update: UsageUpdateMessage['payloa
     let refreshTimer: ReturnType<typeof setTimeout> | null = null
     let refreshPromise: Promise<void> | null = null
 
-    const wsUrl = computed(() => {
-        if (!import.meta.client) {
-            return ''
-        }
+    const wsUrl = useWebSocketUrl()
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-
-        return `${protocol}//${window.location.host}/ws`
-    })
-
-    const { open } = useWebSocket(wsUrl, {
+    const { status, open } = useWebSocket(wsUrl, {
         immediate: false,
         autoReconnect: {
             delay: 1000,
@@ -44,22 +38,43 @@ export function useUsageLiveUpdate(onUpdate: (update: UsageUpdateMessage['payloa
     onMounted(() => {
         open()
         void syncLiveState()
-        pollTimer = setInterval(() => {
-            void syncLiveState()
-        }, usageLiveUpdatePollMs)
+        startPolling()
     })
 
     onScopeDispose(() => {
-        if (pollTimer) {
-            clearInterval(pollTimer)
-            pollTimer = null
-        }
+        stopPolling()
 
         if (refreshTimer) {
             clearTimeout(refreshTimer)
             refreshTimer = null
         }
     })
+
+    watch(status, (currentStatus) => {
+        if (currentStatus === 'OPEN') {
+            stopPolling()
+        }
+        else {
+            startPolling()
+        }
+    })
+
+    function startPolling() {
+        if (pollTimer) {
+            return
+        }
+
+        pollTimer = setInterval(() => {
+            void syncLiveState()
+        }, usageLiveUpdatePollMs)
+    }
+
+    function stopPolling() {
+        if (pollTimer) {
+            clearInterval(pollTimer)
+            pollTimer = null
+        }
+    }
 
     function scheduleRefresh(update: UsageUpdateMessage['payload']) {
         if (refreshTimer) {
@@ -160,18 +175,6 @@ function parseUsageUpdateMessage(data: unknown) {
         : null
 }
 
-function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {
-    if (!value || typeof value !== 'object') {
-        return false
-    }
-
-    const record = value as Record<string, unknown>
-
-    return record.type === 'usage_update'
-        && typeof record.payload === 'object'
-        && record.payload !== null
-}
-
 function isTransientLiveStateFetchError(error: unknown) {
     const messages = collectErrorMessages(error)
 
@@ -179,11 +182,11 @@ function isTransientLiveStateFetchError(error: unknown) {
 }
 
 function collectErrorMessages(error: unknown, messages: string[] = []): string[] {
-    if (!error || typeof error !== 'object') {
+    const record = normalizeUnknownRecord(error)
+
+    if (!record) {
         return typeof error === 'string' ? [...messages, error] : messages
     }
-
-    const record = error as Record<string, unknown>
 
     if (typeof record.message === 'string') {
         messages.push(record.message)

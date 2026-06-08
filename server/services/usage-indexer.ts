@@ -116,7 +116,6 @@ export async function buildIncrementalUsageIndex(
     }
     const activeReporter = shouldReport ? reporter : undefined
     const discoveredFileCountsByPlatform = countFilesByPlatform(discoveredFiles)
-    // const changedFileCountsByPlatform = countFilesByPlatform(filesToParse)
 
     if (filesToParse.length === 0 && removedFiles.length === 0) {
         const indexedFiles = hydratedCachedFiles.sort((a, b) => a.path.localeCompare(b.path))

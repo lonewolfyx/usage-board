@@ -28,12 +28,6 @@ interface PricingCacheEntry {
     value?: LiteLLMPricingDataset
 }
 
-interface ModelsDevPricingCacheEntry {
-    fetchedAt: number
-    promise?: Promise<LiteLLMPricingDataset>
-    value?: LiteLLMPricingDataset
-}
-
 interface ModelsDevModelCost {
     cache_read?: number
     cache_write?: number
@@ -140,7 +134,7 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
 
 /** Caches the fetched dataset and in-flight request to avoid duplicate network calls. */
 let pricingCache: PricingCacheEntry | undefined
-let modelsDevPricingCache: ModelsDevPricingCacheEntry | undefined
+let modelsDevPricingCache: PricingCacheEntry | undefined
 
 export function resetRemotePricingCache() {
     pricingCache = undefined

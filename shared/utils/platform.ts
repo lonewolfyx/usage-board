@@ -873,11 +873,11 @@ export function convertGeminiTokenUsage(tokens: GeminiTokenSnapshot): TokenUsage
  * ```
  */
 export function extractModelName(value: unknown): string | undefined {
-    if (!value || typeof value !== 'object') {
+    const record = normalizeUnknownRecord(value)
+
+    if (!record) {
         return undefined
     }
-
-    const record = value as Record<string, unknown>
     const info = normalizeUnknownRecord(record.info)
     const metadata = normalizeUnknownRecord(record.metadata)
     const infoMetadata = normalizeUnknownRecord(info?.metadata)

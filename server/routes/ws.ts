@@ -6,12 +6,22 @@ import { resolveConfig } from '#shared/utils/configs'
 import {
     normalizeStringList,
     normalizeStringValue,
+    normalizeUnknownRecord,
 } from '#shared/utils/normalize'
+
+const MAX_PAGE_SIZE = 100
+const MAX_CONNECTIONS = 50
 
 const peerSubscriptions = new Map<string, () => void>()
 
 export default defineWebSocketHandler({
     open(peer) {
+        if (peerSubscriptions.size >= MAX_CONNECTIONS) {
+            peer.send(JSON.stringify({ message: 'Too many connections.', type: 'error' }))
+            peer.close()
+            return
+        }
+
         subscribePeerToUsageUpdates(peer)
     },
     async message(peer, message) {
@@ -76,7 +86,7 @@ function parseTextRequest(text: string): unknown {
         module: params.get('module') ?? undefined,
         modules: params.getAll('modules').flatMap(item => normalizeStringList<ProjectUsageDataModule>(item) ?? []),
         page: normalizeNumberValue(params.get('page')),
-        pageSize: normalizeNumberValue(params.get('pageSize')),
+        pageSize: clampPageSize(normalizeNumberValue(params.get('pageSize'))),
         platform: params.get('platform') ?? undefined,
         project: params.get('project') ?? undefined,
         requestId: params.get('requestId') ?? undefined,
@@ -89,11 +99,11 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
         return normalizeProjectRequest(parseTextRequest(value.trim()))
     }
 
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    const record = normalizeUnknownRecord(value)
+
+    if (!record) {
         throw new Error('Websocket message must include a supported type.')
     }
-
-    const record = value as Record<string, unknown>
     const type = normalizeStringValue<string>(record.type) ?? ''
 
     if (type === 'project') {
@@ -108,7 +118,7 @@ function normalizeProjectRequest(value: unknown): ProjectWebSocketRequest {
             module: normalizeStringValue<ProjectUsageDataModule>(record.module),
             modules: normalizeStringList<ProjectUsageDataModule>(record.modules),
             page: normalizeNumberValue(record.page),
-            pageSize: normalizeNumberValue(record.pageSize),
+            pageSize: clampPageSize(normalizeNumberValue(record.pageSize)),
             platform: normalizeStringValue<ProjectDashboardScope>(record.platform),
             project: normalizeStringValue<string>(record.project),
             requestId: normalizeStringValue<string>(record.requestId),
@@ -129,6 +139,14 @@ function normalizeNumberValue(value: unknown) {
     const numberValue = Number(stringValue)
 
     return Number.isFinite(numberValue) ? numberValue : undefined
+}
+
+function clampPageSize(value: number | undefined) {
+    if (value === undefined) {
+        return undefined
+    }
+
+    return Math.min(Math.max(value, 1), MAX_PAGE_SIZE)
 }
 
 function sendData(

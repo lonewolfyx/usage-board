@@ -92,7 +92,7 @@ export function buildProjectUsageDetailFromPlatformSessions(
         createTime: getEarliestStartedAt(sessions),
         label: projectName,
         models: collectSessionModels(sessions),
-        sessionCound: sessions.length,
+        sessionCount: sessions.length,
     }
 }
 
