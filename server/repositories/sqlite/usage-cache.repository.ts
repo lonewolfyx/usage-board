@@ -777,7 +777,7 @@ export class UsageCacheRepository {
         statements.insertProjectStatement.run(
             label,
             sanitizedDetail.createTime,
-            sanitizedDetail.sessionCound,
+            sanitizedDetail.sessionCount,
             statements.now,
         )
 

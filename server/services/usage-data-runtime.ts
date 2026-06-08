@@ -612,7 +612,7 @@ function getProjectDetailFromBootstrap(
 
     const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(getCachedPlatformSessions(bootstrap), projectName))
 
-    return detail.sessionCound > 0 ? detail : null
+    return detail.sessionCount > 0 ? detail : null
 }
 
 function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {

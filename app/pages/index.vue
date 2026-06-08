@@ -196,4 +196,3 @@ const {
     showSkeleton: showUsageSkeleton,
 } = useDashboardAsyncState(usageStatus, usageError)
 </script>
-    fetchDailyTokenUsagePage,

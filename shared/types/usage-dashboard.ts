@@ -168,7 +168,7 @@ export interface ProjectUsageDetail {
     label: string
     models: string[]
     createTime: string | null
-    sessionCound: number
+    sessionCount: number
     analyzing: ProjectUsagePlatformRecord<ProjectPlatformUsage>
 }
 

@@ -10,7 +10,7 @@
                     :model-value="date.month"
                     @change="(e: Event) => {
                         placeholder = placeholder.set({
-                            month: Number((e?.target as any)?.value),
+                            month: Number((e.target as HTMLSelectElement).value),
                         })
                     }"
                 >
@@ -33,7 +33,7 @@
                     :model-value="date.year"
                     @change="(e: Event) => {
                         placeholder = placeholder.set({
-                            year: Number((e?.target as any)?.value),
+                            year: Number((e.target as HTMLSelectElement).value),
                         })
                     }"
                 >

@@ -26,13 +26,15 @@ export function openSqliteDatabase(location: string, options?: SqliteDatabaseOpt
         database.exec('PRAGMA journal_mode = WAL')
         database.exec('PRAGMA synchronous = NORMAL')
     }
-    catch {
+    catch (error) {
+        console.warn('[sqlite] failed to set WAL/synchronous PRAGMA:', error instanceof Error ? error.message : error)
     }
 
     try {
         database.exec('PRAGMA busy_timeout = 15000')
     }
-    catch {
+    catch (error) {
+        console.warn('[sqlite] failed to set busy_timeout PRAGMA:', error instanceof Error ? error.message : error)
     }
 
     return database
