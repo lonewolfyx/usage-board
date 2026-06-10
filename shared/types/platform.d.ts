@@ -53,9 +53,13 @@ export interface UsageAggregateEvent extends TokenUsageDelta {
     costUSD?: number
     isFallbackModel: boolean
     model: string
+    modelLookupCandidates?: string[]
     project: string
+    provider?: string | null
+    rawCostUSD?: number | null
     repository: string
     sessionId: string
+    speed?: 'fast' | 'standard' | null
     timestamp: string
     toolTokens?: number
 }
@@ -250,6 +254,8 @@ export interface ModelPricing {
     outputCostPerMTokensAbove200K?: number
     outputCostPerMTokens: number
 }
+
+export type ResolvedCostSource = 'calculated' | 'none' | 'raw'
 
 export interface LiteLLMModelPricing {
     cache_creation_input_token_cost?: number

@@ -39,7 +39,7 @@ export const kimiUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'kimi'))
     },
     parseFile(filePath, resolvePricing) {
-        const sessionId = getKimiSessionId(filePath)
+        const sessionId = dirname(filePath).split('/').filter(Boolean).pop() || 'unknown'
         const model = getKimiModel(filePath)
         const fallbackTimestamp = getFileModifiedAtIso(filePath)
         const fragment = createSessionFragment({
@@ -96,6 +96,8 @@ export const kimiUsageAdapter = {
                 ].join(':'),
                 index,
                 model,
+                modelLookupCandidates: [model, `moonshot/${model}`, `kimi/${model}`],
+                rawCostUSD: null,
                 role: 'usage',
                 timestamp,
                 type: 'StatusUpdate',
@@ -116,10 +118,6 @@ export const kimiUsageAdapter = {
 function getKimiModel(filePath: string) {
     const config = parseJsonFile(join(dirname(dirname(dirname(filePath))), 'config.json'))
     return normalizeStringValue(normalizeUnknownRecord(config)?.model) || KIMI_DEFAULT_MODEL
-}
-
-function getKimiSessionId(filePath: string) {
-    return dirname(filePath).split('/').filter(Boolean).pop() || 'unknown'
 }
 
 function isKimiWireFile(sessionsPath: string, filePath: string) {

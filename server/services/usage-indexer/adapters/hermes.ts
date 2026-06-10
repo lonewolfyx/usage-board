@@ -61,6 +61,9 @@ export const hermesUsageAdapter = {
                         dedupeKey: `hermes:${entry.sessionId}`,
                         index: 0,
                         model: entry.model,
+                        modelLookupCandidates: entry.modelLookupCandidates,
+                        provider: entry.provider,
+                        rawCostUSD: entry.rawCostUSD,
                         role: 'usage',
                         timestamp: entry.timestamp,
                         type: 'session',
@@ -106,6 +109,9 @@ function parseHermesRow(row: Record<string, unknown>, resolvePricing: Parameters
 
     return {
         model,
+        modelLookupCandidates: [model, `${provider}/${model}`],
+        provider,
+        rawCostUSD: directCost,
         sessionId,
         timestamp,
         usage: toInteractionUsage({

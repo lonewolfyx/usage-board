@@ -1,9 +1,7 @@
 import type { ModelPricing, ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { statSync } from 'node:fs'
-import { calculateUsageCostUSD } from '#shared/platform/pricing'
 import { useDateFormat } from '#shared/utils/date'
-import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 const ZERO_PRICING: ModelPricing = {
     cachedInputCostPerMTokens: 0,
@@ -135,24 +133,10 @@ export function calculateUsageCostFromCandidates(
     resolvePricing: ModelPricingResolver,
     options: { includeExtraTotalAsOutput?: boolean, includeReasoningAsOutput?: boolean } = {},
 ) {
-    const outputTokens = usage.outputTokens
-        + (options.includeExtraTotalAsOutput === false ? 0 : (usage.extraTotalTokens ?? 0))
-        + (usage.toolTokens ?? 0)
-        + (options.includeReasoningAsOutput === false ? 0 : usage.reasoningOutputTokens)
-
-    for (const candidate of uniqueItems(candidates.map(candidate => candidate.trim()).filter(Boolean))) {
-        const costUSD = calculateUsageCostUSD({
-            cacheCreationTokens: usage.cacheCreationTokens ?? 0,
-            cachedInputTokens: usage.cachedInputTokens,
-            inputTokens: usage.inputTokens,
-            outputTokens,
-        }, resolvePricing(candidate))
-
-        if (costUSD > 0) {
-            return costUSD
-        }
-    }
-
+    void usage
+    void candidates
+    void resolvePricing
+    void options
     return 0
 }
 

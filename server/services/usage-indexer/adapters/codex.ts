@@ -6,7 +6,7 @@ import {
     CODEX_FALLBACK_MODEL,
     CODEX_MODEL_ALIASES,
 } from '#shared/platform/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import {
     convertCodexRawUsage,
@@ -29,7 +29,6 @@ import {
 } from '../session-fragment'
 import { getFileModifiedAtIso } from './shared'
 
-const CODEX_DEFAULT_FAST_MULTIPLIER = 2
 const CODEX_SPEED_CACHE_PREFIX = 'codex-speed:'
 
 export const codexUsageAdapter = {
@@ -132,7 +131,9 @@ export const codexUsageAdapter = {
                     : null,
                 index,
                 model: model ?? null,
+                rawCostUSD: null,
                 role: getCodexRole(line, rawUsage !== null),
+                speed,
                 timestamp,
                 type: effectiveType,
                 usage: usage ? { ...usage, isFallbackModel } : null,
@@ -176,6 +177,9 @@ function getCodexInteractionUsage(
     resolvePricing: ModelPricingResolver,
     speed: 'fast' | 'standard',
 ) {
+    void model
+    void resolvePricing
+    void speed
     const usage = convertCodexRawUsage(rawUsage)
 
     if (isZeroUsage(usage)) {
@@ -184,10 +188,7 @@ function getCodexInteractionUsage(
 
     return {
         ...usage,
-        costUSD: calculateUsageCostUSD(usage, resolvePricing(model), {
-            defaultFastMultiplier: CODEX_DEFAULT_FAST_MULTIPLIER,
-            speed,
-        }),
+        costUSD: 0,
     }
 }
 

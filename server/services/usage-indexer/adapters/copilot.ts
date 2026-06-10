@@ -98,6 +98,8 @@ export const copilotUsageAdapter = {
                 dedupeKey: candidate.dedupeKey,
                 index: fragment.interactions.length,
                 model: candidate.model,
+                modelLookupCandidates: [candidate.model],
+                rawCostUSD: null,
                 role: 'usage',
                 timestamp: candidate.timestamp,
                 type: candidate.source,

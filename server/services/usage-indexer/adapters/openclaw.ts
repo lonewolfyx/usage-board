@@ -112,6 +112,8 @@ export const openClawUsageAdapter = {
                 ].join(':'),
                 index,
                 model: `[openclaw] ${rawModel}`,
+                provider,
+                rawCostUSD: usage.costUSD,
                 role: 'assistant',
                 timestamp,
                 type: provider ? `message:${provider}` : 'message',

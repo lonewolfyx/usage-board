@@ -88,6 +88,7 @@ export const piUsageAdapter = {
                 ].join(':'),
                 index,
                 model: rawModel ? `[pi] ${rawModel}` : null,
+                rawCostUSD: usage.costUSD,
                 role: 'assistant',
                 timestamp,
                 type: normalizeStringValue(line.type) || 'message',

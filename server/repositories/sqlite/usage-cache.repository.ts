@@ -17,7 +17,7 @@ import { dateUtcMidnight, nowIsoString, previousDateKey, todayDateKey, todayStar
 import { getMonthKey, getWeekLabel } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 4
 
 const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS sessions (
@@ -40,6 +40,9 @@ const SCHEMA_SQL = `
         cache_read          INTEGER NOT NULL DEFAULT 0,
         reasoning_token     INTEGER NOT NULL DEFAULT 0,
         total_token         INTEGER NOT NULL DEFAULT 0,
+        raw_cost_usd        REAL,
+        speed               TEXT,
+        provider            TEXT,
         is_fallback_model   INTEGER NOT NULL DEFAULT 0,
         tool_tokens         INTEGER NOT NULL DEFAULT 0,
         extra_total_tokens  INTEGER NOT NULL DEFAULT 0,
@@ -90,6 +93,7 @@ interface SessionSummaryRow {
     cached_input_token: number
     reasoning_token: number
     total_token: number
+    raw_cost_usd: number | null
     models_csv: string | null
 }
 
@@ -112,7 +116,9 @@ interface InteractionInput {
     cacheRead: number
     reasoningToken: number
     totalToken: number
-    costUsd: number
+    provider?: string | null
+    rawCostUsd?: number | null
+    speed?: string | null
     isFallbackModel: boolean
     toolTokens: number
     extraTotalTokens: number
@@ -149,10 +155,11 @@ export class UsageCacheRepository {
                 timestamp, role, type, model,
                 input_token, output_token, cached_input_token,
                 cache_creation, cache_read, reasoning_token, total_token,
+                raw_cost_usd, speed, provider,
                 is_fallback_model, tool_tokens, extra_total_tokens,
                 dedupe_key, fallback_dedupe_key, source_file, is_sidechain,
                 create_time
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const now = nowIsoString()
 
@@ -182,6 +189,9 @@ export class UsageCacheRepository {
                     item.cacheRead,
                     item.reasoningToken,
                     item.totalToken,
+                    item.rawCostUsd ?? null,
+                    item.speed ?? null,
+                    item.provider ?? null,
                     item.isFallbackModel ? 1 : 0,
                     item.toolTokens,
                     item.extraTotalTokens,
@@ -283,6 +293,7 @@ export class UsageCacheRepository {
                     SUM(cached_input_token) AS cached_input_token,
                     SUM(reasoning_token) AS reasoning_token,
                     SUM(total_token) AS total_token,
+                    SUM(COALESCE(raw_cost_usd, 0)) AS raw_cost_usd,
                     GROUP_CONCAT(DISTINCT model) AS models_csv
                 FROM sessions
                 WHERE platform = ?
@@ -304,12 +315,16 @@ export class UsageCacheRepository {
         inputTokens: number
         isFallbackModel: boolean
         model: string
+        modelLookupCandidates?: string[]
         outputTokens: number
         platform: string
         project: string
+        provider?: string | null
+        rawCostUSD?: number | null
         reasoningOutputTokens: number
         repository: string
         sessionId: string
+        speed?: 'fast' | 'standard' | null
         timestamp: string
         toolTokens: number
         totalTokens: number
@@ -343,6 +358,9 @@ export class UsageCacheRepository {
             cache_read: number
             reasoning_token: number
             total_token: number
+            raw_cost_usd: number | null
+            speed: string | null
+            provider: string | null
             is_fallback_model: number
             tool_tokens: number
         }>(`
@@ -350,6 +368,7 @@ export class UsageCacheRepository {
                 session_id, platform, project_name, repository, model, timestamp,
                 input_token, output_token, cached_input_token,
                 cache_creation, cache_read, reasoning_token, total_token,
+                raw_cost_usd, speed, provider,
                 is_fallback_model, tool_tokens
             FROM sessions
             ${whereClause}
@@ -357,16 +376,19 @@ export class UsageCacheRepository {
         `).all(...params).map(row => ({
             cacheCreationTokens: row.cache_creation,
             cachedInputTokens: row.cached_input_token,
-            costUSD: 0,
+            costUSD: row.raw_cost_usd ?? 0,
             inputTokens: row.input_token,
             isFallbackModel: row.is_fallback_model === 1,
             model: row.model ?? 'unknown',
             outputTokens: row.output_token,
             platform: row.platform,
             project: row.project_name,
+            provider: row.provider,
+            rawCostUSD: row.raw_cost_usd,
             reasoningOutputTokens: row.reasoning_token,
             repository: row.repository,
             sessionId: row.session_id,
+            speed: row.speed === 'fast' || row.speed === 'standard' ? row.speed : null,
             timestamp: row.timestamp,
             toolTokens: row.tool_tokens,
             totalTokens: row.total_token,
@@ -380,12 +402,16 @@ export class UsageCacheRepository {
         inputTokens: number
         isFallbackModel: boolean
         model: string
+        modelLookupCandidates?: string[]
         outputTokens: number
         platform: string
         project: string
+        provider?: string | null
+        rawCostUSD?: number | null
         reasoningOutputTokens: number
         repository: string
         sessionId: string
+        speed?: 'fast' | 'standard' | null
         timestamp: string
         toolTokens: number
         totalTokens: number
@@ -404,6 +430,9 @@ export class UsageCacheRepository {
             cache_read: number
             reasoning_token: number
             total_token: number
+            raw_cost_usd: number | null
+            speed: string | null
+            provider: string | null
             is_fallback_model: number
             tool_tokens: number
         }>(`
@@ -411,6 +440,7 @@ export class UsageCacheRepository {
                 session_id, platform, project_name, repository, model, timestamp,
                 input_token, output_token, cached_input_token,
                 cache_creation, cache_read, reasoning_token, total_token,
+                raw_cost_usd, speed, provider,
                 is_fallback_model, tool_tokens
             FROM sessions
             WHERE total_token > 0 AND timestamp IS NOT NULL
@@ -424,12 +454,16 @@ export class UsageCacheRepository {
             inputTokens: number
             isFallbackModel: boolean
             model: string
+            modelLookupCandidates?: string[]
             outputTokens: number
             platform: string
             project: string
+            provider?: string | null
+            rawCostUSD?: number | null
             reasoningOutputTokens: number
             repository: string
             sessionId: string
+            speed?: 'fast' | 'standard' | null
             timestamp: string
             toolTokens: number
             totalTokens: number
@@ -440,16 +474,19 @@ export class UsageCacheRepository {
             list.push({
                 cacheCreationTokens: row.cache_creation,
                 cachedInputTokens: row.cached_input_token,
-                costUSD: 0,
+                costUSD: row.raw_cost_usd ?? 0,
                 inputTokens: row.input_token,
                 isFallbackModel: row.is_fallback_model === 1,
                 model: row.model ?? 'unknown',
                 outputTokens: row.output_token,
                 platform: row.platform,
                 project: row.project_name,
+                provider: row.provider,
+                rawCostUSD: row.raw_cost_usd,
                 reasoningOutputTokens: row.reasoning_token,
                 repository: row.repository,
                 sessionId: row.session_id,
+                speed: row.speed === 'fast' || row.speed === 'standard' ? row.speed : null,
                 timestamp: row.timestamp,
                 toolTokens: row.tool_tokens,
                 totalTokens: row.total_token,
@@ -794,7 +831,7 @@ export class UsageCacheRepository {
 
         return {
             cachedInputTokens: row.cached_input_token ?? 0,
-            costUSD: 0,
+            costUSD: row.raw_cost_usd ?? 0,
             date: dateKey ? formatDateLabelFromDateKey(dateKey) : '',
             duration: '',
             durationMinutes: 0,

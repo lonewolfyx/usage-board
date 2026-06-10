@@ -21,6 +21,9 @@ export interface SessionRow {
     cache_read: number
     reasoning_token: number
     total_token: number
+    raw_cost_usd: number | null
+    speed: string | null
+    provider: string | null
     is_fallback_model: number
     tool_tokens: number
     extra_total_tokens: number

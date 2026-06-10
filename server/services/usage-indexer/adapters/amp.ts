@@ -92,6 +92,8 @@ export const ampUsageAdapter = {
                 costUSD,
                 index,
                 model,
+                modelLookupCandidates: [model],
+                rawCostUSD: null,
                 role: 'usage',
                 timestamp,
                 type: 'usage_ledger',

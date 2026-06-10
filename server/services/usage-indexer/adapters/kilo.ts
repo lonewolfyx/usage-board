@@ -62,6 +62,9 @@ export const kiloUsageAdapter = {
                     dedupeKey: parsed.interactionId,
                     index: fragment.interactions.length,
                     model: parsed.model,
+                    modelLookupCandidates: parsed.modelLookupCandidates,
+                    provider: parsed.provider,
+                    rawCostUSD: parsed.rawCostUSD,
                     role: 'assistant',
                     timestamp: parsed.timestamp,
                     type: 'message',
@@ -124,6 +127,9 @@ function parseKiloMessage(
     return {
         interactionId,
         model,
+        modelLookupCandidates: getKiloCandidates(model, provider),
+        provider,
+        rawCostUSD: directCost,
         sessionId,
         timestamp,
         usage: toInteractionUsage({

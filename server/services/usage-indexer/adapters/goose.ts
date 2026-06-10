@@ -62,6 +62,9 @@ export const gooseUsageAdapter = {
                         dedupeKey: `goose:${filePath}:${entry.sessionId}`,
                         index: 0,
                         model: entry.model,
+                        modelLookupCandidates: entry.modelLookupCandidates,
+                        provider: entry.provider,
+                        rawCostUSD: null,
                         role: 'usage',
                         timestamp: entry.timestamp,
                         type: 'session',
@@ -111,6 +114,8 @@ function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<
 
     return {
         model,
+        modelLookupCandidates: [model, `${provider}/${model}`],
+        provider,
         sessionId,
         timestamp,
         usage: toInteractionUsage({
