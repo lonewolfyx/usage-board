@@ -95,6 +95,8 @@ export const codebuffUsageAdapter = {
                 dedupeKey: getCodebuffDedupeKey(message, sessionId, timestamp ?? '', model, usage, index),
                 index,
                 model,
+                modelLookupCandidates: getCodebuffCandidates(model, inferCodebuffProvider(model)),
+                rawCostUSD: null,
                 role: 'assistant',
                 timestamp,
                 type: normalizeStringValue(message.variant) || normalizeStringValue(message.role) || 'assistant',

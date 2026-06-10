@@ -6,7 +6,7 @@ import { basename, join } from 'node:path'
 import {
     CLAUDE_MODEL_ALIASES,
 } from '#shared/platform/constant'
-import { calculateUsageCostUSD, createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import {
     normalizeFiniteNumberOrNull,
     normalizeStringValue,
@@ -95,7 +95,9 @@ export const claudeCodeUsageAdapter = {
                 index,
                 isSidechain: line.isSidechain === true,
                 model: model ?? null,
+                rawCostUSD: line.costUSD,
                 role: getInteractionRole(line.type, message),
+                speed: line.usage.speed === 'fast' ? 'fast' : 'standard',
                 timestamp,
                 type: line.type ?? (normalizeStringValue(message?.type) || 'message'),
                 usage,
@@ -116,26 +118,18 @@ function getClaudeInteractionUsage(
     resolvePricing: ModelPricingResolver,
     costUSD: number | null,
 ): ProjectInteractionUsage {
+    void model
+    void resolvePricing
     const cacheCreationTokens = normalizeNumber(usage.cache_creation_input_tokens)
     const cacheReadTokens = normalizeNumber(usage.cache_read_input_tokens)
     const inputTokens = normalizeNumber(usage.input_tokens)
     const outputTokens = normalizeNumber(usage.output_tokens)
-    const resolvedCostUSD = costUSD ?? (model
-        ? calculateUsageCostUSD({
-                cacheCreationTokens,
-                cachedInputTokens: cacheReadTokens,
-                inputTokens,
-                outputTokens,
-            }, resolvePricing(model), {
-                speed: usage.speed === 'fast' ? 'fast' : undefined,
-            })
-        : 0)
 
     return {
         cacheCreationTokens,
         cacheReadTokens,
         cachedInputTokens: cacheCreationTokens + cacheReadTokens,
-        costUSD: resolvedCostUSD,
+        costUSD: costUSD ?? 0,
         inputTokens,
         outputTokens,
         reasoningOutputTokens: 0,

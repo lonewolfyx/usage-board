@@ -14,7 +14,7 @@ import type { IConfig } from '#shared/types/config'
 import type { ModelPricingResolver, UsageAggregateEvent } from '#shared/types/platform'
 import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
-import { calculateUsageCostUSD } from '#shared/platform/pricing'
+import { resolveUsageCostFromCandidates } from '#shared/platform/pricing'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { formatDuration, nowIsoString, useDateFormat } from '#shared/utils/date'
 import { normalizeTimestampValue } from '#shared/utils/normalize'
@@ -124,22 +124,11 @@ export async function buildIncrementalUsageIndex(
         const indexedFiles = hydratedCachedFiles.sort((a, b) => a.path.localeCompare(b.path))
 
         const aggregateStartedAt = Date.now()
-        const eventsByPlatformFromRepo = repository.queryInteractionEventsByPlatform()
-        const bootstrapByPlatform = Object.fromEntries(
-            PROJECT_USAGE_PLATFORMS.map((platform) => {
-                if (!updatedPlatforms.includes(platform) && options.cachedPlatformSessions?.[platform]) {
-                    return [platform, options.cachedPlatformSessions[platform]!]
-                }
-
-                return [platform, repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []]
-            }),
-        ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-        const eventsByPlatform = Object.fromEntries(
-            PROJECT_USAGE_PLATFORMS.map(platform => [
-                platform,
-                eventsByPlatformFromRepo.get(platform) ?? [],
-            ]),
-        ) as unknown as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
+        const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
+            cachedPlatformSessions: options.cachedPlatformSessions,
+            updatedPlatforms: PROJECT_USAGE_PLATFORMS,
+        })
+        const eventsByPlatform = buildEventsByPlatformFromFiles(indexedFiles)
         timing.aggregateMs = Date.now() - aggregateStartedAt
 
         return {
@@ -176,11 +165,12 @@ export async function buildIncrementalUsageIndex(
             pricingResolvers.set(platform, await usagePlatformAdapters[platform].createPricingResolver())
         }
         const parsedPlatformFiles = await Promise.all(platformFilesToParse.map(file => parseUsageFile(file, pricingResolvers)))
+        const resolvedPlatformFiles = await hydrateIndexedUsageSourceFiles(parsedPlatformFiles)
         const parseDurationMs = Date.now() - parseStartedAt
 
         timing.parseMs += parseDurationMs
 
-        for (const file of parsedPlatformFiles) {
+        for (const file of resolvedPlatformFiles) {
             parsedFiles.push(file)
             parsedByPath.set(file.path, file)
         }
@@ -188,7 +178,7 @@ export async function buildIncrementalUsageIndex(
         if (discoveredFilesForPlatform > 0) {
             activeReporter?.parsedPlatformFiles(platform, {
                 durationMs: parseDurationMs,
-                parsedFiles: parsedPlatformFiles.length,
+                parsedFiles: resolvedPlatformFiles.length,
             })
         }
 
@@ -219,7 +209,9 @@ export async function buildIncrementalUsageIndex(
             cacheRead: interaction.usage?.cacheReadTokens ?? 0,
             reasoningToken: interaction.usage?.reasoningOutputTokens ?? 0,
             totalToken: interaction.usage?.totalTokens ?? 0,
-            costUsd: interaction.usage?.costUSD ?? interaction.costUSD ?? 0,
+            provider: interaction.provider ?? null,
+            rawCostUsd: interaction.rawCostUSD ?? (interaction.costUSD > 0 ? interaction.costUSD : null),
+            speed: interaction.speed ?? null,
             isFallbackModel: interaction.usage?.isFallbackModel ?? false,
             toolTokens: interaction.usage?.toolTokens ?? 0,
             extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
@@ -229,32 +221,15 @@ export async function buildIncrementalUsageIndex(
             isSidechain: interaction.isSidechain ?? false,
         })))
 
-        const platformSessions = repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []
-        const platformEvents: UsageAggregateEvent[] = dedupedInteractions
-            .filter(({ interaction }) => interaction.usage && interaction.usage.totalTokens > 0 && interaction.timestamp)
-            .map(({ fragment, interaction }) => ({
-                cacheCreationTokens: interaction.usage!.cacheCreationTokens,
-                cachedInputTokens: interaction.usage!.cachedInputTokens,
-                costUSD: interaction.usage!.costUSD,
-                inputTokens: interaction.usage!.inputTokens,
-                isFallbackModel: interaction.usage!.isFallbackModel ?? false,
-                model: interaction.model || 'unknown',
-                outputTokens: interaction.usage!.outputTokens,
-                project: fragment.project,
-                reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
-                repository: fragment.repository,
-                sessionId: fragment.sessionId,
-                timestamp: interaction.timestamp!,
-                toolTokens: interaction.usage!.toolTokens,
-                totalTokens: interaction.usage!.totalTokens,
-            }))
+        const platformSessions = buildPlatformSessionsFromFiles(platformIndexedFiles, platform)
+        const platformEvents = buildPlatformEvents(platformIndexedFiles, platform)
 
         timing.aggregateMs += Date.now() - aggregateStartedAt
         updatedPlatformSessions[platform] = platformSessions
         updatedPlatformEvents[platform] = platformEvents
 
         if (discoveredFilesForPlatform > 0) {
-            const deltaStats = getPlatformDeltaStats(platform, parsedPlatformFiles, cachedFilesByPath)
+            const deltaStats = getPlatformDeltaStats(platform, resolvedPlatformFiles, cachedFilesByPath)
             activeReporter?.finishPlatform(platform, {
                 durationMs: Date.now() - parseStartedAt,
                 interactions: dedupedInteractions.length,
@@ -338,7 +313,9 @@ export async function buildIncrementalUsageIndex(
             cacheRead: interaction.usage?.cacheReadTokens ?? 0,
             reasoningToken: interaction.usage?.reasoningOutputTokens ?? 0,
             totalToken: interaction.usage?.totalTokens ?? 0,
-            costUsd: interaction.usage?.costUSD ?? interaction.costUSD ?? 0,
+            provider: interaction.provider ?? null,
+            rawCostUsd: interaction.rawCostUSD ?? (interaction.costUSD > 0 ? interaction.costUSD : null),
+            speed: interaction.speed ?? null,
             isFallbackModel: interaction.usage?.isFallbackModel ?? false,
             toolTokens: interaction.usage?.toolTokens ?? 0,
             extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
@@ -350,33 +327,12 @@ export async function buildIncrementalUsageIndex(
     }
 
     const aggregateStartedAt = Date.now()
-    const eventsByPlatformFromRepo = repository.queryInteractionEventsByPlatform()
-    const bootstrapByPlatform = Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map((platform) => {
-            const updated = updatedPlatformSessions[platform]
-
-            if (updated) {
-                return [platform, updated]
-            }
-
-            if (!updatedPlatforms.includes(platform) && options.cachedPlatformSessions?.[platform]) {
-                return [platform, options.cachedPlatformSessions[platform]!]
-            }
-
-            return [platform, repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []]
-        }),
-    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-    const eventsByPlatform = Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map((platform) => {
-            const updatedEvents = updatedPlatformEvents[platform]
-
-            if (updatedEvents) {
-                return [platform, updatedEvents]
-            }
-
-            return [platform, eventsByPlatformFromRepo.get(platform) ?? []]
-        }),
-    ) as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
+    const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
+        cachedPlatformSessions: options.cachedPlatformSessions,
+        updatedPlatformSessions,
+        updatedPlatforms,
+    })
+    const eventsByPlatform = buildEventsByPlatformFromFiles(indexedFiles, updatedPlatformEvents)
     timing.aggregateMs = Date.now() - aggregateStartedAt
     const currentProjectNames = new Set(
         Object.values(bootstrapByPlatform).flatMap(sessions => sessions.map(session => session.project)),
@@ -414,34 +370,46 @@ export async function hydrateIndexedUsageSourceFiles(files: IndexedUsageSourceFi
             ...file,
             payload: file.payload.map(fragment => ({
                 ...fragment,
-                interactions: fragment.interactions.map((interaction) => {
+                interactions: fragment.interactions.map((interaction): IndexedUsageInteraction => {
                     const usage = interaction.usage
 
                     if (!usage || !interaction.model) {
+                        const rawCostUSD = interaction.rawCostUSD ?? (interaction.costUSD > 0 ? interaction.costUSD : null)
+
                         return {
                             ...interaction,
-                            costUSD: 0,
-                            usage,
+                            costSource: rawCostUSD != null ? 'raw' : 'none',
+                            costUSD: rawCostUSD ?? 0,
+                            usage: usage
+                                ? {
+                                        ...usage,
+                                        costUSD: rawCostUSD ?? 0,
+                                    }
+                                : usage,
                         }
                     }
 
                     const cacheCreationTokens = usage.cacheCreationTokens ?? 0
                     const cacheReadTokens = usage.cacheReadTokens ?? Math.max(usage.cachedInputTokens - cacheCreationTokens, 0)
-                    const outputTokens = usage.outputTokens + usage.reasoningOutputTokens + (usage.extraTotalTokens ?? 0) + (usage.toolTokens ?? 0)
-                    const costUSD = calculateUsageCostUSD({
+                    const { costSource, costUSD } = resolveUsageCostFromCandidates({
                         cacheCreationTokens,
                         cachedInputTokens: cacheReadTokens,
                         inputTokens: usage.inputTokens,
-                        outputTokens,
-                    }, resolvePricing(interaction.model), {
+                        model: interaction.model,
+                        modelLookupCandidates: interaction.modelLookupCandidates,
+                        outputTokens: usage.outputTokens + usage.reasoningOutputTokens + (usage.extraTotalTokens ?? 0) + (usage.toolTokens ?? 0),
+                        rawCostUSD: interaction.rawCostUSD ?? (interaction.costUSD > 0 ? interaction.costUSD : null),
+                        speed: interaction.speed
+                            ?? (file.platform === 'codex'
+                                ? (file.cacheSignature === 'codex-speed:fast' ? 'fast' : 'standard')
+                                : (interaction.model.endsWith('-fast') ? 'fast' : undefined)),
+                    }, resolvePricing, {
                         defaultFastMultiplier: file.platform === 'codex' ? 2 : undefined,
-                        speed: file.platform === 'codex'
-                            ? (file.cacheSignature === 'codex-speed:fast' ? 'fast' : 'standard')
-                            : (interaction.model.endsWith('-fast') ? 'fast' : undefined),
                     })
 
                     return {
                         ...interaction,
+                        costSource,
                         costUSD,
                         usage: {
                             ...usage,
@@ -547,6 +515,27 @@ function parseUsageFile(
         size: file.size,
         updatedAt: nowIsoString(),
     }
+}
+
+function buildEventsByPlatformFromFiles(
+    indexedFiles: IndexedUsageSourceFile[],
+    updatedPlatformEvents: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> = {},
+) {
+    return Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map((platform) => {
+            const updated = updatedPlatformEvents[platform]
+
+            if (updated) {
+                return [platform, updated]
+            }
+
+            return [platform, buildPlatformEvents(indexedFiles, platform)]
+        }),
+    ) as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
+}
+
+export function buildPlatformEventsByPlatform(indexedFiles: IndexedUsageSourceFile[]) {
+    return buildEventsByPlatformFromFiles(indexedFiles)
 }
 
 export function buildPlatformSessionsByPlatform(
@@ -812,7 +801,7 @@ function shouldReplaceDedupedInteraction(candidate: IndexedUsageInteraction, exi
         return candidateIsFast
     }
 
-    return candidate.costUSD > existing.costUSD
+    return (candidate.rawCostUSD ?? candidate.costUSD) > (existing.rawCostUSD ?? existing.costUSD)
 }
 
 function isFastModel(model: string | null) {
@@ -930,4 +919,32 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         tokenTotal: detail.tokenTotal,
         week: hasValidStartedAtDate ? getWeekLabel(startedAt) : '',
     }
+}
+
+function buildPlatformEvents(
+    indexedFiles: IndexedUsageSourceFile[],
+    platform: ProjectUsagePlatform,
+): UsageAggregateEvent[] {
+    return selectDedupedInteractions(indexedFiles, platform)
+        .filter(({ interaction }) => interaction.usage && interaction.usage.totalTokens > 0 && interaction.timestamp)
+        .map(({ fragment, interaction }) => ({
+            cacheCreationTokens: interaction.usage!.cacheCreationTokens,
+            cachedInputTokens: interaction.usage!.cachedInputTokens,
+            costUSD: interaction.usage!.costUSD,
+            inputTokens: interaction.usage!.inputTokens,
+            isFallbackModel: interaction.usage!.isFallbackModel ?? false,
+            model: interaction.model || 'unknown',
+            modelLookupCandidates: interaction.modelLookupCandidates,
+            outputTokens: interaction.usage!.outputTokens,
+            project: fragment.project,
+            provider: interaction.provider ?? null,
+            rawCostUSD: interaction.rawCostUSD ?? null,
+            reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
+            repository: fragment.repository,
+            sessionId: fragment.sessionId,
+            speed: interaction.speed ?? null,
+            timestamp: interaction.timestamp!,
+            toolTokens: interaction.usage!.toolTokens,
+            totalTokens: interaction.usage!.totalTokens,
+        }))
 }

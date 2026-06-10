@@ -5,58 +5,35 @@ import type {
     LiteLLMPricingDataset,
     ModelPricing,
     ModelPricingResolver,
+    ResolvedCostSource,
     TokenCostUsage,
 } from '#shared/types/platform'
-import { uniqueItems } from '#shared/utils/usage-dashboard'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { roundCurrency, uniqueItems } from '#shared/utils/usage-dashboard'
 
-/** Multiplier used to convert per-token prices into per-million-token prices. */
 const MILLION = 1_000_000
-
-/** Default in-memory cache duration for LiteLLM pricing data, in milliseconds. */
-const DEFAULT_PRICING_CACHE_TTL_MS = 1000 * 60 * 5
 const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 1500
-
-/** Official LiteLLM model pricing URL; local fallback prices are used when the request fails. */
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
-
-/** Secondary pricing source used to fill models that LiteLLM does not currently expose. */
 const DEFAULT_MODELS_DEV_PRICING_URL = 'https://models.dev/api.json'
+const LITELLM_PRICING_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/litellm-pricing.json', import.meta.url))
+const MODELS_DEV_PRICING_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/models-dev-pricing.json', import.meta.url))
+const FAST_MULTIPLIER_OVERRIDES_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/fast-multiplier-overrides.json', import.meta.url))
+const MODEL_DATE_SUFFIX_DIGITS = 8
 
-interface PricingCacheEntry {
-    fetchedAt: number
-    promise?: Promise<LiteLLMPricingDataset>
-    value?: LiteLLMPricingDataset
-}
-
-interface ModelsDevModelCost {
-    cache_read?: number
-    cache_write?: number
-    input?: number
-    output?: number
-}
-
-interface ModelsDevModelRecord {
-    cost?: ModelsDevModelCost
-    id?: string
-}
-
-interface ModelsDevProviderRecord {
-    models?: Record<string, ModelsDevModelRecord>
-}
-
-const FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
+const DEFAULT_FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
     'gpt-5.3-codex': 2,
     'gpt-5.4': 2,
     'gpt-5.5': 2.5,
 }
 
-const FAST_MULTIPLIER_PREFIX_OVERRIDES: Record<string, number> = {
+const DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES: Record<string, number> = {
     'claude-opus-4-6': 6,
     'claude-opus-4-7': 6,
     'claude-opus-4-8': 2,
 }
 
-/** Built-in fallback prices so common models can still be estimated offline or when remote data is missing. */
 const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5': {
         cachedInputCostPerMTokens: 0.125,
@@ -79,7 +56,7 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'gpt-5.5': {
         cachedInputCostPerMTokens: 0.5,
         cacheCreationInputCostPerMTokens: 5,
-        fastMultiplier: FAST_MULTIPLIER_EXACT_OVERRIDES['gpt-5.5'],
+        fastMultiplier: DEFAULT_FAST_MULTIPLIER_EXACT_OVERRIDES['gpt-5.5'],
         inputCostPerMTokens: 5,
         outputCostPerMTokens: 30,
     },
@@ -102,21 +79,21 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     'claude-opus-4-6': {
         cachedInputCostPerMTokens: 0.5,
         cacheCreationInputCostPerMTokens: 6.25,
-        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-6'],
+        fastMultiplier: DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-6'],
         inputCostPerMTokens: 5,
         outputCostPerMTokens: 25,
     },
     'claude-opus-4-7': {
         cachedInputCostPerMTokens: 0.5,
         cacheCreationInputCostPerMTokens: 6.25,
-        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-7'],
+        fastMultiplier: DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-7'],
         inputCostPerMTokens: 5,
         outputCostPerMTokens: 25,
     },
     'claude-opus-4-8': {
         cachedInputCostPerMTokens: 0.5,
         cacheCreationInputCostPerMTokens: 6.25,
-        fastMultiplier: FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-8'],
+        fastMultiplier: DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES['claude-opus-4-8'],
         inputCostPerMTokens: 5,
         outputCostPerMTokens: 25,
     },
@@ -132,169 +109,44 @@ const DEFAULT_FALLBACK_PRICING_TABLE: Record<string, ModelPricing> = {
     },
 }
 
-/** Caches the fetched dataset and in-flight request to avoid duplicate network calls. */
-let pricingCache: PricingCacheEntry | undefined
-let modelsDevPricingCache: PricingCacheEntry | undefined
+interface ModelsDevModelCost {
+    cache_read?: number
+    cache_write?: number
+    input?: number
+    output?: number
+}
+
+interface ModelsDevModelRecord {
+    cost?: ModelsDevModelCost
+    id?: string
+}
+
+interface ModelsDevProviderRecord {
+    models?: Record<string, ModelsDevModelRecord>
+}
+
+interface FastMultiplierOverridesSnapshot {
+    exact?: Record<string, number>
+    normalized_prefix?: Record<string, number>
+}
+
+interface PricingSnapshotState {
+    liteLLM: LiteLLMPricingDataset
+    modelsDev: LiteLLMPricingDataset
+    fastMultiplierOverrides: {
+        exact: Record<string, number>
+        normalizedPrefix: Record<string, number>
+    }
+}
+
+let pricingSnapshotPromise: Promise<PricingSnapshotState> | null = null
 
 export function resetRemotePricingCache() {
-    pricingCache = undefined
-    modelsDevPricingCache = undefined
+    pricingSnapshotPromise = null
 }
 
-/**
- * Fetches the LiteLLM model pricing dataset and falls back to the built-in dataset on failure.
- *
- * @example
- * ```ts
- * const dataset = await fetchLiteLLMPricingDataset()
- * console.log(dataset['gpt-5']?.input_cost_per_token)
- * ```
- */
-async function fetchLiteLLMPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
-    const now = Date.now()
-    const cacheEntry = pricingCache
-
-    if (!options.forceRefresh && cacheEntry?.value && now - cacheEntry.fetchedAt < DEFAULT_PRICING_CACHE_TTL_MS) {
-        return cacheEntry.value
-    }
-
-    if (!options.forceRefresh && cacheEntry?.promise) {
-        return cacheEntry.promise
-    }
-
-    const fetcher = options.fetcher ?? globalThis.fetch
-
-    if (typeof fetcher !== 'function') {
-        return createFallbackLiteLLMPricingDataset()
-    }
-
-    const promise = fetchPricingDatasetResponse(fetcher, DEFAULT_LITELLM_PRICING_URL)
-        .then(async (response) => {
-            if (!response.ok) {
-                throw new Error(`Failed to fetch LiteLLM pricing dataset: ${response.status} ${response.statusText}`)
-            }
-
-            const data = await response.json()
-
-            if (!isLiteLLMPricingDataset(data)) {
-                throw new Error('Invalid LiteLLM pricing dataset payload.')
-            }
-
-            const dataset = {
-                ...createFallbackLiteLLMPricingDataset(),
-                ...data,
-            }
-
-            pricingCache = {
-                fetchedAt: Date.now(),
-                value: dataset,
-            }
-
-            return dataset
-        })
-        .catch(() => {
-            const fallback = createFallbackLiteLLMPricingDataset()
-            pricingCache = {
-                fetchedAt: Date.now(),
-                value: fallback,
-            }
-
-            return fallback
-        })
-
-    pricingCache = {
-        fetchedAt: cacheEntry?.fetchedAt ?? 0,
-        promise,
-        value: cacheEntry?.value,
-    }
-
-    return promise
-}
-
-async function fetchModelsDevPricingDataset(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<LiteLLMPricingDataset> {
-    const now = Date.now()
-    const cacheEntry = modelsDevPricingCache
-
-    if (!options.forceRefresh && cacheEntry?.value && now - cacheEntry.fetchedAt < DEFAULT_PRICING_CACHE_TTL_MS) {
-        return cacheEntry.value
-    }
-
-    if (!options.forceRefresh && cacheEntry?.promise) {
-        return cacheEntry.promise
-    }
-
-    const fetcher = options.fetcher ?? globalThis.fetch
-
-    if (typeof fetcher !== 'function') {
-        return {}
-    }
-
-    const promise = fetchPricingDatasetResponse(fetcher, DEFAULT_MODELS_DEV_PRICING_URL)
-        .then(async (response) => {
-            if (!response.ok) {
-                throw new Error(`Failed to fetch models.dev pricing dataset: ${response.status} ${response.statusText}`)
-            }
-
-            const data = await response.json()
-            const dataset = createModelsDevPricingDataset(data)
-
-            modelsDevPricingCache = {
-                fetchedAt: Date.now(),
-                value: dataset,
-            }
-
-            return dataset
-        })
-        .catch(() => {
-            const fallback = cacheEntry?.value ?? {}
-            modelsDevPricingCache = {
-                fetchedAt: Date.now(),
-                value: fallback,
-            }
-
-            return fallback
-        })
-
-    modelsDevPricingCache = {
-        fetchedAt: cacheEntry?.fetchedAt ?? 0,
-        promise,
-        value: cacheEntry?.value,
-    }
-
-    return promise
-}
-
-function fetchPricingDatasetResponse(fetcher: typeof fetch, url: string) {
-    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
-        return fetcher(url, {
-            signal: AbortSignal.timeout(DEFAULT_PRICING_FETCH_TIMEOUT_MS),
-        })
-    }
-
-    return fetcher(url)
-}
-
-/**
- * Creates a model pricing resolver with support for aliases, platform-specific lookup candidates, fallback models, and zero-cost models.
- *
- * @example
- * ```ts
- * const resolvePricing = await createLiteLLMPricingResolver({
- *     aliases: { 'gpt-5-codex': 'gpt-5' },
- *     fallbackModel: 'gpt-5',
- * })
- * const pricing = resolvePricing('gpt-5-codex')
- * ```
- */
 export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricingResolverOptions = {}): Promise<ModelPricingResolver> {
-    const [liteLLMDataset, modelsDevDataset] = await Promise.all([
-        fetchLiteLLMPricingDataset(options),
-        fetchModelsDevPricingDataset(options),
-    ])
-    const dataset = {
-        ...modelsDevDataset,
-        ...liteLLMDataset,
-    }
+    const datasets = await loadPricingSnapshots(options)
     const aliases = options.aliases ?? {}
     const fallbackPricingTable = {
         ...DEFAULT_FALLBACK_PRICING_TABLE,
@@ -310,13 +162,13 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
         }
 
         const lookupCandidates = uniqueItems(expandLookupCandidates(model, aliases, getLookupCandidates).filter(Boolean))
-        const datasetPricing = resolveDatasetPricing(dataset, lookupCandidates)
+        const snapshotPricing = resolveSnapshotPricing(datasets, lookupCandidates, datasets.fastMultiplierOverrides)
 
-        if (datasetPricing) {
-            return datasetPricing
+        if (snapshotPricing) {
+            return snapshotPricing
         }
 
-        const fallbackPricing = resolveFallbackPricing(fallbackPricingTable, lookupCandidates)
+        const fallbackPricing = resolveFallbackPricing(fallbackPricingTable, lookupCandidates, datasets.fastMultiplierOverrides)
 
         if (fallbackPricing) {
             return fallbackPricing
@@ -325,8 +177,8 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
         if (fallbackModel) {
             const fallbackCandidates = uniqueItems(expandLookupCandidates(fallbackModel, aliases, getLookupCandidates).filter(Boolean))
 
-            return resolveDatasetPricing(dataset, fallbackCandidates)
-                ?? resolveFallbackPricing(fallbackPricingTable, fallbackCandidates)
+            return resolveSnapshotPricing(datasets, fallbackCandidates, datasets.fastMultiplierOverrides)
+                ?? resolveFallbackPricing(fallbackPricingTable, fallbackCandidates, datasets.fastMultiplierOverrides)
                 ?? createZeroPricing()
         }
 
@@ -334,69 +186,312 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
     }
 }
 
-/**
- * Calculates USD cost from token usage and model pricing.
- *
- * @example
- * ```ts
- * const costUSD = calculateUsageCostUSD({
- *     cachedInputTokens: 100,
- *     inputTokens: 1_000,
- *     outputTokens: 500,
- * }, pricing)
- * ```
- */
-export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPricing, options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {}): number {
+export function calculateUsageCostUSD(
+    usage: TokenCostUsage,
+    pricing: ModelPricing,
+    options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {},
+) {
     const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? options.defaultFastMultiplier ?? 1) : 1
     const inputCost = calculateTieredCost(usage.inputTokens, pricing.inputCostPerMTokens, pricing.inputCostPerMTokensAbove200K)
     const cachedCost = calculateTieredCost(usage.cachedInputTokens, pricing.cachedInputCostPerMTokens, pricing.cachedInputCostPerMTokensAbove200K)
     const cacheCreationCost = calculateTieredCost(usage.cacheCreationTokens ?? 0, pricing.cacheCreationInputCostPerMTokens, pricing.cacheCreationInputCostPerMTokensAbove200K)
     const outputCost = calculateTieredCost(usage.outputTokens, pricing.outputCostPerMTokens, pricing.outputCostPerMTokensAbove200K)
 
-    return (inputCost + cachedCost + cacheCreationCost + outputCost) * multiplier
+    return roundCurrency((inputCost + cachedCost + cacheCreationCost + outputCost) * multiplier)
 }
 
-/**
- * Computes real-time USD cost for a usage event using a pricing resolver.
- *
- * @example
- * ```ts
- * const cost = eventCostUSD(event, resolvePricing)
- * ```
- */
 export function eventCostUSD(
     event: {
         cacheCreationTokens?: number
         cachedInputTokens: number
         inputTokens: number
-        outputTokens: number
-        reasoningOutputTokens: number
         model: string
+        modelLookupCandidates?: string[] | null
+        outputTokens: number
+        rawCostUSD?: number | null
+        reasoningOutputTokens: number
+        speed?: 'fast' | 'standard' | null
         toolTokens?: number
     },
     resolvePricing: ModelPricingResolver,
-    options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {},
-): number {
-    const cacheCreationTokens = event.cacheCreationTokens ?? 0
-    const cacheReadTokens = Math.max(event.cachedInputTokens - cacheCreationTokens, 0)
-    const outputTokens = event.outputTokens + event.reasoningOutputTokens + (event.toolTokens ?? 0)
-
-    return calculateUsageCostUSD({
-        cacheCreationTokens,
-        cachedInputTokens: cacheReadTokens,
+    options: { defaultFastMultiplier?: number } = {},
+) {
+    return resolveUsageCostFromCandidates({
+        cacheCreationTokens: event.cacheCreationTokens ?? 0,
+        cachedInputTokens: event.cachedInputTokens,
         inputTokens: event.inputTokens,
-        outputTokens,
-    }, resolvePricing(event.model), options)
+        model: event.model,
+        modelLookupCandidates: event.modelLookupCandidates ?? undefined,
+        outputTokens: event.outputTokens + event.reasoningOutputTokens + (event.toolTokens ?? 0),
+        rawCostUSD: event.rawCostUSD ?? null,
+        speed: event.speed ?? undefined,
+    }, resolvePricing, options).costUSD
 }
 
-/**
- * Builds the minimal LiteLLM pricing dataset used as a local fallback.
- *
- * @example
- * ```ts
- * const fallbackDataset = createFallbackLiteLLMPricingDataset()
- * ```
- */
+export function resolveUsageCostFromCandidates(
+    input: {
+        cacheCreationTokens?: number
+        cachedInputTokens: number
+        inputTokens: number
+        model: string | null
+        modelLookupCandidates?: string[]
+        outputTokens: number
+        rawCostUSD?: number | null
+        speed?: 'fast' | 'standard'
+    },
+    resolvePricing: ModelPricingResolver,
+    options: { defaultFastMultiplier?: number } = {},
+): { costSource: ResolvedCostSource, costUSD: number } {
+    if (input.rawCostUSD != null && Number.isFinite(input.rawCostUSD)) {
+        return {
+            costSource: 'raw',
+            costUSD: roundCurrency(input.rawCostUSD),
+        }
+    }
+
+    const candidates = uniqueItems(
+        [
+            ...(input.modelLookupCandidates ?? []),
+            input.model ?? '',
+        ].map(candidate => candidate.trim()).filter(Boolean),
+    )
+
+    if (!input.model || candidates.length === 0) {
+        return {
+            costSource: 'none',
+            costUSD: 0,
+        }
+    }
+
+    for (const candidate of candidates) {
+        const costUSD = calculateUsageCostUSD({
+            cacheCreationTokens: input.cacheCreationTokens ?? 0,
+            cachedInputTokens: input.cachedInputTokens,
+            inputTokens: input.inputTokens,
+            outputTokens: input.outputTokens,
+        }, resolvePricing(candidate), {
+            defaultFastMultiplier: options.defaultFastMultiplier,
+            speed: input.speed,
+        })
+
+        if (costUSD > 0) {
+            return {
+                costSource: 'calculated',
+                costUSD,
+            }
+        }
+    }
+
+    return {
+        costSource: 'none',
+        costUSD: 0,
+    }
+}
+
+async function loadPricingSnapshots(options: FetchLiteLLMPricingDatasetOptions = {}) {
+    if (!options.forceRefresh && pricingSnapshotPromise) {
+        return pricingSnapshotPromise
+    }
+
+    pricingSnapshotPromise = (async () => {
+        const liteLLMLocal = await readPricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, createFallbackLiteLLMPricingDataset())
+        const modelsDevLocal = await readObjectSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, {})
+        const fastMultiplierOverrides = await readFastMultiplierOverridesSnapshot()
+        const fetcher = options.fetcher ?? globalThis.fetch
+
+        if (typeof fetcher !== 'function') {
+            return {
+                liteLLM: liteLLMLocal,
+                modelsDev: createModelsDevPricingDataset(modelsDevLocal),
+                fastMultiplierOverrides,
+            }
+        }
+
+        const [liteLLMRemote, modelsDevRemote] = await Promise.all([
+            fetchLiteLLMPricingDataset(fetcher),
+            fetchModelsDevPricingSnapshot(fetcher),
+        ])
+        const liteLLM = mergeMissingPricing(liteLLMLocal, liteLLMRemote)
+        const modelsDev = mergeMissingModelsDevSnapshots(modelsDevLocal, modelsDevRemote)
+
+        await Promise.all([
+            liteLLM.changed ? writePricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, liteLLM.dataset) : Promise.resolve(),
+            modelsDev.changed ? writePricingSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, modelsDev.dataset) : Promise.resolve(),
+        ])
+
+        return {
+            liteLLM: liteLLM.dataset,
+            modelsDev: createModelsDevPricingDataset(modelsDev.dataset),
+            fastMultiplierOverrides,
+        }
+    })()
+
+    return pricingSnapshotPromise
+}
+
+async function readPricingSnapshot(path: string, fallback: LiteLLMPricingDataset) {
+    try {
+        const content = await readFile(path, 'utf8')
+        const parsed = JSON.parse(content)
+
+        if (isLiteLLMPricingDataset(parsed)) {
+            return parsed
+        }
+    }
+    catch {
+    }
+
+    return fallback
+}
+
+async function readObjectSnapshot(path: string, fallback: Record<string, unknown>) {
+    try {
+        const content = await readFile(path, 'utf8')
+        const parsed = JSON.parse(content)
+
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+            return parsed as Record<string, unknown>
+        }
+    }
+    catch {
+    }
+
+    return fallback
+}
+
+async function readFastMultiplierOverridesSnapshot() {
+    const snapshot = await readObjectSnapshot(FAST_MULTIPLIER_OVERRIDES_SNAPSHOT_PATH, {
+        exact: DEFAULT_FAST_MULTIPLIER_EXACT_OVERRIDES,
+        normalized_prefix: DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES,
+    })
+
+    const value = snapshot as FastMultiplierOverridesSnapshot
+
+    return {
+        exact: value.exact ?? DEFAULT_FAST_MULTIPLIER_EXACT_OVERRIDES,
+        normalizedPrefix: value.normalized_prefix ?? DEFAULT_FAST_MULTIPLIER_PREFIX_OVERRIDES,
+    }
+}
+
+async function writePricingSnapshot(path: string, dataset: Record<string, unknown>) {
+    await mkdir(dirname(path), {
+        recursive: true,
+    })
+    await writeFile(path, `${JSON.stringify(dataset, null, 2)}\n`, 'utf8')
+}
+
+async function fetchLiteLLMPricingDataset(fetcher: typeof fetch): Promise<LiteLLMPricingDataset> {
+    try {
+        const response = await fetchPricingDatasetResponse(fetcher, DEFAULT_LITELLM_PRICING_URL)
+
+        if (!response.ok) {
+            return {}
+        }
+
+        const data = await response.json()
+        return isLiteLLMPricingDataset(data) ? data : {}
+    }
+    catch {
+        return {}
+    }
+}
+
+async function fetchModelsDevPricingSnapshot(fetcher: typeof fetch): Promise<Record<string, unknown>> {
+    try {
+        const response = await fetchPricingDatasetResponse(fetcher, DEFAULT_MODELS_DEV_PRICING_URL)
+
+        if (!response.ok) {
+            return {}
+        }
+
+        const data = await response.json()
+        return data && typeof data === 'object' && !Array.isArray(data)
+            ? data as Record<string, unknown>
+            : {}
+    }
+    catch {
+        return {}
+    }
+}
+
+function fetchPricingDatasetResponse(fetcher: typeof fetch, url: string) {
+    if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+        return fetcher(url, {
+            signal: AbortSignal.timeout(DEFAULT_PRICING_FETCH_TIMEOUT_MS),
+        })
+    }
+
+    return fetcher(url)
+}
+
+function mergeMissingPricing(localDataset: LiteLLMPricingDataset, remoteDataset: LiteLLMPricingDataset) {
+    const nextDataset: LiteLLMPricingDataset = { ...localDataset }
+    let changed = false
+
+    for (const [model, pricing] of Object.entries(remoteDataset)) {
+        if (nextDataset[model] || !hasNonZeroTokenPricing(pricing)) {
+            continue
+        }
+
+        nextDataset[model] = pricing
+        changed = true
+    }
+
+    return {
+        changed,
+        dataset: nextDataset,
+    }
+}
+
+function mergeMissingModelsDevSnapshots(localSnapshot: Record<string, unknown>, remoteSnapshot: Record<string, unknown>) {
+    const nextSnapshot: Record<string, unknown> = { ...localSnapshot }
+    let changed = false
+
+    for (const [providerName, providerValue] of Object.entries(remoteSnapshot)) {
+        const remoteProvider = providerValue as ModelsDevProviderRecord
+        const remoteModels = remoteProvider?.models
+
+        if (!remoteModels || typeof remoteModels !== 'object') {
+            continue
+        }
+
+        const localProvider = nextSnapshot[providerName]
+        const localProviderRecord = localProvider && typeof localProvider === 'object' && !Array.isArray(localProvider)
+            ? localProvider as ModelsDevProviderRecord
+            : { models: {} }
+        const localModels = localProviderRecord.models && typeof localProviderRecord.models === 'object'
+            ? { ...localProviderRecord.models }
+            : {}
+        let providerChanged = false
+
+        for (const [modelName, modelRecord] of Object.entries(remoteModels)) {
+            if (localModels[modelName]) {
+                continue
+            }
+
+            localModels[modelName] = modelRecord
+            providerChanged = true
+            changed = true
+        }
+
+        if (providerChanged) {
+            nextSnapshot[providerName] = {
+                ...(localProviderRecord as Record<string, unknown>),
+                models: localModels,
+            }
+        }
+        else if (!(providerName in nextSnapshot)) {
+            nextSnapshot[providerName] = providerValue
+            changed = true
+        }
+    }
+
+    return {
+        changed,
+        dataset: nextSnapshot,
+    }
+}
+
 function createFallbackLiteLLMPricingDataset(): LiteLLMPricingDataset {
     return {
         'gpt-5': {
@@ -523,32 +618,10 @@ function createModelsDevPricingDataset(value: unknown): LiteLLMPricingDataset {
     return dataset
 }
 
-/**
- * Checks whether an unknown payload can be treated as a LiteLLM pricing dataset.
- *
- * @example
- * ```ts
- * if (isLiteLLMPricingDataset(payload)) {
- *     console.log(Object.keys(payload))
- * }
- * ```
- */
 function isLiteLLMPricingDataset(value: unknown): value is LiteLLMPricingDataset {
-    if (!value || typeof value !== 'object' || Array.isArray(value)) {
-        return false
-    }
-
-    return true
+    return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 }
 
-/**
- * Generates model lookup candidates for common OpenAI, Azure, and OpenRouter prefixes.
- *
- * @example
- * ```ts
- * const candidates = defaultLookupCandidates('openai/gpt-5')
- * ```
- */
 function defaultLookupCandidates(model: string) {
     const normalizedModel = model.trim()
 
@@ -556,18 +629,19 @@ function defaultLookupCandidates(model: string) {
         normalizedModel,
         normalizedModel.replace(/^openai\//u, ''),
         normalizedModel.replace(/^azure\//u, ''),
+        normalizedModel.replace(/^anthropic\//u, ''),
+        normalizedModel.replace(/^google\//u, ''),
+        normalizedModel.replace(/^vertex_ai\//u, ''),
+        normalizedModel.replace(/^moonshot\//u, ''),
+        normalizedModel.replace(/^qwen\//u, ''),
+        normalizedModel.replace(/^alibaba\//u, ''),
+        normalizedModel.replace(/^openrouter\//u, ''),
         normalizedModel.replace(/^openrouter\/openai\//u, ''),
+        normalizedModel.replace(/^openrouter\/anthropic\//u, ''),
+        normalizedModel.replace(/^openrouter\/google\//u, ''),
     ]
 }
 
-/**
- * Expands platform lookup candidates and explicit aliases into a full lookup list.
- *
- * @example
- * ```ts
- * expandLookupCandidates('gpt-5-codex', { 'gpt-5-codex': 'gpt-5' }, defaultLookupCandidates)
- * ```
- */
 function expandLookupCandidates(
     model: string,
     aliases: Record<string, string>,
@@ -587,15 +661,20 @@ function expandLookupCandidates(
     return expanded
 }
 
-/**
- * Resolves billable pricing from a LiteLLM dataset using candidate model names.
- *
- * @example
- * ```ts
- * const pricing = resolveDatasetPricing(dataset, ['gpt-5-codex', 'gpt-5'])
- * ```
- */
-function resolveDatasetPricing(dataset: LiteLLMPricingDataset, candidates: string[]) {
+function resolveSnapshotPricing(
+    datasets: PricingSnapshotState,
+    candidates: string[],
+    fastMultiplierOverrides: PricingSnapshotState['fastMultiplierOverrides'],
+) {
+    return resolveDatasetPricing(datasets.liteLLM, candidates, fastMultiplierOverrides)
+        ?? resolveDatasetPricing(datasets.modelsDev, candidates, fastMultiplierOverrides)
+}
+
+function resolveDatasetPricing(
+    dataset: LiteLLMPricingDataset,
+    candidates: string[],
+    fastMultiplierOverrides: PricingSnapshotState['fastMultiplierOverrides'],
+) {
     for (const candidate of candidates) {
         const pricing = dataset[candidate]
 
@@ -603,26 +682,26 @@ function resolveDatasetPricing(dataset: LiteLLMPricingDataset, candidates: strin
             continue
         }
 
-        return toModelPricing(pricing, candidates)
+        return toModelPricing(pricing, candidates, fastMultiplierOverrides)
     }
 
-    return null
+    const bestMatch = Object.entries(dataset)
+        .filter(([model]) => candidates.some(candidate => pricingKeyMatches(model, candidate)))
+        .sort(([left], [right]) => right.length - left.length || left.localeCompare(right))[0]
+
+    return bestMatch ? toModelPricing(bestMatch[1], candidates, fastMultiplierOverrides) : null
 }
 
-/**
- * Resolves pricing from the local fallback table using candidate model names.
- *
- * @example
- * ```ts
- * const pricing = resolveFallbackPricing(DEFAULT_FALLBACK_PRICING_TABLE, ['claude-sonnet-4-5'])
- * ```
- */
-function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricing>, candidates: string[]) {
+function resolveFallbackPricing(
+    fallbackPricingTable: Record<string, ModelPricing>,
+    candidates: string[],
+    fastMultiplierOverrides: PricingSnapshotState['fastMultiplierOverrides'],
+) {
     for (const candidate of candidates) {
         const pricing = fallbackPricingTable[candidate]
 
         if (pricing) {
-            const fastMultiplier = pricing.fastMultiplier ?? resolveFastMultiplierOverride(candidates)
+            const fastMultiplier = pricing.fastMultiplier ?? resolveFastMultiplierOverride(fastMultiplierOverrides, candidates)
 
             return fastMultiplier == null
                 ? pricing
@@ -633,15 +712,6 @@ function resolveFallbackPricing(fallbackPricingTable: Record<string, ModelPricin
     return null
 }
 
-/**
- * Checks whether a LiteLLM pricing entry contains at least one non-zero token price.
- *
- * @example
- * ```ts
- * hasNonZeroTokenPricing({ input_cost_per_token: 1e-6 })
- * // true
- * ```
- */
 function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
     return (pricing.input_cost_per_token ?? 0) > 0
         || (pricing.output_cost_per_token ?? 0) > 0
@@ -649,15 +719,11 @@ function hasNonZeroTokenPricing(pricing: LiteLLMModelPricing) {
         || (pricing.cache_read_input_token_cost ?? 0) > 0
 }
 
-/**
- * Converts LiteLLM per-token price fields into the app's per-million-token pricing shape.
- *
- * @example
- * ```ts
- * const pricing = toModelPricing({ input_cost_per_token: 1e-6, output_cost_per_token: 2e-6 })
- * ```
- */
-function toModelPricing(pricing: LiteLLMModelPricing, candidates: string[]): ModelPricing {
+function toModelPricing(
+    pricing: LiteLLMModelPricing,
+    candidates: string[],
+    fastMultiplierOverrides: PricingSnapshotState['fastMultiplierOverrides'],
+): ModelPricing {
     const inputCostPerToken = pricing.input_cost_per_token ?? 0
     const cachedInputCostPerToken = pricing.cache_read_input_token_cost ?? inputCostPerToken
     const cacheCreationInputCostPerToken = pricing.cache_creation_input_token_cost ?? inputCostPerToken
@@ -672,7 +738,7 @@ function toModelPricing(pricing: LiteLLMModelPricing, candidates: string[]): Mod
         cacheCreationInputCostPerMTokensAbove200K: pricing.cache_creation_input_token_cost_above_200k_tokens != null
             ? pricing.cache_creation_input_token_cost_above_200k_tokens * MILLION
             : undefined,
-        fastMultiplier: pricing.provider_specific_entry?.fast ?? resolveFastMultiplierOverride(candidates),
+        fastMultiplier: pricing.provider_specific_entry?.fast ?? resolveFastMultiplierOverride(fastMultiplierOverrides, candidates),
         inputCostPerMTokens: inputCostPerToken * MILLION,
         inputCostPerMTokensAbove200K: pricing.input_cost_per_token_above_200k_tokens != null
             ? pricing.input_cost_per_token_above_200k_tokens * MILLION
@@ -684,9 +750,15 @@ function toModelPricing(pricing: LiteLLMModelPricing, candidates: string[]): Mod
     }
 }
 
-function resolveFastMultiplierOverride(candidates: string[]): number | undefined {
+function resolveFastMultiplierOverride(
+    snapshot: {
+        exact: Record<string, number>
+        normalizedPrefix: Record<string, number>
+    },
+    candidates: string[],
+) {
     for (const candidate of candidates) {
-        const multiplier = FAST_MULTIPLIER_EXACT_OVERRIDES[candidate]
+        const multiplier = snapshot.exact[candidate]
 
         if (multiplier != null) {
             return multiplier
@@ -697,7 +769,7 @@ function resolveFastMultiplierOverride(candidates: string[]): number | undefined
         const normalized = candidate.replace(/[.@]/gu, '-')
 
         for (const part of normalized.split(/[/:]/u)) {
-            for (const [base, multiplier] of Object.entries(FAST_MULTIPLIER_PREFIX_OVERRIDES)) {
+            for (const [base, multiplier] of Object.entries(snapshot.normalizedPrefix)) {
                 if (matchesModelSuffix(part, base)) {
                     return multiplier
                 }
@@ -720,14 +792,73 @@ function matchesModelSuffix(part: string, base: string) {
     return suffix === base || suffix[base.length] === '-'
 }
 
-/**
- * Creates a pricing shape where every price is zero for free or unpriced models.
- *
- * @example
- * ```ts
- * const freePricing = createZeroPricing()
- * ```
- */
+function pricingKeyMatches(candidate: string, model: string) {
+    const normalizedModel = normalizedPricingKey(model)
+    return containsPricingKey(model, candidate)
+        || containsPricingKey(candidate, model)
+        || containsPricingKey(normalizedModel, normalizedPricingKey(candidate))
+        || containsPricingKey(normalizedPricingKey(candidate), normalizedModel)
+}
+
+function containsPricingKey(value: string, key: string) {
+    let index = value.indexOf(key)
+
+    while (index >= 0) {
+        const before = index > 0 ? value.charCodeAt(index - 1) : null
+        const suffix = value.slice(index + key.length)
+
+        if ((before == null || isPricingKeyBoundary(before))
+            && suffixAllowsPricingKeyMatch(key, suffix)) {
+            return true
+        }
+
+        index = value.indexOf(key, index + 1)
+    }
+
+    return false
+}
+
+function isPricingKeyBoundary(charCode: number) {
+    const char = String.fromCharCode(charCode)
+    return !/[a-zA-Z0-9]/u.test(char)
+}
+
+function suffixAllowsPricingKeyMatch(key: string, suffix: string) {
+    if (suffix.length === 0) {
+        return true
+    }
+
+    const separator = suffix.charCodeAt(0)
+
+    if (!isPricingKeyBoundary(separator)) {
+        return false
+    }
+
+    return !suffixStartsWithNumericModelVersion(key, suffix)
+}
+
+function suffixStartsWithNumericModelVersion(key: string, suffix: string) {
+    if (!/\d$/u.test(key) || !/^[.-]/u.test(suffix)) {
+        return false
+    }
+
+    const rest = suffix.slice(1)
+    const match = /^\d+/u.exec(rest)
+
+    if (!match) {
+        return false
+    }
+
+    const digitLength = match[0].length
+    const afterDigits = rest[digitLength] ?? null
+
+    return !(digitLength === MODEL_DATE_SUFFIX_DIGITS && (afterDigits == null || !/[a-zA-Z0-9]/u.test(afterDigits)))
+}
+
+function normalizedPricingKey(value: string) {
+    return value.replace(/[.@]/gu, '-')
+}
+
 function createZeroPricing(): ModelPricing {
     return {
         cachedInputCostPerMTokens: 0,
@@ -737,15 +868,6 @@ function createZeroPricing(): ModelPricing {
     }
 }
 
-/**
- * Calculates token cost with optional tiered pricing above the 200K-token threshold.
- *
- * @example
- * ```ts
- * calculateTieredCost(250_000, 1, 2)
- * // 0.3
- * ```
- */
 function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: number, above200KCostPerMTokens?: number) {
     const safeTokens = Math.max(tokens ?? 0, 0)
 

@@ -1,14 +1,20 @@
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ResolvedCostSource } from '#shared/types/platform'
 import type { ProjectInteractionRole, ProjectInteractionUsage, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 
 export interface IndexedUsageInteraction {
+    costSource?: ResolvedCostSource
     costUSD: number
     dedupeKey?: string | null
     fallbackDedupeKey?: string | null
     index: number
     isSidechain?: boolean
     model: string | null
+    modelLookupCandidates?: string[]
+    provider?: string | null
+    rawCostUSD?: number | null
     role: ProjectInteractionRole
+    speed?: 'fast' | 'standard' | null
     timestamp: string | null
     type: string
     usage: ProjectInteractionUsage | null

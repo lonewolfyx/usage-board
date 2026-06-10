@@ -88,6 +88,8 @@ export const qwenUsageAdapter = {
                 ].join(':'),
                 index,
                 model,
+                modelLookupCandidates: [model, `qwen/${model}`, `alibaba/${model}`],
+                rawCostUSD: null,
                 role: 'assistant',
                 timestamp,
                 type: 'assistant',

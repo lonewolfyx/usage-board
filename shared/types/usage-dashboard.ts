@@ -1,4 +1,5 @@
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ResolvedCostSource } from '#shared/types/platform'
 
 export interface ModelTokenUsage {
     costUSD: number
@@ -142,11 +143,15 @@ export type ProjectInteractionRole = 'assistant' | 'system' | 'tool' | 'unknown'
 
 export interface ProjectSessionInteractionItem {
     content: string
+    costSource?: ResolvedCostSource
     costUSD: number
     index: number
     model: string | null
+    provider?: string | null
     raw: unknown
+    rawCostUSD?: number | null
     role: ProjectInteractionRole
+    speed?: 'fast' | 'standard' | null
     timestamp: string | null
     type: string
     usage: ProjectInteractionUsage | null
