@@ -9,6 +9,8 @@ import type {
     UsageOverviewCardSubvalue,
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
+import type { DateInput } from '#shared/utils/date'
+import { previousDateKey, todayDateKey, useDateFormat } from '#shared/utils/date'
 
 const compactNumberFormatter = new Intl.NumberFormat('en-US', {
     notation: 'compact',
@@ -26,19 +28,6 @@ const percentFormatter = new Intl.NumberFormat('en-US', {
     style: 'percent',
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
-})
-
-const dateKeyFormatter = new Intl.DateTimeFormat('en-CA', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-})
-
-const dateLabelFormatter = new Intl.DateTimeFormat('en-US', {
-    day: '2-digit',
-    month: 'short',
-    timeZone: 'UTC',
-    year: 'numeric',
 })
 
 export function normalizeNumber(value: unknown) {
@@ -70,7 +59,7 @@ export function formatPercent(value: number) {
 }
 
 export function formatDate(value: Date | string) {
-    return dateLabelFormatter.format(new Date(value))
+    return useDateFormat(value, 'display') ?? String(value)
 }
 
 export function buildPercentTrend(currentValue: number, previousValue: number): { label: string, tone: TrendTone } {
@@ -143,43 +132,28 @@ export function buildOverviewCardsWithTodayTokenBreakdown(
     overviewCards: UsageOverviewCard[],
     dailyTokenUsage: Pick<DailyTokenUsage, 'date' | 'inputTokens' | 'outputTokens'>[],
 ) {
-    const todayDateKey = getDateKey(new Date())
+    const today = todayDateKey()
 
     return overviewCards.map(card => card.name === 'Today Tokens'
         ? {
                 ...card,
                 subvalue: buildInputOutputTokenSubvalue(
-                    dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey),
+                    dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === today),
                 ),
             }
         : card)
 }
 
-export function getDateKey(date: Date) {
-    const parts = dateKeyFormatter.formatToParts(date)
-    const year = parts.find(part => part.type === 'year')?.value ?? '0000'
-    const month = parts.find(part => part.type === 'month')?.value ?? '01'
-    const day = parts.find(part => part.type === 'day')?.value ?? '01'
-
-    return `${year}-${month}-${day}`
+export function getDateKey(date: DateInput) {
+    return useDateFormat(date) ?? String(date)
 }
 
 export function getDateKeyFromLabel(label: string) {
-    const date = new Date(label)
-
-    if (Number.isNaN(date.getTime())) {
-        return label
-    }
-
-    return getDateKey(date)
+    return useDateFormat(label) ?? label
 }
 
 export function getPreviousDateKey(dateKey: string) {
-    const [year, month, day] = dateKey.split('-').map(value => Number.parseInt(value, 10))
-    const date = new Date(year || 0, (month || 1) - 1, day || 1)
-    date.setDate(date.getDate() - 1)
-
-    return getDateKey(date)
+    return previousDateKey(dateKey)
 }
 
 export function formatDateLabelFromDateKey(dateKey: string, fallback = dateKey) {
@@ -189,7 +163,7 @@ export function formatDateLabelFromDateKey(dateKey: string, fallback = dateKey) 
         return fallback
     }
 
-    return dateLabelFormatter.format(new Date(Date.UTC(year, month - 1, day)))
+    return useDateFormat(Date.UTC(year, month - 1, day), 'display') ?? fallback
 }
 
 export function buildProjectUsage(sessionUsage: UsageSessionUsageItem[]): ProjectUsageItem[] {

@@ -64,6 +64,7 @@ import type { AnalysisAgentSessionRow } from '#shared/types/analysis'
 import type { FetchPage, PaginatedResponse } from '#shared/types/pagination'
 import type { ColumnDef } from '@tanstack/vue-table'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
+import { useDateFormat } from '#shared/utils/date'
 import { formatNumber } from '@lonewolfyx/utils'
 
 defineOptions({
@@ -159,11 +160,6 @@ watch(() => props.fetchPage, (fetchPage) => {
 })
 
 function formatDateTime(value: string) {
-    return new Intl.DateTimeFormat('en-US', {
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        month: 'short',
-    }).format(new Date(value))
+    return useDateFormat(value, 'MMM DD HH:mm') ?? value
 }
 </script>

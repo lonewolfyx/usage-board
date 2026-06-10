@@ -13,8 +13,9 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { dateUtcMidnight, nowIsoString, previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
 import { getMonthKey, getWeekLabel } from '#shared/utils/platform'
-import { formatDateLabelFromDateKey, getDateKey } from '#shared/utils/usage-dashboard'
+import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
 
 const SCHEMA_VERSION = 3
 
@@ -153,7 +154,7 @@ export class UsageCacheRepository {
                 create_time
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        const now = new Date().toISOString()
+        const now = nowIsoString()
 
         this.database.exec('BEGIN')
 
@@ -222,7 +223,7 @@ export class UsageCacheRepository {
             INSERT OR REPLACE INTO source_files (path, platform, hash, size, mtime_ms, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
         `)
-        const now = new Date().toISOString()
+        const now = nowIsoString()
         this.database.exec('BEGIN')
 
         try {
@@ -656,11 +657,9 @@ export class UsageCacheRepository {
             totalTokens: number
         }>
     } {
-        const todayDate = new Date()
-        const todayDateKey = getDateKey(todayDate)
-        const previousDate = new Date(todayDate)
-        previousDate.setDate(previousDate.getDate() - 1)
-        const previousDateKey = getDateKey(previousDate)
+        const todayDate = todayStartOfDay()
+        const todayDateKeyVal = todayDateKey()
+        const previousDateKeyVal = previousDateKey(todayDateKeyVal)
         const { previousDayEnd, previousDayStart, todayEnd, todayStart } = getUtcDayBoundaries(todayDate)
 
         // Today/previous session counts (by session_started_at)
@@ -678,15 +677,15 @@ export class UsageCacheRepository {
               AND ((session_started_at >= ? AND session_started_at < ?)
                 OR (session_started_at >= ? AND session_started_at < ?))
             GROUP BY date_key
-        `).all(todayStart, todayEnd, todayDateKey, previousDayStart, previousDayEnd, previousDateKey, todayStart, todayEnd, previousDayStart, previousDayEnd)
+        `).all(todayStart, todayEnd, todayDateKeyVal, previousDayStart, previousDayEnd, previousDateKeyVal, todayStart, todayEnd, previousDayStart, previousDayEnd)
 
         let sessionCount = 0
         let previousSessionCount = 0
 
         for (const row of sessionCounts) {
-            if (row.date_key === todayDateKey)
+            if (row.date_key === todayDateKeyVal)
                 sessionCount = row.count
-            if (row.date_key === previousDateKey)
+            if (row.date_key === previousDateKeyVal)
                 previousSessionCount = row.count
         }
 
@@ -706,15 +705,15 @@ export class UsageCacheRepository {
               AND ((timestamp >= ? AND timestamp < ?)
                 OR (timestamp >= ? AND timestamp < ?))
             GROUP BY date_key
-        `).all(todayStart, todayEnd, todayDateKey, previousDayStart, previousDayEnd, previousDateKey, todayStart, todayEnd, previousDayStart, previousDayEnd)
+        `).all(todayStart, todayEnd, todayDateKeyVal, previousDayStart, previousDayEnd, previousDateKeyVal, todayStart, todayEnd, previousDayStart, previousDayEnd)
 
         let promptCount = 0
         let previousPromptCount = 0
 
         for (const row of promptCounts) {
-            if (row.date_key === todayDateKey)
+            if (row.date_key === todayDateKeyVal)
                 promptCount = row.count
-            if (row.date_key === previousDateKey)
+            if (row.date_key === previousDateKeyVal)
                 previousPromptCount = row.count
         }
 
@@ -791,9 +790,7 @@ export class UsageCacheRepository {
         const topModel = models[0] ?? 'unknown'
         const startedAt = row.started_at ?? row.session_started_at ?? ''
         const lastActivity = row.last_activity ?? startedAt
-        const startedAtDate = new Date(startedAt)
-        const hasValidDate = Number.isFinite(startedAtDate.getTime())
-        const dateKey = hasValidDate ? getDateKey(startedAtDate) : ''
+        const dateKey = useDateFormat(startedAt) ?? ''
 
         return {
             cachedInputTokens: row.cached_input_token ?? 0,
@@ -807,7 +804,7 @@ export class UsageCacheRepository {
             lastActivity,
             model: topModel,
             models,
-            month: hasValidDate ? getMonthKey(startedAtDate) : '',
+            month: dateKey ? getMonthKey(startedAt) : '',
             outputTokens: row.output_token ?? 0,
             project: row.project_name ?? '',
             reasoningOutputTokens: row.reasoning_token ?? 0,
@@ -817,7 +814,7 @@ export class UsageCacheRepository {
             threadName: row.thread_name ?? '',
             tokenTotal: row.total_token ?? 0,
             topModel,
-            week: hasValidDate ? getWeekLabel(startedAtDate) : '',
+            week: dateKey ? getWeekLabel(startedAt) : '',
         }
     }
 
@@ -900,9 +897,9 @@ function getUtcDayBoundaries(localDate: Date) {
     const year = localDate.getFullYear()
     const month = localDate.getMonth()
     const day = localDate.getDate()
-    const todayStart = new Date(year, month, day).toISOString()
-    const todayEnd = new Date(year, month, day + 1).toISOString()
-    const previousDayStart = new Date(year, month, day - 1).toISOString()
+    const todayStart = dateUtcMidnight(year, month, day).toISOString()
+    const todayEnd = dateUtcMidnight(year, month, day + 1).toISOString()
+    const previousDayStart = dateUtcMidnight(year, month, day - 1).toISOString()
     const previousDayEnd = todayStart
 
     return { previousDayEnd, previousDayStart, todayEnd, todayStart }

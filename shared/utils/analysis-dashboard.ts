@@ -14,7 +14,7 @@ import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, Ranked
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
-import { formatDuration } from '#shared/utils/date'
+import { formatDuration, todayDateKey, useDateFormat } from '#shared/utils/date'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -23,7 +23,6 @@ import {
     formatCompactNumber,
     formatCurrency,
     formatPercent,
-    getDateKey,
     getDateKeyFromLabel,
     getPreviousDateKey,
     mergeDailyTokenUsage,
@@ -146,9 +145,9 @@ export function buildHomeDashboardModules(
         totalTokens,
     })
     const homeTodayInsights = todayInsights ?? buildHomeTodayInsights(dashboardsByPlatform)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKey)
+    const todayDateKeyVal = todayDateKey()
+    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
+    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKeyVal)
     const previousUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
 
     return {
@@ -326,8 +325,8 @@ function buildHomeOverviewCards(options: {
 function buildHomeTodayInsights(
     dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
 ) {
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
+    const todayDateKeyVal = todayDateKey()
+    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
     const hourlyUsage = new Map<number, {
         agents: Map<ProjectUsagePlatform, {
             costUSD: number
@@ -345,7 +344,7 @@ function buildHomeTodayInsights(
         for (const session of dashboardsByPlatform[platform].sessionUsage as ProjectSessionUsageItem[]) {
             const startedAtDateKey = getDateKeyFromTimestamp(session.startedAt)
 
-            if (startedAtDateKey === todayDateKey) {
+            if (startedAtDateKey === todayDateKeyVal) {
                 sessionCount += 1
             }
             else if (startedAtDateKey === previousDayDateKey) {
@@ -356,7 +355,7 @@ function buildHomeTodayInsights(
                 const interactionDateKey = getDateKeyFromTimestamp(interaction.timestamp)
 
                 if (interaction.role === 'user') {
-                    if (interactionDateKey === todayDateKey) {
+                    if (interactionDateKey === todayDateKeyVal) {
                         promptCount += 1
                     }
                     else if (interactionDateKey === previousDayDateKey) {
@@ -364,17 +363,17 @@ function buildHomeTodayInsights(
                     }
                 }
 
-                if (!interaction.usage || interactionDateKey !== todayDateKey) {
+                if (!interaction.usage || interactionDateKey !== todayDateKeyVal) {
                     continue
                 }
 
-                const interactionDate = new Date(interaction.timestamp!)
+                const hourStr = useDateFormat(interaction.timestamp!, 'hour')
 
-                if (!Number.isFinite(interactionDate.getTime())) {
+                if (hourStr === null) {
                     continue
                 }
 
-                const hour = interactionDate.getHours()
+                const hour = Number(hourStr)
                 const bucket = hourlyUsage.get(hour) ?? {
                     agents: new Map<ProjectUsagePlatform, {
                         costUSD: number
@@ -420,9 +419,7 @@ function getDateKeyFromTimestamp(value: string | null | undefined) {
         return null
     }
 
-    const date = new Date(value)
-
-    return Number.isFinite(date.getTime()) ? getDateKey(date) : null
+    return useDateFormat(value)
 }
 
 function buildEfficiencyMetrics(options: {

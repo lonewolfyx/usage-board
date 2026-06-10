@@ -1,6 +1,7 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { fromDateTimestamp } from '#shared/utils/date'
 import {
     addFragmentInteraction,
     createSessionFragment,
@@ -156,8 +157,8 @@ function timestampFromHermesValue(value: unknown) {
         return null
     }
 
-    const milliseconds = value > 1e12 ? value : value * 1000
-    return new Date(milliseconds).toISOString()
+    const date = fromDateTimestamp(value)
+    return date ? date.toISOString() : null
 }
 
 function toNumber(value: unknown) {

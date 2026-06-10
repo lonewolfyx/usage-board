@@ -160,7 +160,7 @@
 
 <script setup lang="ts">
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
-import { cloneDate } from '#shared/utils/date'
+import { todayStartOfDay, useDateFormat } from '#shared/utils/date'
 import { computed } from 'vue'
 
 defineOptions({
@@ -227,14 +227,9 @@ const weekdayLabels = [
     { key: 'sat', label: 'S', row: '7' },
 ]
 
-const rangeEndDate = computed(() => cloneDate(new Date()))
+const rangeEndDate = computed(() => todayStartOfDay())
 
-const rangeStartDate = computed(() => {
-    const startDate = cloneDate(rangeEndDate.value)
-    startDate.setDate(startDate.getDate() - 364)
-
-    return startDate
-})
+const rangeStartDate = computed(() => new Date(rangeEndDate.value.getTime() - 364 * 86_400_000))
 
 const rangeLabel = computed(() => `${formatRangeDate(rangeStartDate.value)} - ${formatRangeDate(rangeEndDate.value)}`)
 const heatMetricLabel = computed(() => props.heatMetric === 'cost' ? 'spend' : 'tokens')
@@ -244,15 +239,14 @@ const heatmapDescription = computed(() =>
 const legendLabel = computed(() => `Colored by daily ${heatMetricLabel.value}`)
 
 const yearItems = computed(() => {
-    const usageByDate = new Map(props.items.map(item => [formatDateKey(parseUsageDate(item.date)), item]))
+    const usageByDate = new Map(props.items.map(item => [useDateFormat(item.date) ?? item.date, item]))
 
     return Array.from({ length: 365 }, (_, index) => {
-        const date = cloneDate(rangeStartDate.value)
-        date.setDate(date.getDate() + index)
+        const date = new Date(rangeStartDate.value.getTime() + index * 86_400_000)
 
         return {
             date,
-            usage: usageByDate.get(formatDateKey(date)),
+            usage: usageByDate.get(useDateFormat(date) ?? ''),
         }
     })
 })
@@ -357,24 +351,12 @@ const summaryCards = computed<SummaryCard[]>(() => (
             ]
 ))
 
-function parseUsageDate(value: string) {
-    return new Date(value)
-}
-
-function formatDateKey(date: Date) {
-    const year = date.getFullYear()
-    const month = `${date.getMonth() + 1}`.padStart(2, '0')
-    const day = `${date.getDate()}`.padStart(2, '0')
-
-    return `${year}-${month}-${day}`
-}
-
 function formatRangeDate(date: Date) {
-    return new Intl.DateTimeFormat('en-US', {
+    return useDateFormat(date, 'display') ?? date.toLocaleDateString('en-US', {
         day: '2-digit',
         month: 'short',
         year: 'numeric',
-    }).format(date)
+    })
 }
 
 function getHeatmapLevel(value: number, maxValue: number) {

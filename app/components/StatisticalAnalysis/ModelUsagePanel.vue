@@ -102,6 +102,7 @@
 </template>
 
 <script setup lang="ts">
+import { useDateFormat } from '#shared/utils/date'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
 import { useTemplateRef } from 'vue'
@@ -130,7 +131,7 @@ const yDomain = [0, undefined] satisfies [number, undefined]
 const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
 const { width: chartWidth } = useElementSize(chartRoot)
 
-const selectedYear = computed(() => props.year ?? getLatestUsageYear(props.monthlyItems) ?? new Date().getFullYear())
+const selectedYear = computed(() => props.year ?? getLatestUsageYear(props.monthlyItems) ?? Number(useDateFormat(Date.now(), 'YYYY') ?? new Date().getFullYear()))
 
 const months = computed(() => Array.from({ length: 12 }, (_, index) => {
     const monthNumber = `${index + 1}`.padStart(2, '0')
@@ -304,10 +305,7 @@ function formatMonthAxis(tick: number | Date) {
 }
 
 function formatMonthLabel(month: string) {
-    const [year, monthNumber] = month.split('-')
-    const date = new Date(Number(year), Number(monthNumber) - 1, 1)
-
-    return new Intl.DateTimeFormat('en-US', { month: 'short' }).format(date)
+    return useDateFormat(`${month}-01`, 'MMM') ?? month
 }
 
 function formatTooltipMonth(month: string) {

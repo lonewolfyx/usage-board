@@ -2,6 +2,7 @@ import type { ModelPricing, ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { statSync } from 'node:fs'
 import { calculateUsageCostUSD } from '#shared/platform/pricing'
+import { useDateFormat } from '#shared/utils/date'
 import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 const ZERO_PRICING: ModelPricing = {
@@ -157,7 +158,7 @@ export function calculateUsageCostFromCandidates(
 
 export function getFileModifiedAtIso(filePath: string) {
     try {
-        return new Date(statSync(filePath).mtimeMs).toISOString()
+        return useDateFormat(statSync(filePath).mtimeMs, 'iso') ?? new Date(statSync(filePath).mtimeMs).toISOString()
     }
     catch {
         return null

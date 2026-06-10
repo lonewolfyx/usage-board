@@ -16,7 +16,7 @@ import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#sh
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { calculateUsageCostUSD } from '#shared/platform/pricing'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { formatDuration } from '#shared/utils/date'
+import { formatDuration, nowIsoString, useDateFormat } from '#shared/utils/date'
 import { normalizeTimestampValue } from '#shared/utils/normalize'
 import {
     getDurationMinutes,
@@ -545,7 +545,7 @@ function parseUsageFile(
         platform: file.platform,
         projectNames: Array.from(new Set(payload.map(fragment => fragment.project))).sort((a, b) => a.localeCompare(b)),
         size: file.size,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowIsoString(),
     }
 }
 
@@ -898,11 +898,10 @@ function hasBillableSessionDetail(detail: MutableSessionDetail) {
 }
 
 function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSessionUsageItem {
-    const startedAt = normalizeTimestampValue(detail.startedAt) ?? normalizeTimestampValue(detail.lastActivity) ?? new Date(0).toISOString()
+    const startedAt = normalizeTimestampValue(detail.startedAt) ?? normalizeTimestampValue(detail.lastActivity) ?? '1970-01-01T00:00:00.000Z'
     const lastActivity = normalizeTimestampValue(detail.lastActivity) ?? startedAt
-    const startedAtDate = new Date(startedAt)
-    const hasValidStartedAtDate = Number.isFinite(startedAtDate.getTime())
-    const dateKey = hasValidStartedAtDate ? getDateKey(startedAtDate) : ''
+    const hasValidStartedAtDate = useDateFormat(startedAt) !== null
+    const dateKey = hasValidStartedAtDate ? getDateKey(startedAt) : ''
 
     return {
         cachedInputTokens: detail.cachedInputTokens,
@@ -919,7 +918,7 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         lastActivity,
         model: detail.topModel,
         models: detail.models,
-        month: hasValidStartedAtDate ? getMonthKey(startedAtDate) : '',
+        month: hasValidStartedAtDate ? getMonthKey(startedAt) : '',
         outputTokens: detail.outputTokens,
         project: detail.project,
         reasoningOutputTokens: detail.reasoningOutputTokens,
@@ -929,6 +928,6 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         topModel: detail.topModel,
         threadName: detail.threadName,
         tokenTotal: detail.tokenTotal,
-        week: hasValidStartedAtDate ? getWeekLabel(startedAtDate) : '',
+        week: hasValidStartedAtDate ? getWeekLabel(startedAt) : '',
     }
 }
