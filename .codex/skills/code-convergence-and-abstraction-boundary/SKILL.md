@@ -60,6 +60,34 @@ The reference files are the complete source of truth for this skill. Apply them 
 - Allow local repetition only when the reference explicitly allows it.
 - Reject abstractions that do not add semantic value, type unification, behavioral unification, a stable entry point, an isolated variation point, lower maintenance cost, lower test cost, or lower caller cognitive load.
 
+## Hard Ban: No Thin Single-Purpose Helpers
+
+Treat the following as prohibited by default, not style preferences:
+
+- one-line wrappers that only rename an expression;
+- one-line wrappers that only rename a standard-library or existing helper call;
+- single-call-site helpers that only hide an inline `trim`, `split`, `join`, `basename`, `dirname`, regex `test`, numeric guard, or nullish fallback;
+- tiny parsing helpers that only wrap `typeof`, `Number.isFinite`, `Math.trunc`, or `toISOString` without creating a real shared business rule;
+- wrapper chains such as `a -> b -> c` where each layer only forwards parameters or renames the same operation.
+
+The following patterns are explicitly banned unless they unify a real cross-module rule:
+
+- `function toNumber(value) { return typeof value === 'number' ... }`
+- `function toOptionalNumber(value) { return typeof value === 'number' ... }`
+- `function isX(name) { return /.../.test(name) }`
+- `function getSessionId(filePath) { return basename(filePath, '.jsonl') }`
+- `function getConfigPath(root) { return join(root, 'config.toml') }`
+- `function getTraceId(record) { return normalizeStringValue(record.traceId) || ... }`
+- `function getAttributeString(attrs, key) { return normalizeStringValue(attrs[key]) }`
+
+Before introducing any helper function, require all of the following to be true:
+
+- it is used by more than one meaningful call site, or it marks a stable external boundary;
+- its name captures a real domain rule, not a mechanical transformation;
+- inlining it back at the call site would clearly make the code harder to change or easier to misuse.
+
+If those conditions are not met, inline the expression directly.
+
 ## Review Checklist
 
 When touching code, check for:

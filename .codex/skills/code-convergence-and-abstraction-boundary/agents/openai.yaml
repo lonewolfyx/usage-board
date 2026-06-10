@@ -1,7 +1,7 @@
 interface:
   display_name: "Code Convergence Boundary"
   short_description: "Enforce convergence and abstraction boundaries"
-  default_prompt: "Use $code-convergence-and-abstraction-boundary to review or refactor this code under the project's convergence and abstraction boundary rules."
+  default_prompt: "Use $code-convergence-and-abstraction-boundary to review or refactor this code under the project's convergence and abstraction boundary rules. Treat thin single-purpose helpers as prohibited by default: do not introduce wrappers that only rename `basename`, `dirname`, `join`, regex tests, numeric guards, timestamp guards, attribute lookup, or other single expressions unless they unify a real multi-call-site business rule."
 
 policy:
   allow_implicit_invocation: true
