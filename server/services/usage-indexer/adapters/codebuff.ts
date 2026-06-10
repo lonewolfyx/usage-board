@@ -2,6 +2,7 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
+import { useDateFormat } from '#shared/utils/date'
 import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -298,7 +299,7 @@ function getCodebuffFallbackTimestamp(filePath: string, chatId: string) {
     }
 
     try {
-        return new Date(statSync(filePath).mtimeMs).toISOString()
+        return useDateFormat(statSync(filePath).mtimeMs, 'iso') ?? new Date(statSync(filePath).mtimeMs).toISOString()
     }
     catch {
         return null

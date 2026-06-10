@@ -7,6 +7,7 @@ import type {
     ProjectUsageSummary,
 } from '#shared/types/project-dashboard'
 import type { DailyTokenUsage, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import { todayStartOfDay, useDateFormat } from '#shared/utils/date'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -24,26 +25,30 @@ import { formatNumber } from '@lonewolfyx/utils'
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
 
 export function buildRecentDateLabels(days: number) {
-    const today = new Date()
+    const today = todayStartOfDay()
 
     return Array.from({ length: days }, (_, index) => {
-        const date = new Date(today)
-        date.setHours(0, 0, 0, 0)
-        date.setDate(today.getDate() - (days - 1 - index))
+        const dayOffset = days - 1 - index
+        const dateKey = useDateFormat(today.getTime() - dayOffset * 86_400_000) ?? ''
 
-        return formatDateLabelFromDateKey(getDateKey(date))
+        return formatDateLabelFromDateKey(dateKey)
     })
 }
 
 export function buildMonthlyTickIndexes(labels: string[]) {
     return labels
-        .map((label, index) => ({ date: new Date(label), index }))
+        .map((label, index) => ({ date: useDateFormat(label), index }))
         .filter(({ date, index }) => {
             if (index === 0 || index === labels.length - 1) {
                 return true
             }
 
-            return Number.isFinite(date.getTime()) && date.getUTCDate() === 1
+            if (!date) {
+                return false
+            }
+
+            const dayOfMonth = useDateFormat(date, 'DD')
+            return dayOfMonth === '01'
         })
         .map(({ index }) => index)
 }
@@ -265,16 +270,15 @@ function buildSessionCountByDate(sessions: ProjectSessionListItem[]) {
 
 function formatProjectSessionDate(
     value: string,
-    formatter: (date: Date) => string,
+    formatter: (date: Date | string) => string,
     fallback = '-',
 ) {
     if (!value) {
         return fallback
     }
 
-    const date = new Date(value)
-
-    if (!Number.isFinite(date.getTime())) {
+    const date = useDateFormat(value)
+    if (!date) {
         return fallback
     }
 

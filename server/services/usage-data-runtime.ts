@@ -33,6 +33,7 @@ import {
 } from '#shared/platform/project'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
+import { useDateFormat } from '#shared/utils/date'
 import chokidar from 'chokidar'
 
 const WATCHER_DEBOUNCE_MS = 350
@@ -169,7 +170,7 @@ class UsageDataRuntime {
 
         return {
             updatedAt: this.state.hydratedAt > 0
-                ? new Date(this.state.hydratedAt).toISOString()
+                ? (useDateFormat(this.state.hydratedAt, 'iso') ?? new Date(this.state.hydratedAt).toISOString())
                 : '',
         }
     }
@@ -443,7 +444,7 @@ class UsageDataRuntime {
             const { bootstrapByPlatform, eventsByPlatform } = indexed
             const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform, eventsByPlatform)
             const projectCatalog = buildProjectCatalogFromPlatformSessions(bootstrapByPlatform)
-            const updatedAt = new Date().toISOString()
+            const updatedAt = useDateFormat(Date.now(), 'iso') ?? new Date().toISOString()
             const shouldReport = options.forceLog || indexed.hasChanges
             const cacheWriteStats = {
                 agentCount: PROJECT_USAGE_PLATFORMS.length,

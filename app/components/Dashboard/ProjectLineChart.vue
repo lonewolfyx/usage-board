@@ -104,6 +104,7 @@
 
 <script setup lang="ts">
 import type { ProjectLineSeries } from '#shared/types/project-dashboard'
+import { useDateFormat } from '#shared/utils/date'
 import { formatCompactNumber } from '#shared/utils/usage-dashboard'
 import { VisArea, VisAxis, VisCrosshair, VisTooltip, VisXYContainer } from '@unovis/vue'
 import { useElementSize } from '@vueuse/core'
@@ -141,13 +142,6 @@ const colorMode = useColorMode({
     selector: 'html',
     attribute: 'class',
     storageKey: 'app-color-mode',
-})
-const axisMonthDayFormatter = new Intl.DateTimeFormat('en-US', {
-    day: 'numeric',
-    month: 'short',
-})
-const axisMonthFormatter = new Intl.DateTimeFormat('en-US', {
-    month: 'short',
 })
 const chartRoot = useTemplateRef<HTMLDivElement>('chartRoot')
 const { width: chartWidth } = useElementSize(chartRoot)
@@ -301,17 +295,17 @@ function formatTooltip(point: ChartPoint | undefined) {
 }
 
 function formatAxisLabel(label: string, index: number, total: number) {
-    const date = new Date(label)
-    if (Number.isNaN(date.getTime())) {
+    const formatted = useDateFormat(label)
+    if (!formatted) {
         return label
     }
 
     const isBoundary = index === 0 || index === total - 1
-    if (total >= 90 && !isBoundary && date.getDate() === 1) {
-        return axisMonthFormatter.format(date)
+    if (total >= 90 && !isBoundary && useDateFormat(label, 'DD') === '01') {
+        return useDateFormat(label, 'MMM') ?? label
     }
 
-    return axisMonthDayFormatter.format(date)
+    return useDateFormat(label, 'MMM D') ?? label
 }
 
 function getThemeAwareColor(color: string) {

@@ -23,9 +23,17 @@ import type {
     UsageTopModel,
     UsageTopProject,
 } from '#shared/types/usage-dashboard'
+import type { DateInput } from '#shared/utils/date'
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
-import { cloneDate, formatDuration, formatMonthLabel } from '#shared/utils/date'
+import {
+    formatDuration,
+    formatMonthLabel,
+    getWeekLabel as getWeekLabelFromDayjs,
+    todayDateKey,
+    toIsoStringSafe,
+    useDateFormat,
+} from '#shared/utils/date'
 import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import {
@@ -111,7 +119,7 @@ function buildDailyUsageGroups<TEvent extends UsageAggregateEvent>(
     const groups = new Map<string, DailyUsageSummaryGroup>()
 
     for (const event of events) {
-        const dateKey = getDateKey(new Date(event.timestamp))
+        const dateKey = getDateKey(event.timestamp)
         const displayLabel = formatDateLabelFromDateKey(dateKey)
         const group = groups.get(dateKey) ?? {
             ...createAggregateGroup(displayLabel),
@@ -219,10 +227,9 @@ function buildPeriodRows<TEvent extends UsageAggregateEvent>(
     const groups = new Map<string, PeriodRowGroup>()
 
     for (const event of events) {
-        const eventDate = new Date(event.timestamp)
         const key = periodType === 'month'
-            ? getMonthKey(eventDate)
-            : getWeekLabel(eventDate)
+            ? getMonthKey(event.timestamp)
+            : getWeekLabel(event.timestamp)
         const label = periodType === 'month'
             ? formatMonthLabel(key)
             : key
@@ -277,7 +284,7 @@ function buildMonthlyModelUsage<TEvent extends UsageAggregateEvent>(
             continue
         }
 
-        const month = getMonthKey(new Date(event.timestamp))
+        const month = getMonthKey(event.timestamp)
         const key = `${month}__${event.model}`
         const group = groups.get(key) ?? {
             model: event.model,
@@ -319,7 +326,7 @@ function buildSessionRows<TSession extends SessionUsageSummaryLike>(
             label: session.sessionId,
             models: session.models,
             outputTokens: session.outputTokens,
-            period: formatDateLabelFromDateKey(getDateKey(new Date(session.lastActivity))),
+            period: formatDateLabelFromDateKey(getDateKey(session.lastActivity)),
             projects: [session.project],
             reasoningOutputTokens: getReasoningOutputTokens(session, options),
             sessionCount: 1,
@@ -339,18 +346,16 @@ function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
     session: TSession,
     options: SessionUsageOptions<TSession> = {},
 ): UsageSessionUsageItem {
-    const startedAtDate = new Date(session.startedAt)
-
     return {
         cachedInputTokens: getCachedInputTokens(session, options),
         costUSD: session.costUSD,
-        date: formatDateLabelFromDateKey(getDateKey(startedAtDate)),
+        date: formatDateLabelFromDateKey(getDateKey(session.startedAt)),
         duration: formatDuration(session.durationMinutes),
         durationMinutes: session.durationMinutes,
         id: session.id ?? session.sessionId,
         inputTokens: session.inputTokens,
         model: session.topModel,
-        month: getMonthKey(startedAtDate),
+        month: getMonthKey(session.startedAt),
         outputTokens: session.outputTokens,
         project: session.project,
         reasoningOutputTokens: getReasoningOutputTokens(session, options),
@@ -359,7 +364,7 @@ function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
         startedAt: session.startedAt,
         threadName: session.threadName,
         tokenTotal: session.tokenTotal,
-        week: getWeekLabel(startedAtDate),
+        week: getWeekLabel(session.startedAt),
     }
 }
 
@@ -471,11 +476,11 @@ export function buildLoadUsageResult<
     const sortedSessions = [...sessions].sort((a, b) => getSessionSortTimestamp(b) - getSessionSortTimestamp(a))
     const sessionUsage = sortedSessions.map(session => toUsageSessionUsageItem(session, sessionOptions))
     const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
-    const todayDateKey = getDateKey(new Date())
-    const previousDayDateKey = getPreviousDateKey(todayDateKey)
-    const todayDailyGroup = dailyGroups.get(todayDateKey)
+    const todayDateKeyVal = todayDateKey()
+    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
+    const todayDailyGroup = dailyGroups.get(todayDateKeyVal)
     const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
-    const todayEvents = events.filter(event => getDateKey(new Date(event.timestamp)) === todayDateKey)
+    const todayEvents = events.filter(event => getDateKey(event.timestamp) === todayDateKeyVal)
     const todayTotalTokens = todayDailyGroup?.totalTokens ?? 0
     const todayTotalCost = roundCurrency(todayDailyGroup?.costUSD ?? 0)
     const todayTopProject = getTopProjectForDate(todayEvents)
@@ -709,29 +714,7 @@ export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
  * ```
  */
 export function toIsoString(value: unknown) {
-    if (typeof value === 'number' && Number.isFinite(value)) {
-        const timestamp = value > 10_000_000_000 ? value : value * 1000
-
-        return new Date(timestamp).toISOString()
-    }
-
-    if (value instanceof Date) {
-        return Number.isFinite(value.getTime()) ? value.toISOString() : null
-    }
-
-    if (typeof value !== 'string') {
-        return null
-    }
-
-    const normalizedValue = value.trim()
-
-    if (!normalizedValue) {
-        return null
-    }
-
-    const timestamp = Date.parse(normalizedValue)
-
-    return Number.isFinite(timestamp) ? new Date(timestamp).toISOString() : null
+    return toIsoStringSafe(value)
 }
 
 /**
@@ -743,8 +726,8 @@ export function toIsoString(value: unknown) {
  * // '2026-04'
  * ```
  */
-export function getMonthKey(date: Date) {
-    return getDateKey(date).slice(0, 7)
+export function getMonthKey(date: DateInput) {
+    return useDateFormat(date, 'month-key') ?? getDateKey(date).slice(0, 7)
 }
 
 /**
@@ -756,16 +739,8 @@ export function getMonthKey(date: Date) {
  * // '2026-04-13 - 2026-04-19'
  * ```
  */
-export function getWeekLabel(date: Date) {
-    const weekStart = cloneDate(date)
-    const day = weekStart.getDay()
-    const diff = day === 0 ? -6 : 1 - day
-    weekStart.setDate(weekStart.getDate() + diff)
-
-    const weekEnd = cloneDate(weekStart)
-    weekEnd.setDate(weekEnd.getDate() + 6)
-
-    return `${getDateKey(weekStart)} - ${getDateKey(weekEnd)}`
+export function getWeekLabel(date: DateInput) {
+    return getWeekLabelFromDayjs(date)
 }
 
 /**
