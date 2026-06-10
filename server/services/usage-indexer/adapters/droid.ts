@@ -71,7 +71,6 @@ export const droidUsageAdapter = {
         })
 
         addFragmentInteraction(fragment, {
-            content: '',
             costUSD,
             dedupeKey: `droid:${sessionId}`,
             index: 0,

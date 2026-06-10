@@ -56,7 +56,6 @@ export const hermesUsageAdapter = {
                     })
 
                     addFragmentInteraction(fragment, {
-                        content: '',
                         costUSD: entry.usage.costUSD,
                         dedupeKey: `hermes:${entry.sessionId}`,
                         index: 0,

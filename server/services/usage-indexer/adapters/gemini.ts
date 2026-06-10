@@ -87,7 +87,6 @@ export const geminiUsageAdapter = {
                 : null
 
             addFragmentInteraction(fragment, {
-                content: extractGeminiMessageText(message.content),
                 costUSD: usage?.costUSD ?? 0,
                 index,
                 model,

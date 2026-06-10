@@ -97,7 +97,6 @@ export const openClawUsageAdapter = {
             const timestamp = toIsoString(message.timestamp) ?? toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD: usage.costUSD,
                 dedupeKey: [
                     'openclaw',

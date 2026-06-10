@@ -82,7 +82,6 @@ export const kimiUsageAdapter = {
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD,
                 dedupeKey: [
                     sessionId,

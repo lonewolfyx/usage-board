@@ -72,7 +72,6 @@ export const piUsageAdapter = {
             const rawModel = normalizeStringValue(message.model)
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD: usage.costUSD,
                 dedupeKey: [
                     'pi',

@@ -2,7 +2,6 @@ import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/t
 import type { ProjectInteractionRole, ProjectInteractionUsage, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 
 export interface IndexedUsageInteraction {
-    content: string
     costUSD: number
     dedupeKey?: string | null
     fallbackDedupeKey?: string | null
@@ -56,6 +55,7 @@ export interface IncrementalUsageIndexTiming {
 export interface IncrementalUsageIndexResult {
     affectedProjects: string[]
     bootstrapByPlatform: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+    eventsByPlatform: ProjectUsagePlatformRecord<import('#shared/types/platform').UsageAggregateEvent[]>
     hasChanges: boolean
     indexedFiles: IndexedUsageSourceFile[]
     timing: IncrementalUsageIndexTiming

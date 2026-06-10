@@ -79,7 +79,6 @@ export const openCodeUsageAdapter = {
                     })
 
                     addFragmentInteraction(fragment, {
-                        content: '',
                         costUSD: entry.usage.costUSD,
                         dedupeKey: entry.interactionId,
                         index: fragment.interactions.length,
@@ -127,7 +126,6 @@ export const openCodeUsageAdapter = {
         })
 
         addFragmentInteraction(fragment, {
-            content: '',
             costUSD: entry.usage.costUSD,
             dedupeKey: entry.interactionId,
             index: 0,

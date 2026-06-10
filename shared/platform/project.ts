@@ -5,7 +5,6 @@ import type {
 import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
 import type {
     LoadUsageResult,
-    ProjectInteractionUsage,
     ProjectPlatformUsage,
     ProjectSessionUsageItem,
     ProjectUsageDetail,
@@ -25,7 +24,7 @@ import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { paginateItems } from '#shared/utils/pagination'
 import { buildLoadUsageResult } from '#shared/utils/platform'
-import { uniqueItems } from '#shared/utils/usage-dashboard'
+import { mergeDailyTokenUsage, mergeMonthlyModelUsage, uniqueItems } from '#shared/utils/usage-dashboard'
 
 const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'session_list' satisfies ProjectUsageDataModule
 
@@ -75,12 +74,13 @@ export function buildProjectUsageDataModuleFromDetail(
 export function buildProjectUsageDetailFromPlatformSessions(
     projectName: string,
     platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
+    precomputedEvents: UsageAggregateEvent[],
 ): ProjectUsageDetail {
     const analyzing = Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [
             platform,
             {
-                ...buildProjectLoadUsageResult(platformSessions[platform], platform),
+                ...buildProjectLoadUsageResult(platformSessions[platform], platform, precomputedEvents),
                 sessions: platformSessions[platform],
             },
         ]),
@@ -106,22 +106,38 @@ function buildProjectPlatformModule(
         return buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module, pagination)
     }
 
+    const platformUsages = PROJECT_USAGE_PLATFORMS.map(platform => detail.analyzing[platform] ?? createEmptyProjectPlatformUsage())
+
     if (module === 'session_list') {
-        const sessions = getProjectDetailSessions(detail)
-        const allUsage = buildProjectLoadUsageResult(sessions)
+        const sessions = platformUsages.flatMap(usage => usage.sessions)
+        const sessionRows = platformUsages.flatMap(usage => usage.sessionRows)
         const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
         return {
-            all: buildSessionListModulePayload(allUsage.sessionRows, sessions, pagination),
+            all: buildSessionListModulePayload(sessionRows, sessions, pagination),
             ...platformPayloads,
         }
     }
 
-    const allUsage = buildProjectLoadUsageResult(getProjectDetailSessions(detail))
+    const mergedUsage: LoadUsageResult = {
+        dailyRows: platformUsages.flatMap(usage => usage.dailyRows).sort((a, b) => a.id.localeCompare(b.id)),
+        dailyTokenUsage: mergeDailyTokenUsage(platformUsages.flatMap(usage => usage.dailyTokenUsage)),
+        monthlyModelUsage: mergeMonthlyModelUsage(platformUsages.flatMap(usage => usage.monthlyModelUsage)),
+        monthlyRows: platformUsages.flatMap(usage => usage.monthlyRows).sort((a, b) => a.id.localeCompare(b.id)),
+        overviewCards: [],
+        projectUsage: [],
+        sessionRows: platformUsages.flatMap(usage => usage.sessionRows),
+        sessionUsage: platformUsages.flatMap(usage => usage.sessionUsage),
+        todayTopModel: null,
+        todayTopProject: null,
+        todayTotalCost: 0,
+        todayTotalTokens: 0,
+        weeklyRows: platformUsages.flatMap(usage => usage.weeklyRows).sort((a, b) => a.id.localeCompare(b.id)),
+    }
     const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
     return {
-        all: buildLoadUsageModulePayload(allUsage, module, pagination),
+        all: buildLoadUsageModulePayload(mergedUsage, module, pagination),
         ...platformPayloads,
     }
 }
@@ -161,19 +177,6 @@ function buildLoadUsageModulePayload(
     } satisfies Record<typeof module, () => unknown>
 
     return modulePayloadBuilders[module]()
-}
-
-function getProjectDetailSessions(
-    detail: ProjectUsageDetail,
-    platform: ProjectDashboardScope = 'all',
-) {
-    if (platform !== 'all') {
-        return (detail.analyzing[platform] ?? createEmptyProjectPlatformUsage()).sessions
-    }
-
-    return PROJECT_USAGE_PLATFORMS
-        .flatMap(currentPlatform => (detail.analyzing[currentPlatform] ?? createEmptyProjectPlatformUsage()).sessions)
-        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
 
 function assertProjectUsageDataModule(module: string): asserts module is ProjectUsageDataModule {
@@ -218,8 +221,9 @@ function buildProjectPlatformPayloadMap(
 export function buildProjectLoadUsageResult(
     sessions: ProjectSessionUsageItem[],
     platform: ProjectUsagePlatform | 'all' = 'all',
+    precomputedEvents: UsageAggregateEvent[] = [],
 ): Omit<LoadUsageResult, 'sessionUsage'> & { sessionUsage: ProjectSessionUsageItem[] } {
-    const usage = buildLoadUsageResult(getProjectAggregateEvents(sessions), sessions, {
+    const usage = buildLoadUsageResult(precomputedEvents, sessions, {
         aggregateOptions: {
             includeModel: event => platform !== 'claudeCode' || event.model !== '<synthetic>',
         },
@@ -229,35 +233,6 @@ export function buildProjectLoadUsageResult(
         ...usage,
         sessionUsage: sessions,
     }
-}
-
-interface ProjectAggregateEvent extends UsageAggregateEvent {
-    costUSD: number
-}
-
-function getProjectAggregateEvents(sessions: ProjectSessionUsageItem[]): ProjectAggregateEvent[] {
-    return sessions
-        .flatMap(session => session.interactions
-            .filter(interaction => interaction.usage && interaction.timestamp && hasBillableUsage(interaction.usage))
-            .map((interaction): ProjectAggregateEvent => ({
-                cachedInputTokens: interaction.usage!.cachedInputTokens,
-                costUSD: interaction.usage!.costUSD,
-                inputTokens: interaction.usage!.inputTokens,
-                isFallbackModel: interaction.usage!.isFallbackModel ?? false,
-                model: interaction.model ?? session.model,
-                outputTokens: interaction.usage!.outputTokens,
-                project: session.project,
-                reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
-                repository: session.repository,
-                sessionId: session.id,
-                timestamp: interaction.timestamp!,
-                totalTokens: interaction.usage!.totalTokens,
-            })))
-        .sort((a, b) => Date.parse(a.timestamp) - Date.parse(b.timestamp))
-}
-
-function hasBillableUsage(usage: ProjectInteractionUsage) {
-    return usage.totalTokens > 0 || usage.costUSD > 0
 }
 
 function collectSessionModels(sessions: ProjectSessionUsageItem[]) {

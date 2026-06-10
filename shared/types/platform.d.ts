@@ -49,6 +49,7 @@ export interface TokenUsageDelta {
 
 /** Normalized usage event emitted by platform loaders for date, project, model, and session aggregation. */
 export interface UsageAggregateEvent extends TokenUsageDelta {
+    cacheCreationTokens?: number
     costUSD?: number
     isFallbackModel: boolean
     model: string
@@ -56,6 +57,7 @@ export interface UsageAggregateEvent extends TokenUsageDelta {
     repository: string
     sessionId: string
     timestamp: string
+    toolTokens?: number
 }
 
 /** Optional aggregation behavior, allowing platforms to override cost calculation or filter hidden models. */

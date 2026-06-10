@@ -178,6 +178,8 @@ export function buildHomeDashboardModules(
     }
 }
 
+type HomeSessionUsageItem = ReturnType<typeof buildSessionUsage>[number]
+
 function buildHomeSessionAnalysisItems(sessionUsage: HomeSessionUsageItem[]) {
     const durationMinutesByProject = new Map<string, number>()
 
@@ -212,19 +214,9 @@ function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<Load
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
 
-type HomeSessionUsageItem = ReturnType<typeof buildSessionUsage>[number] & Partial<Pick<ProjectSessionUsageItem, 'interactions'>>
-
-function getSessionUsageCostTotal(sessions: HomeSessionUsageItem[]) {
+function getSessionUsageCostTotal(sessions: Array<{ costUSD: number }>) {
     return roundCurrency(
-        sessions.reduce((sessionTotal, session) => {
-            if (!session.interactions) {
-                return sessionTotal + session.costUSD
-            }
-
-            return sessionTotal + session.interactions.reduce((interactionTotal, interaction) => {
-                return interactionTotal + (interaction.usage?.costUSD ?? 0)
-            }, 0)
-        }, 0),
+        sessions.reduce((total, session) => total + session.costUSD, 0),
     )
 }
 

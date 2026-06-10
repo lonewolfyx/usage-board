@@ -58,7 +58,6 @@ export const kiloUsageAdapter = {
                 })
 
                 addFragmentInteraction(fragment, {
-                    content: '',
                     costUSD: parsed.usage.costUSD,
                     dedupeKey: parsed.interactionId,
                     index: fragment.interactions.length,

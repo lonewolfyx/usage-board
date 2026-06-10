@@ -357,6 +357,39 @@ export function calculateUsageCostUSD(usage: TokenCostUsage, pricing: ModelPrici
 }
 
 /**
+ * Computes real-time USD cost for a usage event using a pricing resolver.
+ *
+ * @example
+ * ```ts
+ * const cost = eventCostUSD(event, resolvePricing)
+ * ```
+ */
+export function eventCostUSD(
+    event: {
+        cacheCreationTokens?: number
+        cachedInputTokens: number
+        inputTokens: number
+        outputTokens: number
+        reasoningOutputTokens: number
+        model: string
+        toolTokens?: number
+    },
+    resolvePricing: ModelPricingResolver,
+    options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {},
+): number {
+    const cacheCreationTokens = event.cacheCreationTokens ?? 0
+    const cacheReadTokens = Math.max(event.cachedInputTokens - cacheCreationTokens, 0)
+    const outputTokens = event.outputTokens + event.reasoningOutputTokens + (event.toolTokens ?? 0)
+
+    return calculateUsageCostUSD({
+        cacheCreationTokens,
+        cachedInputTokens: cacheReadTokens,
+        inputTokens: event.inputTokens,
+        outputTokens,
+    }, resolvePricing(event.model), options)
+}
+
+/**
  * Builds the minimal LiteLLM pricing dataset used as a local fallback.
  *
  * @example
