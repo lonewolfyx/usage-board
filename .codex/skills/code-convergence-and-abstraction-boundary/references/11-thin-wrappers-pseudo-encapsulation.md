@@ -28,6 +28,40 @@ Use this reference before adding a wrapper, service, manager, helper, composable
 12. Do not define an interface or abstract class when there is only one implementation and no substitution need.
 13. Do not disguise a plain pure function as a composable or hook.
 14. Do not reimplement standard or existing utility capabilities such as `deepClone`, `debounce`, `isEmpty`, `pick`, or `omit`.
+15. Do not extract a single-expression helper only to rename `basename`, `dirname`, `join`, regex `test`, numeric guards, timestamp guards, or attribute lookup.
+16. Do not create `toNumber`, `toOptionalNumber`, `timestampFromX`, `getXPath`, `getSessionId`, `getTraceId`, or `getAttributeString` style helpers unless they centralize a real business rule used across meaningful boundaries.
+17. Do not justify a thin wrapper with “readability” when the wrapper removes concrete information from the call site and adds no rule ownership.
+
+## Explicit Anti-Examples
+
+These are anti-patterns by default:
+
+```ts
+function toNumber(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+}
+
+function toOptionalNumber(value: unknown) {
+    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
+
+function isOpenCodeChannelDatabase(name: string) {
+    return /^opencode-[\w-]+\.db$/u.test(name)
+}
+
+function getSessionId(filePath: string, sessionMetaId: string | undefined) {
+    return sessionMetaId?.trim() || basename(filePath, '.jsonl')
+}
+
+function getCodexConfigPath(codexPath: string) {
+    return join(codexPath, 'config.toml')
+}
+```
+
+Preferred default:
+
+- inline the expression at the call site;
+- or converge the rule into one existing shared normalizer if it truly recurs across modules.
 
 ## Allowed Exceptions
 
@@ -35,4 +69,3 @@ Use this reference before adding a wrapper, service, manager, helper, composable
 2. Third-party dependency isolation wrappers are allowed.
 3. Cross-platform, cross-runtime, or cross-framework adapters are allowed.
 4. Interfaces for testing, dependency injection, or plugin systems are allowed.
-

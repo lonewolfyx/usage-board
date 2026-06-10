@@ -20,6 +20,8 @@ Use this skill when working inside the `usage-board` repository on cleanup, refa
 - Do not extract functions like `const a = () => c()` or `const b = () => c()` just to make code “look reusable”.
 - Do not introduce abstraction layers that hide where data comes from.
 - Do not rewrite stable calculations unless there is a correctness bug or a very clear readability win.
+- Do not create tiny local helpers for `basename`, `dirname`, `join`, regex `test`, `typeof value === 'number'`, `Number.isFinite`, `Math.trunc`, or timestamp normalization unless they unify a real shared domain rule.
+- Do not keep helpers whose only value is a prettier name over one expression.
 
 ## Working Rules
 
@@ -43,6 +45,21 @@ Avoid collapsing:
 - calculations that differ in business meaning
 - formatting that is only coincidentally similar
 - small call sites that become harder to trace after extraction
+- direct expressions that become fake abstractions after extraction
+
+### 2.1 Hard rule for invalid wrappers
+
+Delete or inline helpers shaped like these unless they are proven multi-call-site domain rules:
+
+- `toNumber(value)`
+- `toOptionalNumber(value)`
+- `timestampFromX(value)`
+- `isX(name)` when it only wraps one regex
+- `getXPath(root)` when it only wraps one `join(...)`
+- `getSessionId(filePath)` when it only wraps one `basename(...)` or `dirname(...).split(...)`
+- `getAttributeString(attrs, key)` when it only wraps indexed access plus normalization
+
+If the body is a single expression and that expression is already understandable at the call site, keep it inline.
 
 ### 3. Prefer data-shaped refactors
 
