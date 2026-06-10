@@ -174,102 +174,62 @@ describe('home dashboard today insights', () => {
         expect(modules.overviewCards.find(card => card.name === 'Prompt Count')?.value).toBe('1')
     })
 
-    it('patches bootstrap scopes by platform without rewriting unaffected agents', () => {
-        const root = mkdtempSync(join(tmpdir(), 'usage-board-bootstrap-patch-'))
+    it('stores and retrieves sessions per platform', () => {
+        const root = mkdtempSync(join(tmpdir(), 'usage-board-sessions-per-platform-'))
         createdRoots.push(root)
 
         const repository = new UsageCacheRepository(join(root, 'cache.sqlite'))
-        const base = {
-            ...Object.fromEntries(PROJECT_USAGE_PLATFORMS.map(platform => [platform, createEmptyLoadUsageResult()] as const)),
-            claudeCode: {
-                ...createEmptyLoadUsageResult(),
-                sessionUsage: [{
-                    cachedInputTokens: 0,
-                    costUSD: 0,
-                    date: '',
-                    duration: '1m',
-                    durationMinutes: 1,
-                    id: 'claude:session',
-                    inputTokens: 0,
-                    interactions: [],
-                    lastActivity: '2026-05-28T00:00:00.000Z',
-                    model: 'unknown',
-                    models: [],
-                    month: '2026-05',
-                    outputTokens: 0,
-                    project: 'usage-board',
-                    reasoningOutputTokens: 0,
-                    repository: 'local/usage-board',
-                    sessionId: 'claude-session',
-                    startedAt: '2026-05-28T00:00:00.000Z',
-                    threadName: 'claude',
-                    tokenTotal: 0,
-                    topModel: 'unknown',
-                    week: '2026-05-26 - 2026-06-01',
-                }],
-                todayTotalCost: 0,
-                todayTotalTokens: 0,
-            },
-            codex: {
-                ...createEmptyLoadUsageResult(),
-                sessionUsage: [{
-                    cachedInputTokens: 0,
-                    costUSD: 0,
-                    date: '',
-                    duration: '1m',
-                    durationMinutes: 1,
-                    id: 'codex:session-a',
-                    inputTokens: 0,
-                    interactions: [],
-                    lastActivity: '2026-05-28T00:00:00.000Z',
-                    model: 'unknown',
-                    models: [],
-                    month: '2026-05',
-                    outputTokens: 0,
-                    project: 'usage-board',
-                    reasoningOutputTokens: 0,
-                    repository: 'local/usage-board',
-                    sessionId: 'codex-session-a',
-                    startedAt: '2026-05-28T00:00:00.000Z',
-                    threadName: 'codex',
-                    tokenTotal: 0,
-                    topModel: 'unknown',
-                    week: '2026-05-26 - 2026-06-01',
-                }],
-                todayTotalCost: 0,
-                todayTotalTokens: 0,
-            },
-            version: 'test',
-        } as unknown as TokensConsumptionResult
 
-        repository.saveBootstrap(base)
-        repository.saveBootstrap({
-            ...base,
-            codex: {
-                ...base.codex,
-                sessionUsage: [{
-                    ...base.codex.sessionUsage[0],
-                    id: 'codex:session-b',
-                    sessionId: 'codex-session-b',
-                }],
-            },
-        } as TokensConsumptionResult, {
-            platforms: ['codex'],
-        })
+        repository.upsertInteractions([makeInteraction({
+            sessionId: 'claude-session',
+            platform: 'claudeCode',
+            projectName: 'usage-board',
+            totalToken: 100,
+        })])
 
-        const bootstrap = repository.loadBootstrap()
+        repository.upsertInteractions([makeInteraction({
+            sessionId: 'codex-session-a',
+            platform: 'codex',
+            projectName: 'usage-board',
+            totalToken: 50,
+        })])
 
-        expect(bootstrap?.payload.codex.sessionUsage.map(session => session.sessionId)).toEqual(['codex-session-b'])
-        expect(bootstrap?.payload.claudeCode.sessionUsage.map(session => session.sessionId)).toEqual(['claude-session'])
+        repository.upsertInteractions([makeInteraction({
+            sessionId: 'codex-session-b',
+            platform: 'codex',
+            projectName: 'usage-board',
+            totalToken: 75,
+        })])
+
+        const sessionsByPlatform = repository.querySessionSummariesByPlatform(['claudeCode', 'codex'])
+
+        expect(sessionsByPlatform.get('claudeCode')?.map(s => s.sessionId)).toEqual(['claude-session'])
+        expect(sessionsByPlatform.get('codex')?.map(s => s.sessionId).sort()).toEqual(['codex-session-a', 'codex-session-b'])
     })
 
-    it('patches project catalog entries without clearing unaffected projects', () => {
-        const root = mkdtempSync(join(tmpdir(), 'usage-board-project-catalog-patch-'))
+    it('computes project catalog from sessions', () => {
+        const root = mkdtempSync(join(tmpdir(), 'usage-board-project-catalog-'))
         createdRoots.push(root)
 
         const repository = new UsageCacheRepository(join(root, 'cache.sqlite'))
 
-        repository.saveProjectCatalog([
+        repository.upsertInteractions([makeInteraction({
+            sessionId: 'alpha-session',
+            platform: 'codex',
+            projectName: 'alpha',
+            totalToken: 100,
+        })])
+
+        repository.upsertInteractions([makeInteraction({
+            sessionId: 'beta-session',
+            platform: 'claudeCode',
+            projectName: 'beta',
+            totalToken: 200,
+        })])
+
+        const catalog = repository.queryProjectCatalog()
+
+        expect(catalog).toEqual([
             {
                 label: 'alpha',
                 platforms: ['codex'],
@@ -281,48 +241,9 @@ describe('home dashboard today insights', () => {
                 totalTokens: 200,
             },
         ])
-        repository.saveProjectCatalog([
-            {
-                label: 'beta',
-                platforms: ['claudeCode'],
-                totalTokens: 250,
-            },
-            {
-                label: 'gamma',
-                platforms: ['codex'],
-                totalTokens: 300,
-            },
-        ], {
-            changedEntries: [
-                {
-                    label: 'beta',
-                    platforms: ['claudeCode'],
-                    totalTokens: 250,
-                },
-                {
-                    label: 'gamma',
-                    platforms: ['codex'],
-                    totalTokens: 300,
-                },
-            ],
-            removedLabels: ['alpha'],
-        })
-
-        expect(repository.loadProjectCatalog()?.payload).toEqual([
-            {
-                label: 'beta',
-                platforms: ['claudeCode'],
-                totalTokens: 250,
-            },
-            {
-                label: 'gamma',
-                platforms: ['codex'],
-                totalTokens: 300,
-            },
-        ])
     })
 
-    it('drops retired usage_scope_project_usage during schema migration', () => {
+    it('drops old tables during schema migration', () => {
         const root = mkdtempSync(join(tmpdir(), 'usage-board-schema-migration-'))
         createdRoots.push(root)
 
@@ -334,13 +255,10 @@ describe('home dashboard today insights', () => {
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 schema_version INTEGER NOT NULL
             );
-            INSERT INTO cache_schema_meta (id, schema_version) VALUES (1, 11);
-            CREATE TABLE usage_scope_project_usage (
-                scope_key TEXT NOT NULL,
-                row_order INTEGER NOT NULL
+            INSERT INTO cache_schema_meta (id, schema_version) VALUES (1, 12);
+            CREATE TABLE old_table_should_be_gone (
+                id TEXT PRIMARY KEY
             );
-            CREATE INDEX idx_usage_scope_project_usage_order
-                ON usage_scope_project_usage(scope_key, row_order);
         `)
         database.close()
 
@@ -348,19 +266,58 @@ describe('home dashboard today insights', () => {
         repository.close()
 
         const migratedDatabase = new DatabaseSync(databasePath)
-        const retiredTable = migratedDatabase.prepare(`
+        const oldTable = migratedDatabase.prepare(`
             SELECT name
             FROM sqlite_master
-            WHERE type = 'table' AND name = 'usage_scope_project_usage'
+            WHERE type = 'table' AND name = 'old_table_should_be_gone'
         `).get()
-        const retiredIndex = migratedDatabase.prepare(`
+        const sessionsTable = migratedDatabase.prepare(`
             SELECT name
             FROM sqlite_master
-            WHERE type = 'index' AND name = 'idx_usage_scope_project_usage_order'
+            WHERE type = 'table' AND name = 'sessions'
         `).get()
         migratedDatabase.close()
 
-        expect(retiredTable).toBeUndefined()
-        expect(retiredIndex).toBeUndefined()
+        expect(oldTable).toBeUndefined()
+        expect(sessionsTable).toBeDefined()
     })
 })
+
+function makeInteraction(overrides: {
+    sessionId: string
+    platform: string
+    projectName: string
+    totalToken: number
+    timestamp?: string
+    model?: string
+}) {
+    return {
+        sessionId: overrides.sessionId,
+        interactionIndex: 0,
+        platform: overrides.platform,
+        projectName: overrides.projectName,
+        repository: '',
+        threadName: '',
+        sessionStartedAt: overrides.timestamp ?? '2026-05-28T00:00:00.000Z',
+        timestamp: overrides.timestamp ?? '2026-05-28T00:00:00.000Z',
+        role: 'assistant',
+        type: 'message',
+        content: '',
+        model: overrides.model ?? 'unknown',
+        inputToken: 0,
+        outputToken: overrides.totalToken,
+        cachedInputToken: 0,
+        cacheCreation: 0,
+        cacheRead: 0,
+        reasoningToken: 0,
+        totalToken: overrides.totalToken,
+        costUsd: 0,
+        isFallbackModel: false,
+        toolTokens: 0,
+        extraTotalTokens: 0,
+        dedupeKey: null,
+        fallbackDedupeKey: null,
+        sourceFile: null,
+        isSidechain: false,
+    }
+}

@@ -15,7 +15,7 @@ describe('usage indexer real parity with installed ccusage', () => {
             appVersion: 'test',
             home: process.cwd(),
         })
-        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(config, createMemoryRepository())
+        const { bootstrapByPlatform, eventsByPlatform } = await buildIncrementalUsageIndex(config, createMemoryRepository())
 
         for (const platform of PROJECT_USAGE_PLATFORMS) {
             const command = getCcusageCommand(platform)
@@ -23,7 +23,7 @@ describe('usage indexer real parity with installed ccusage', () => {
                 cwd: process.cwd(),
                 encoding: 'utf8',
             })) ?? {}
-            const usage = buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform)
+            const usage = buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform, eventsByPlatform[platform])
             const actualDailyRows = normalizeDailyRows(usage.dailyRows)
             const expectedDailyRows = normalizeCcusageDailyRows(ccusageReport.daily ?? [])
             const actualTotals = normalizeTotalsFromRows(actualDailyRows)
@@ -49,11 +49,11 @@ describe('usage indexer real parity with installed ccusage', () => {
             appVersion: 'test',
             home: process.cwd(),
         })
-        const { bootstrapByPlatform } = await buildIncrementalUsageIndex(config, createMemoryRepository())
+        const { bootstrapByPlatform, eventsByPlatform } = await buildIncrementalUsageIndex(config, createMemoryRepository())
         const dashboardsByPlatform = Object.fromEntries(
             PROJECT_USAGE_PLATFORMS.map(platform => [
                 platform,
-                buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform),
+                buildProjectLoadUsageResult(bootstrapByPlatform[platform], platform, eventsByPlatform[platform]),
             ]),
         )
         const usage = buildHomeDashboardModules(dashboardsByPlatform)
@@ -82,9 +82,10 @@ describe('usage indexer real parity with installed ccusage', () => {
 
 function createMemoryRepository() {
     const indexedFiles = []
+    const interactions = []
 
     return {
-        deleteIndexedSourceFiles(paths) {
+        deleteSourceFiles(paths) {
             if (paths.length === 0) {
                 return
             }
@@ -93,10 +94,25 @@ function createMemoryRepository() {
             const kept = indexedFiles.filter(file => !pending.has(file.path))
             indexedFiles.splice(0, indexedFiles.length, ...kept)
         },
-        loadIndexedSourceFiles() {
-            return [...indexedFiles]
+        deleteSessionsBySourceFiles(paths) {
+            if (paths.length === 0)
+                return
+            const pathSet = new Set(paths)
+            const kept = interactions.filter(row => !pathSet.has(row.sourceFile))
+            interactions.splice(0, interactions.length, ...kept)
         },
-        upsertIndexedSourceFiles(files) {
+        loadSourceFileMetas() {
+            return indexedFiles.map(file => ({
+                cacheSignature: file.cacheSignature,
+                mtimeMs: file.mtimeMs,
+                path: file.path,
+                platform: file.platform,
+                projectNames: file.projectNames,
+                size: file.size,
+                updatedAt: file.updatedAt,
+            }))
+        },
+        upsertSourceFiles(files) {
             for (const file of files) {
                 const index = indexedFiles.findIndex(candidate => candidate.path === file.path)
 
@@ -108,6 +124,112 @@ function createMemoryRepository() {
                 }
             }
         },
+        upsertInteractions(items) {
+            interactions.push(...items)
+        },
+        querySessionSummariesByPlatform(platforms) {
+            const result = new Map()
+            for (const platform of platforms) {
+                const platformRows = interactions.filter(row => row.platform === platform)
+                const bySession = new Map()
+                for (const row of platformRows) {
+                    const existing = bySession.get(row.sessionId) || {
+                        session_id: row.sessionId,
+                        platform: row.platform,
+                        project_name: row.projectName,
+                        repository: row.repository,
+                        thread_name: row.threadName,
+                        session_started_at: row.sessionStartedAt,
+                        started_at: row.timestamp,
+                        last_activity: row.timestamp,
+                        input_token: 0,
+                        output_token: 0,
+                        cached_input_token: 0,
+                        reasoning_token: 0,
+                        total_token: 0,
+                        cost_usd: 0,
+                        models_set: new Set(),
+                    }
+                    existing.input_token += row.inputToken
+                    existing.output_token += row.outputToken
+                    existing.cached_input_token += row.cachedInputToken
+                    existing.reasoning_token += row.reasoningToken
+                    existing.total_token += row.totalToken
+                    existing.cost_usd += row.costUsd ?? 0
+                    if (row.model)
+                        existing.models_set.add(row.model)
+                    if (row.timestamp && (!existing.started_at || row.timestamp < existing.started_at))
+                        existing.started_at = row.timestamp
+                    if (row.timestamp && row.timestamp > existing.last_activity)
+                        existing.last_activity = row.timestamp
+                    bySession.set(row.sessionId, existing)
+                }
+                const sessions = []
+                for (const [, session] of bySession) {
+                    if (session.total_token > 0) {
+                        const models = Array.from(session.models_set).sort()
+                        const topModel = models[0] || 'unknown'
+                        sessions.push({
+                            cachedInputTokens: session.cached_input_token,
+                            costUSD: Math.round(session.cost_usd * 1000000) / 1000000,
+                            date: '',
+                            duration: '',
+                            durationMinutes: 0,
+                            id: session.session_id,
+                            inputTokens: session.input_token,
+                            interactions: [],
+                            lastActivity: session.last_activity || session.started_at || '',
+                            model: topModel,
+                            models,
+                            month: '',
+                            outputTokens: session.output_token,
+                            project: session.project_name,
+                            reasoningOutputTokens: session.reasoning_token,
+                            repository: session.repository,
+                            sessionId: session.session_id,
+                            startedAt: session.started_at || session.session_started_at || '',
+                            threadName: session.thread_name,
+                            tokenTotal: session.total_token,
+                            topModel,
+                            week: '',
+                        })
+                    }
+                }
+                sessions.sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || ''))
+                result.set(platform, sessions)
+            }
+            return result
+        },
+        queryInteractionEventsByPlatform() {
+            const result = new Map()
+            for (const row of interactions) {
+                if (row.totalToken <= 0)
+                    continue
+                if (!row.timestamp)
+                    continue
+                const list = result.get(row.platform) ?? []
+                list.push({
+                    cacheCreationTokens: row.cacheCreation ?? 0,
+                    cachedInputTokens: row.cachedInputToken,
+                    costUSD: row.costUsd ?? 0,
+                    inputTokens: row.inputToken,
+                    isFallbackModel: row.isFallbackModel,
+                    model: row.model || 'unknown',
+                    outputTokens: row.outputToken,
+                    platform: row.platform,
+                    project: row.projectName,
+                    reasoningOutputTokens: row.reasoningToken,
+                    repository: row.repository,
+                    sessionId: row.sessionId,
+                    timestamp: row.timestamp,
+                    toolTokens: row.toolTokens ?? 0,
+                    totalTokens: row.totalToken,
+                })
+                result.set(row.platform, list)
+            }
+            return result
+        },
+        upsertSessions() {},
     }
 }
 

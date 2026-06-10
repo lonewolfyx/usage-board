@@ -94,7 +94,6 @@ export const copilotUsageAdapter = {
             })
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD,
                 dedupeKey: candidate.dedupeKey,
                 index: fragment.interactions.length,

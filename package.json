@@ -50,6 +50,7 @@
         "@clack/prompts": "^1.4.0",
         "cac": "^7.0.0",
         "crossws": "^0.4.5",
+        "dayjs": "^1.11.21",
         "glob": "^13.0.6",
         "nuxt-devkit-server": "^0.0.1"
     },

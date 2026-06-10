@@ -115,12 +115,17 @@ export const codexUsageAdapter = {
                 isFallbackModel = true
             }
 
+            const effectiveType = normalizeStringValue(payload?.type) || normalizeStringValue(line.type) || 'event'
+
+            if (effectiveType !== 'token_count') {
+                continue
+            }
+
             const usage = rawUsage
                 ? getCodexInteractionUsage(rawUsage, model ?? CODEX_FALLBACK_MODEL, resolvePricing, speed)
                 : null
 
             addFragmentInteraction(fragment, {
-                content: extractCodexContent(line),
                 costUSD: usage?.costUSD ?? 0,
                 dedupeKey: usage && timestamp
                     ? getCodexDedupeKey(sessionId, timestamp, model ?? CODEX_FALLBACK_MODEL, usage)
@@ -129,7 +134,7 @@ export const codexUsageAdapter = {
                 model: model ?? null,
                 role: getCodexRole(line, rawUsage !== null),
                 timestamp,
-                type: normalizeStringValue(payload?.type) || normalizeStringValue(line.type) || 'event',
+                type: effectiveType,
                 usage: usage ? { ...usage, isFallbackModel } : null,
             })
         }
@@ -274,27 +279,6 @@ function toCodexSpeed(value: string): 'fast' | 'standard' {
     const normalized = value.trim().toLowerCase()
 
     return normalized === 'priority' || normalized === 'fast' ? 'fast' : 'standard'
-}
-
-function extractCodexContent(line: Record<string, unknown>) {
-    const payload = normalizeUnknownRecord(line.payload)
-    const data = normalizeUnknownRecord(line.data)
-    const result = normalizeUnknownRecord(line.result)
-    const response = normalizeUnknownRecord(line.response)
-    const message = payload?.message
-
-    if (typeof message === 'string') {
-        return message
-    }
-
-    return normalizeStringValue(payload?.text)
-        || normalizeStringValue(payload?.output)
-        || normalizeStringValue(payload?.content)
-        || normalizeStringValue(line.content)
-        || normalizeStringValue(data?.content)
-        || normalizeStringValue(result?.content)
-        || normalizeStringValue(response?.content)
-        || ''
 }
 
 function getCodexRole(line: Record<string, unknown>, hasUsage: boolean) {

@@ -3,6 +3,7 @@ import type { IndexedUsageSourceFile, IndexedUsageSourceFileMeta, UpdatedUsageSe
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { HomeDashboardModules } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
+import type { ModelPricingResolver, UsageAggregateEvent } from '#shared/types/platform'
 import type { ProjectSessionUsageItem, ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
 import type {
     ProjectUsageCatalogItem,
@@ -18,12 +19,13 @@ import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-re
 import {
     buildIncrementalUsageIndex,
     buildPlatformSessionsByPlatform,
+    createPricingResolversForPlatforms,
     getUsageCacheUpdateState,
     hydrateIndexedUsageSourceFiles,
 } from '#server/services/usage-indexer'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
-import { resetRemotePricingCache } from '#shared/platform/pricing'
+import { eventCostUSD, resetRemotePricingCache } from '#shared/platform/pricing'
 import {
     buildProjectLoadUsageResult,
     buildProjectUsageDataModuleFromDetail,
@@ -46,6 +48,7 @@ export interface UsageRuntimeUpdate {
 interface UsageRuntimeState {
     bootstrap: TokensConsumptionResult | null
     discoveredFiles: DiscoveredUsageFile[] | null
+    eventsByPlatform: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> | null
     hasIndexedCurrentProcess: boolean
     hasLoadedAllProjectDetails: boolean
     hydratedAt: number
@@ -61,6 +64,7 @@ class UsageDataRuntime {
     private readonly state: UsageRuntimeState = {
         bootstrap: null,
         discoveredFiles: null,
+        eventsByPlatform: null,
         hasIndexedCurrentProcess: false,
         hasLoadedAllProjectDetails: false,
         hydratedAt: 0,
@@ -76,6 +80,7 @@ class UsageDataRuntime {
     private liveBootstrapFetchedAt = 0
     private liveBootstrapPromise: Promise<TokensConsumptionResult> | null = null
     private pendingWatcherPaths = new Map<string, 'add' | 'change' | 'unlink'>()
+    private pricingResolvers = new Map<ProjectUsagePlatform, ModelPricingResolver>()
     private refreshPromise: Promise<void> | null = null
     private refreshRequestedWhileBusy = false
     private readonly updateListeners = new Set<(update: UsageRuntimeUpdate) => void>()
@@ -100,6 +105,15 @@ class UsageDataRuntime {
 
     async getBootstrap() {
         await this.ensureHydratedCurrentProcessState()
+
+        if (this.liveBootstrap) {
+            return this.liveBootstrap
+        }
+
+        if (this.state.bootstrap) {
+            this.refreshLiveBootstrapInBackground()
+            return this.state.bootstrap
+        }
 
         return this.getLiveBootstrap()
     }
@@ -146,7 +160,8 @@ class UsageDataRuntime {
     }
 
     async getHomeDashboardModules(): Promise<HomeDashboardModules> {
-        return buildHomeDashboardModules(await this.getBootstrap())
+        const todayInsights = this.repository.queryTodayInsights()
+        return buildHomeDashboardModules(await this.getBootstrap(), todayInsights)
     }
 
     async getLiveState() {
@@ -168,11 +183,11 @@ class UsageDataRuntime {
             throw new Error('Missing project name for project data request.')
         }
 
-        let hydratedDetail = getProjectDetailFromBootstrap(await this.getBootstrap(), projectLabel)
+        let hydratedDetail = this.getProjectDetailFromRepository(projectLabel)
 
         if (!hydratedDetail) {
             await this.refreshNow()
-            hydratedDetail = getProjectDetailFromBootstrap(await this.getBootstrap(), projectLabel)
+            hydratedDetail = this.getProjectDetailFromRepository(projectLabel)
         }
 
         if (!hydratedDetail) {
@@ -207,20 +222,100 @@ class UsageDataRuntime {
         return this.liveBootstrapPromise
     }
 
+    private getProjectDetailFromRepository(projectName: string) {
+        const sessionsByPlatform = this.repository.querySessionSummariesByPlatform(PROJECT_USAGE_PLATFORMS)
+        const platformSessions = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                (sessionsByPlatform.get(platform) ?? []).filter(s => s.project === projectName),
+            ]),
+        ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+
+        const hasSessions = PROJECT_USAGE_PLATFORMS.some(platform => platformSessions[platform].length > 0)
+
+        if (!hasSessions) {
+            return null
+        }
+
+        const events = this.repository.queryInteractionEvents({ projectName })
+
+        if (this.pricingResolvers.size > 0) {
+            for (const event of events) {
+                if (event.costUSD && event.costUSD > 0) {
+                    continue
+                }
+
+                const resolvePricing = this.pricingResolvers.get(event.platform as ProjectUsagePlatform)
+                if (!resolvePricing) {
+                    continue
+                }
+
+                event.costUSD = eventCostUSD(event, resolvePricing)
+            }
+        }
+
+        return buildProjectUsageDetailFromPlatformSessions(projectName, platformSessions, events)
+    }
+
+    private refreshLiveBootstrapInBackground() {
+        this.getLiveBootstrap().catch((error) => {
+            console.error('[usage-runtime] background live bootstrap failed', error)
+        })
+    }
+
     private async buildLiveBootstrap() {
-        const indexedFiles = this.state.indexedFiles ?? this.repository.loadIndexedSourceFiles()
+        if (!this.state.indexedFiles) {
+            throw new Error('Cannot build live bootstrap: no indexed files available. Run refresh first.')
+        }
+
+        const indexedFiles = this.state.indexedFiles
 
         resetRemotePricingCache()
         const repricedFiles = await hydrateIndexedUsageSourceFiles(indexedFiles)
         const bootstrapByPlatform = buildPlatformSessionsByPlatform(repricedFiles, {
             updatedPlatforms: PROJECT_USAGE_PLATFORMS,
         })
-        const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform)
+
+        const freshPricingResolvers = await createPricingResolversForPlatforms(PROJECT_USAGE_PLATFORMS)
+        const eventsByPlatform = this.state.eventsByPlatform
+            ? this.repriceEvents(this.state.eventsByPlatform, freshPricingResolvers)
+            : undefined
+
+        const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform, eventsByPlatform)
 
         this.liveBootstrap = bootstrap
         this.liveBootstrapFetchedAt = Date.now()
 
         return bootstrap
+    }
+
+    private repriceEvents(
+        source: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>>,
+        pricingResolvers: Map<ProjectUsagePlatform, ModelPricingResolver>,
+    ): Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> {
+        const result: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> = {}
+
+        for (const platform of PROJECT_USAGE_PLATFORMS) {
+            const events = source[platform]
+            if (!events || events.length === 0) {
+                continue
+            }
+
+            const resolvePricing = pricingResolvers.get(platform)
+            if (!resolvePricing) {
+                result[platform] = events
+                continue
+            }
+
+            const platformOptions = platform === 'codex' ? { defaultFastMultiplier: 2 } : undefined
+
+            result[platform] = events.map(event => ({
+                ...event,
+                costUSD: eventCostUSD(event, resolvePricing, platformOptions),
+            }))
+        }
+
+        return result
     }
 
     subscribeToUpdates(listener: (update: UsageRuntimeUpdate) => void) {
@@ -244,20 +339,43 @@ class UsageDataRuntime {
     }
 
     private async hydrateFromRepository() {
-        const indexedFileMetas = this.repository.loadIndexedSourceFileMetas()
-        const bootstrap = this.repository.loadBootstrap()
-        const projectCatalog = this.repository.loadProjectCatalog()
+        const indexedFileMetas = this.repository.loadSourceFileMetas()
+        const sessionsByPlatform = this.repository.querySessionSummariesByPlatform(PROJECT_USAGE_PLATFORMS)
+        const eventsByPlatformFromRepo = this.repository.queryInteractionEventsByPlatform()
+        const projectCatalog = this.repository.queryProjectCatalog()
 
-        this.state.bootstrap = bootstrap?.payload ?? null
+        if (this.pricingResolvers.size === 0) {
+            this.pricingResolvers = await createPricingResolversForPlatforms(PROJECT_USAGE_PLATFORMS)
+        }
+
+        this.enrichEventsWithCostUSD(eventsByPlatformFromRepo, this.pricingResolvers)
+
+        const eventsByPlatform = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                eventsByPlatformFromRepo.get(platform) ?? [],
+            ]),
+        ) as Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>>
+
+        const platformSessions = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                sessionsByPlatform.get(platform) ?? [],
+            ]),
+        ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+
+        const hasSessions = Array.from(sessionsByPlatform.values()).some(list => list.length > 0)
+        const bootstrap = hasSessions
+            ? buildBootstrapFromPlatformSessions(this.config.version, platformSessions, eventsByPlatform)
+            : null
+
+        this.state.bootstrap = bootstrap
         this.state.discoveredFiles = toDiscoveredUsageFiles(indexedFileMetas)
+        this.state.eventsByPlatform = eventsByPlatform
         this.state.indexedFiles = null
         this.state.indexedFileMetas = indexedFileMetas
-        this.state.hydratedAt = [
-            indexedFileMetas.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0),
-            bootstrap ? Date.parse(bootstrap.updatedAt) : 0,
-            projectCatalog ? Date.parse(projectCatalog.updatedAt) : 0,
-        ].reduce((latest, value) => Math.max(latest, value), 0)
-        this.state.projectCatalog = projectCatalog?.payload ?? []
+        this.state.hydratedAt = indexedFileMetas.reduce((latest, file) => Math.max(latest, Date.parse(file.updatedAt)), 0)
+        this.state.projectCatalog = projectCatalog
         this.state.projectDetails = null
         this.state.hasLoadedAllProjectDetails = false
         this.liveBootstrap = null
@@ -306,6 +424,11 @@ class UsageDataRuntime {
 
         try {
             const discoveredFiles = options.discoveredFiles ?? await this.consumeWatcherDiscoveredFiles()
+            // When indexedFiles is null (first run after DB hydration), force all platforms
+            // to be parsed so that indexedFiles includes every platform, not just changed ones.
+            const updatedPlatforms = (!this.state.indexedFiles && options.updatedPlatforms)
+                ? PROJECT_USAGE_PLATFORMS
+                : options.updatedPlatforms
             const indexed = await buildIncrementalUsageIndex(this.config, this.repository, reporter, {
                 cachedFiles: this.state.indexedFiles ?? undefined,
                 cachedPlatformSessions: options.hydrateCachedPricing
@@ -315,10 +438,10 @@ class UsageDataRuntime {
                 forceLog: options.forceLog,
                 hydrateCachedPricing: options.hydrateCachedPricing,
                 reparseAllFiles: options.reparseAllFiles,
-                updatedPlatforms: options.updatedPlatforms,
+                updatedPlatforms,
             })
-            const { bootstrapByPlatform } = indexed
-            const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform)
+            const { bootstrapByPlatform, eventsByPlatform } = indexed
+            const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform, eventsByPlatform)
             const projectCatalog = buildProjectCatalogFromPlatformSessions(bootstrapByPlatform)
             const updatedAt = new Date().toISOString()
             const shouldReport = options.forceLog || indexed.hasChanges
@@ -332,15 +455,13 @@ class UsageDataRuntime {
                 updatedSessions: indexed.updatedSessions,
             }
 
-            this.repository.saveBootstrap(bootstrap)
-            this.repository.saveProjectCatalog(projectCatalog)
-
             if (shouldReport) {
                 reporter.finishCacheWrite(cacheWriteStats)
             }
 
             this.state.bootstrap = bootstrap
             this.state.discoveredFiles = toDiscoveredUsageFiles(indexed.indexedFiles)
+            this.state.eventsByPlatform = eventsByPlatform
             this.state.indexedFiles = indexed.indexedFiles
             this.state.indexedFileMetas = toIndexedUsageSourceFileMetas(indexed.indexedFiles)
             this.state.projectCatalog = projectCatalog
@@ -507,6 +628,33 @@ class UsageDataRuntime {
             }
         }
     }
+
+    private enrichEventsWithCostUSD(
+        eventsByPlatform: Map<string, UsageAggregateEvent[]>,
+        pricingResolvers: Map<ProjectUsagePlatform, ModelPricingResolver>,
+    ) {
+        for (const platform of PROJECT_USAGE_PLATFORMS) {
+            const events = eventsByPlatform.get(platform)
+            if (!events || events.length === 0) {
+                continue
+            }
+
+            const resolvePricing = pricingResolvers.get(platform)
+            if (!resolvePricing) {
+                continue
+            }
+
+            const platformOptions = platform === 'codex' ? { defaultFastMultiplier: 2 } : undefined
+
+            for (const event of events) {
+                if (event.costUSD && event.costUSD > 0) {
+                    continue
+                }
+
+                event.costUSD = eventCostUSD(event, resolvePricing, platformOptions)
+            }
+        }
+    }
 }
 
 let usageDataRuntime: UsageDataRuntime | null = null
@@ -544,12 +692,13 @@ function getUsageWatchPatterns(config: IConfig) {
 function buildBootstrapFromPlatformSessions(
     version: string,
     platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
+    eventsByPlatform?: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>>,
 ) {
     return {
         ...Object.fromEntries(
             PROJECT_USAGE_PLATFORMS.map(platform => [
                 platform,
-                buildProjectLoadUsageResult(platformSessions[platform], platform),
+                buildProjectLoadUsageResult(platformSessions[platform], platform, eventsByPlatform?.[platform]),
             ]),
         ),
         version,
@@ -586,33 +735,8 @@ function buildProjectCatalogFromPlatformSessions(
         .sort((a, b) => a.label.localeCompare(b.label))
 }
 
-function getProjectPlatformSessions(
-    platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
-    projectName: string,
-): ProjectUsagePlatformRecord<ProjectSessionUsageItem[]> {
-    return Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map(platform => [
-            platform,
-            platformSessions[platform].filter(session => session.project === projectName),
-        ]),
-    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-}
-
 function getTotalSessionCount(platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>) {
     return PROJECT_USAGE_PLATFORMS.reduce((sum, platform) => sum + platformSessions[platform].length, 0)
-}
-
-function getProjectDetailFromBootstrap(
-    bootstrap: TokensConsumptionResult | null,
-    projectName: string,
-) {
-    if (!bootstrap) {
-        return null
-    }
-
-    const detail = buildProjectUsageDetailFromPlatformSessions(projectName, getProjectPlatformSessions(getCachedPlatformSessions(bootstrap), projectName))
-
-    return detail.sessionCount > 0 ? detail : null
 }
 
 function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {

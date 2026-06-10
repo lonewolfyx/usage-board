@@ -11,7 +11,7 @@ import type {
 } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
-import type { ModelPricingResolver } from '#shared/types/platform'
+import type { ModelPricingResolver, UsageAggregateEvent } from '#shared/types/platform'
 import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#shared/types/usage-dashboard'
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { calculateUsageCostUSD } from '#shared/platform/pricing'
@@ -81,17 +81,20 @@ export async function buildIncrementalUsageIndex(
         })
     }
     const cachedFilesStartedAt = Date.now()
-    const cachedFiles = options.cachedFiles ?? repository.loadIndexedSourceFiles()
-    const hydratedCachedFiles = options.hydrateCachedPricing
-        ? await hydrateIndexedUsageSourceFiles(cachedFiles)
-        : cachedFiles
+    const cachedFiles = options.cachedFiles ?? null
+    const hydratedCachedFiles = cachedFiles
+        ? (options.hydrateCachedPricing
+                ? await hydrateIndexedUsageSourceFiles(cachedFiles)
+                : cachedFiles)
+        : null
+    const cachedFileMetas = hydratedCachedFiles ?? repository.loadSourceFileMetas()
     const cachedFilesFinishedAt = Date.now()
     const compareStartedAt = Date.now()
-    const { cachedFilesByPath, changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, hydratedCachedFiles)
+    const { cachedFilesByPath, changedFiles, removedFiles } = getUsageFileChanges(discoveredFiles, cachedFileMetas)
     const compareFinishedAt = Date.now()
 
     timing.parseMs += cachedFilesFinishedAt - cachedFilesStartedAt
-    const filesToParse = options.reparseAllFiles ? discoveredFiles : changedFiles
+    const filesToParse = (!hydratedCachedFiles || options.reparseAllFiles) ? discoveredFiles : changedFiles
     timing.discoveryMs = (discoveryFinishedAt - discoveryStartedAt) + (compareFinishedAt - compareStartedAt)
     const affectedProjects = new Set<string>(removedFiles.flatMap(file => file.projectNames))
     const hasFileChanges = changedFiles.length > 0 || removedFiles.length > 0
@@ -107,7 +110,7 @@ export async function buildIncrementalUsageIndex(
 
     if (shouldReport) {
         reporter!.foundFiles({
-            cachedFiles: hydratedCachedFiles.length,
+            cachedFiles: hydratedCachedFiles?.length ?? 0,
             changedFiles: filesToParse.length,
             discoveredFiles: discoveredFiles.length,
             removedFiles: removedFiles.length,
@@ -117,19 +120,32 @@ export async function buildIncrementalUsageIndex(
     const activeReporter = shouldReport ? reporter : undefined
     const discoveredFileCountsByPlatform = countFilesByPlatform(discoveredFiles)
 
-    if (filesToParse.length === 0 && removedFiles.length === 0) {
+    if (filesToParse.length === 0 && removedFiles.length === 0 && hydratedCachedFiles) {
         const indexedFiles = hydratedCachedFiles.sort((a, b) => a.path.localeCompare(b.path))
 
         const aggregateStartedAt = Date.now()
-        const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
-            cachedPlatformSessions: options.hydrateCachedPricing ? undefined : options.cachedPlatformSessions,
-            updatedPlatforms,
-        })
+        const eventsByPlatformFromRepo = repository.queryInteractionEventsByPlatform()
+        const bootstrapByPlatform = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map((platform) => {
+                if (!updatedPlatforms.includes(platform) && options.cachedPlatformSessions?.[platform]) {
+                    return [platform, options.cachedPlatformSessions[platform]!]
+                }
+
+                return [platform, repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []]
+            }),
+        ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+        const eventsByPlatform = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                eventsByPlatformFromRepo.get(platform) ?? [],
+            ]),
+        ) as unknown as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
         timing.aggregateMs = Date.now() - aggregateStartedAt
 
         return {
             affectedProjects: [],
             bootstrapByPlatform,
+            eventsByPlatform,
             hasChanges: false,
             indexedFiles,
             timing,
@@ -142,6 +158,7 @@ export async function buildIncrementalUsageIndex(
     const parsedFiles: IndexedUsageSourceFile[] = []
     const pricingResolvers = new Map<ProjectUsagePlatform, ModelPricingResolver>()
     const updatedPlatformSessions: Partial<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>> = {}
+    const updatedPlatformEvents: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> = {}
     const parsedByPath = new Map<string, IndexedUsageSourceFile>()
 
     for (const platform of updatedPlatforms) {
@@ -178,18 +195,69 @@ export async function buildIncrementalUsageIndex(
         const aggregateStartedAt = Date.now()
         const platformIndexedFiles = discoveredFiles
             .filter(file => file.platform === platform)
-            .map(file => parsedByPath.get(file.path) ?? cachedFilesByPath.get(file.path) ?? null)
+            .map(file => parsedByPath.get(file.path) ?? (hydratedCachedFiles ? cachedFilesByPath.get(file.path) : undefined) ?? null)
             .filter((file): file is IndexedUsageSourceFile => file !== null)
-        const platformSessions = buildPlatformSessionsFromFiles(platformIndexedFiles, platform)
+        const dedupedInteractions = selectDedupedInteractions(platformIndexedFiles, platform)
+
+        repository.deleteSessionsBySourceFiles(platformIndexedFiles.map(file => file.path))
+        repository.upsertInteractions(dedupedInteractions.map(({ fragment, interaction }, index) => ({
+            sessionId: fragment.sessionId,
+            interactionIndex: interaction.index ?? index,
+            platform,
+            projectName: fragment.project,
+            repository: fragment.repository,
+            threadName: fragment.threadName,
+            sessionStartedAt: fragment.startedAt,
+            timestamp: interaction.timestamp,
+            role: interaction.role,
+            type: interaction.type,
+            model: interaction.model,
+            inputToken: interaction.usage?.inputTokens ?? 0,
+            outputToken: interaction.usage?.outputTokens ?? 0,
+            cachedInputToken: interaction.usage?.cachedInputTokens ?? 0,
+            cacheCreation: interaction.usage?.cacheCreationTokens ?? 0,
+            cacheRead: interaction.usage?.cacheReadTokens ?? 0,
+            reasoningToken: interaction.usage?.reasoningOutputTokens ?? 0,
+            totalToken: interaction.usage?.totalTokens ?? 0,
+            costUsd: interaction.usage?.costUSD ?? interaction.costUSD ?? 0,
+            isFallbackModel: interaction.usage?.isFallbackModel ?? false,
+            toolTokens: interaction.usage?.toolTokens ?? 0,
+            extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
+            dedupeKey: interaction.dedupeKey ?? null,
+            fallbackDedupeKey: interaction.fallbackDedupeKey ?? null,
+            sourceFile: platformIndexedFiles.find(f => f.payload.includes(fragment))?.path ?? null,
+            isSidechain: interaction.isSidechain ?? false,
+        })))
+
+        const platformSessions = repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []
+        const platformEvents: UsageAggregateEvent[] = dedupedInteractions
+            .filter(({ interaction }) => interaction.usage && interaction.usage.totalTokens > 0 && interaction.timestamp)
+            .map(({ fragment, interaction }) => ({
+                cacheCreationTokens: interaction.usage!.cacheCreationTokens,
+                cachedInputTokens: interaction.usage!.cachedInputTokens,
+                costUSD: interaction.usage!.costUSD,
+                inputTokens: interaction.usage!.inputTokens,
+                isFallbackModel: interaction.usage!.isFallbackModel ?? false,
+                model: interaction.model || 'unknown',
+                outputTokens: interaction.usage!.outputTokens,
+                project: fragment.project,
+                reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
+                repository: fragment.repository,
+                sessionId: fragment.sessionId,
+                timestamp: interaction.timestamp!,
+                toolTokens: interaction.usage!.toolTokens,
+                totalTokens: interaction.usage!.totalTokens,
+            }))
 
         timing.aggregateMs += Date.now() - aggregateStartedAt
         updatedPlatformSessions[platform] = platformSessions
+        updatedPlatformEvents[platform] = platformEvents
 
         if (discoveredFilesForPlatform > 0) {
             const deltaStats = getPlatformDeltaStats(platform, parsedPlatformFiles, cachedFilesByPath)
             activeReporter?.finishPlatform(platform, {
                 durationMs: Date.now() - parseStartedAt,
-                interactions: platformSessions.reduce((sum, session) => sum + session.interactions.length, 0),
+                interactions: dedupedInteractions.length,
                 newInteractions: deltaStats.newInteractions,
                 newSessions: deltaStats.newSessions,
                 sessions: platformSessions.length,
@@ -226,24 +294,90 @@ export async function buildIncrementalUsageIndex(
                 return changed
             }
 
-            return cachedFilesByPath.get(file.path) ?? null
+            return hydratedCachedFiles ? (cachedFilesByPath.get(file.path) ?? null) : null
         })
         .filter((file): file is IndexedUsageSourceFile => file !== null)
         .sort((a, b) => a.path.localeCompare(b.path))
 
     if (removedFiles.length > 0) {
-        repository.deleteIndexedSourceFiles(removedFiles.map(file => file.path))
+        repository.deleteSourceFiles(removedFiles.map(file => file.path))
+        repository.deleteSessionsBySourceFiles(removedFiles.map(file => file.path))
     }
 
     if (parsedChangedFiles.length > 0) {
-        repository.upsertIndexedSourceFiles(parsedChangedFiles)
+        repository.upsertSourceFiles(parsedChangedFiles.map(file => ({
+            hash: file.cacheSignature,
+            mtimeMs: file.mtimeMs,
+            path: file.path,
+            platform: file.platform,
+            size: file.size,
+        })))
     }
 
-    const bootstrapByPlatform = buildPlatformSessionsByPlatform(indexedFiles, {
-        cachedPlatformSessions: options.hydrateCachedPricing ? undefined : options.cachedPlatformSessions,
-        updatedPlatformSessions,
-        updatedPlatforms,
-    })
+    for (const platform of updatedPlatforms) {
+        const platformFiles = indexedFiles.filter(file => file.platform === platform)
+        const dedupedInteractions = selectDedupedInteractions(platformFiles, platform)
+
+        repository.deleteSessionsBySourceFiles(platformFiles.map(file => file.path))
+        repository.upsertInteractions(dedupedInteractions.map(({ fragment, interaction }, index) => ({
+            sessionId: fragment.sessionId,
+            interactionIndex: interaction.index ?? index,
+            platform,
+            projectName: fragment.project,
+            repository: fragment.repository,
+            threadName: fragment.threadName,
+            sessionStartedAt: fragment.startedAt,
+            timestamp: interaction.timestamp,
+            role: interaction.role,
+            type: interaction.type,
+            model: interaction.model,
+            inputToken: interaction.usage?.inputTokens ?? 0,
+            outputToken: interaction.usage?.outputTokens ?? 0,
+            cachedInputToken: interaction.usage?.cachedInputTokens ?? 0,
+            cacheCreation: interaction.usage?.cacheCreationTokens ?? 0,
+            cacheRead: interaction.usage?.cacheReadTokens ?? 0,
+            reasoningToken: interaction.usage?.reasoningOutputTokens ?? 0,
+            totalToken: interaction.usage?.totalTokens ?? 0,
+            costUsd: interaction.usage?.costUSD ?? interaction.costUSD ?? 0,
+            isFallbackModel: interaction.usage?.isFallbackModel ?? false,
+            toolTokens: interaction.usage?.toolTokens ?? 0,
+            extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
+            dedupeKey: interaction.dedupeKey ?? null,
+            fallbackDedupeKey: interaction.fallbackDedupeKey ?? null,
+            sourceFile: platformFiles.find(f => f.payload.includes(fragment))?.path ?? null,
+            isSidechain: interaction.isSidechain ?? false,
+        })))
+    }
+
+    const aggregateStartedAt = Date.now()
+    const eventsByPlatformFromRepo = repository.queryInteractionEventsByPlatform()
+    const bootstrapByPlatform = Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map((platform) => {
+            const updated = updatedPlatformSessions[platform]
+
+            if (updated) {
+                return [platform, updated]
+            }
+
+            if (!updatedPlatforms.includes(platform) && options.cachedPlatformSessions?.[platform]) {
+                return [platform, options.cachedPlatformSessions[platform]!]
+            }
+
+            return [platform, repository.querySessionSummariesByPlatform([platform]).get(platform) ?? []]
+        }),
+    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
+    const eventsByPlatform = Object.fromEntries(
+        PROJECT_USAGE_PLATFORMS.map((platform) => {
+            const updatedEvents = updatedPlatformEvents[platform]
+
+            if (updatedEvents) {
+                return [platform, updatedEvents]
+            }
+
+            return [platform, eventsByPlatformFromRepo.get(platform) ?? []]
+        }),
+    ) as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
+    timing.aggregateMs = Date.now() - aggregateStartedAt
     const currentProjectNames = new Set(
         Object.values(bootstrapByPlatform).flatMap(sessions => sessions.map(session => session.project)),
     )
@@ -252,6 +386,7 @@ export async function buildIncrementalUsageIndex(
     return {
         affectedProjects: Array.from(affectedProjects).sort((a, b) => a.localeCompare(b)),
         bootstrapByPlatform,
+        eventsByPlatform,
         hasChanges: hasFileChanges,
         indexedFiles,
         timing,
@@ -323,7 +458,7 @@ export async function getUsageCacheUpdateState(
     config: IConfig,
     repository: UsageCacheRepository,
     cacheUpdatedAt: number,
-    cachedFiles: IndexedUsageSourceFileMeta[] | IndexedUsageSourceFile[] = repository.loadIndexedSourceFileMetas(),
+    cachedFiles: IndexedUsageSourceFileMeta[] | IndexedUsageSourceFile[] = repository.loadSourceFileMetas(),
 ) {
     if (cacheUpdatedAt <= 0) {
         const discoveredFiles = await discoverUsageFiles(config)
@@ -371,7 +506,7 @@ function getUsageFileChanges<TFile extends IndexedUsageSourceFileMeta>(
     }
 }
 
-async function createPricingResolversForPlatforms(platforms: ProjectUsagePlatform[]): Promise<Map<ProjectUsagePlatform, ModelPricingResolver>> {
+export async function createPricingResolversForPlatforms(platforms: readonly ProjectUsagePlatform[]): Promise<Map<ProjectUsagePlatform, ModelPricingResolver>> {
     const uniquePlatforms = PROJECT_USAGE_PLATFORMS.filter(platform => platforms.includes(platform))
     const entries = await Promise.all(uniquePlatforms.map(async platform => [
         platform,
@@ -444,7 +579,7 @@ export function buildPlatformSessionsByPlatform(
 function getPlatformDeltaStats(
     platform: ProjectUsagePlatform,
     parsedFiles: IndexedUsageSourceFile[],
-    cachedFilesByPath: Map<string, IndexedUsageSourceFile>,
+    cachedFilesByPath: Map<string, IndexedUsageSourceFileMeta>,
 ) {
     const updatedSessions = new Set<string>()
     let newInteractions = 0
@@ -456,7 +591,8 @@ function getPlatformDeltaStats(
         }
 
         const cachedFile = cachedFilesByPath.get(file.path)
-        const cachedFragmentsByKey = new Map((cachedFile?.payload ?? []).map(fragment => [fragment.key, fragment]))
+        const cachedPayload = 'payload' in (cachedFile ?? {}) ? (cachedFile as IndexedUsageSourceFile).payload : []
+        const cachedFragmentsByKey = new Map(cachedPayload.map(fragment => [fragment.key, fragment]))
 
         for (const fragment of file.payload) {
             const cachedFragment = cachedFragmentsByKey.get(fragment.key)
@@ -519,11 +655,11 @@ function countFilesByPlatform(files: Array<{ platform: ProjectUsagePlatform }>) 
 
 function collectUpdatedSessions(
     parsedChangedFiles: IndexedUsageSourceFile[],
-    removedFiles: IndexedUsageSourceFile[],
+    _removedFiles: IndexedUsageSourceFileMeta[],
 ) {
     const sessions = new Map<string, UpdatedUsageSession>()
 
-    for (const file of [...parsedChangedFiles, ...removedFiles]) {
+    for (const file of parsedChangedFiles) {
         for (const fragment of file.payload) {
             const sessionId = fragment.sessionId.trim()
 

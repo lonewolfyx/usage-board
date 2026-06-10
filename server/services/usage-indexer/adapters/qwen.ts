@@ -79,7 +79,6 @@ export const qwenUsageAdapter = {
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD,
                 dedupeKey: [
                     sessionId,

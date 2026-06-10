@@ -58,7 +58,6 @@ export const gooseUsageAdapter = {
                     })
 
                     addFragmentInteraction(fragment, {
-                        content: '',
                         costUSD: entry.usage.costUSD,
                         dedupeKey: `goose:${filePath}:${entry.sessionId}`,
                         index: 0,

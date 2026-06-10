@@ -89,7 +89,6 @@ export const ampUsageAdapter = {
             })
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD,
                 index,
                 model,

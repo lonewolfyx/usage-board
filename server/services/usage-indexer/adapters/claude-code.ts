@@ -89,7 +89,6 @@ export const claudeCodeUsageAdapter = {
             })
 
             addFragmentInteraction(fragment, {
-                content: extractClaudeMessageText(message?.content),
                 costUSD: usage?.costUSD ?? 0,
                 dedupeKey: getClaudeUniqueHash(line),
                 fallbackDedupeKey: normalizeStringValue(message?.id),
@@ -159,21 +158,6 @@ function getClaudeUniqueHash(line: ClaudeUsageLine) {
     const requestId = line.requestId
 
     return messageId ? `${messageId}:${requestId ?? ''}` : null
-}
-
-function extractClaudeMessageText(content: unknown) {
-    if (typeof content === 'string') {
-        return content
-    }
-
-    if (!Array.isArray(content)) {
-        return ''
-    }
-
-    return content
-        .map(item => typeof item === 'object' && item ? normalizeStringValue((item as Record<string, unknown>).text) ?? '' : '')
-        .filter(Boolean)
-        .join('\n')
 }
 
 function getInteractionRole(type: string | undefined, message: Record<string, unknown>) {

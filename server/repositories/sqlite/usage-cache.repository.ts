@@ -1,349 +1,129 @@
-import type { IndexedUsageSourceFile, IndexedUsageSourceFileMeta } from '#server/types/usage-indexer'
+import type { IndexedUsageSourceFileMeta } from '#server/types/usage-indexer'
 import type { SqliteDatabase } from '#server/utils/sqlite'
-import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
     DailyTokenUsage,
-    LoadUsageResult,
     MonthlyModelUsage,
-    ProjectInteractionUsage,
-    ProjectSessionInteractionItem,
     ProjectSessionUsageItem,
-    ProjectUsageDetail,
-    TokensConsumptionResult,
-    TokenUsageRow,
-    UsageOverviewCard,
 } from '#shared/types/usage-dashboard'
 import type { ProjectUsageCatalogItem } from '#shared/types/ws'
-import type {
-    CacheStateRow,
-    DailyUsageModelRow,
-    DailyUsageRow,
-    IndexedFileProjectRow,
-    IndexedFileRow,
-    IndexedFragmentRow,
-    IndexedInteractionRow,
-    MonthlyModelUsageRow,
-    OverviewCardRow,
-    PersistedUsageScope,
-    ProjectCatalogEntryRow,
-    SchemaVersionRow,
-    ScopeInteractionRow,
-    SessionModelRow,
-    SessionRow,
-    SnapshotKey,
-    SqliteNameRow,
-    TokenRowBucket,
-    TokenRowModelRow,
-    TokenRowProjectRow,
-    TokenRowRow,
-    UsageScopeKind,
-    UsageScopeRow,
-} from './usage-cache.types'
+import type { SchemaMetaRow, SourceFileRow } from './usage-cache.types'
 import { createHash } from 'node:crypto'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
-import {
-    createEmptyLoadUsageResult,
-} from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { parse } from '#shared/utils/parse'
+import { getMonthKey, getWeekLabel } from '#shared/utils/platform'
+import { formatDateLabelFromDateKey, getDateKey } from '#shared/utils/usage-dashboard'
 
-const CACHE_SCHEMA_VERSION = 12
-const ROW_KEY_SEPARATOR = '\u001F'
-const CACHE_SCHEMA_SQL = `
-    CREATE TABLE IF NOT EXISTS cache_schema_meta (
-        id INTEGER PRIMARY KEY CHECK (id = 1),
-        schema_version INTEGER NOT NULL
-    );
+const SCHEMA_VERSION = 3
 
-    CREATE TABLE IF NOT EXISTS cache_state (
-        key TEXT PRIMARY KEY,
-        payload_hash TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        version TEXT
-    );
-
-    CREATE TABLE IF NOT EXISTS project_catalog_entries (
-        label TEXT PRIMARY KEY,
-        platforms_json TEXT NOT NULL,
-        total_tokens INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS projects (
-        label TEXT PRIMARY KEY,
-        create_time TEXT,
-        session_count INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS project_models (
-        project_label TEXT NOT NULL,
-        model TEXT NOT NULL,
-        model_order INTEGER NOT NULL,
-        PRIMARY KEY (project_label, model),
-        FOREIGN KEY (project_label) REFERENCES projects(label) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scopes (
-        scope_key TEXT PRIMARY KEY,
-        scope_kind TEXT NOT NULL,
-        project_label TEXT,
-        platform TEXT NOT NULL,
-        payload_hash TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        today_total_tokens INTEGER NOT NULL,
-        today_top_model TEXT,
-        today_top_model_total_tokens INTEGER,
-        today_top_project TEXT,
-        today_top_project_session_count INTEGER,
-        FOREIGN KEY (project_label) REFERENCES projects(label) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scopes_kind ON usage_scopes(scope_kind);
-    CREATE INDEX IF NOT EXISTS idx_usage_scopes_project ON usage_scopes(project_label);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_overview_cards (
-        scope_key TEXT NOT NULL,
-        position INTEGER NOT NULL,
-        icon TEXT NOT NULL,
-        name TEXT NOT NULL,
-        value TEXT NOT NULL,
-        detail TEXT,
-        subvalue_json TEXT,
-        trend TEXT NOT NULL,
-        trend_tone TEXT NOT NULL,
-        PRIMARY KEY (scope_key, position),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scope_token_rows (
-        scope_key TEXT NOT NULL,
-        bucket TEXT NOT NULL,
-        row_order INTEGER NOT NULL,
-        row_id TEXT NOT NULL,
-        label TEXT NOT NULL,
-        period TEXT NOT NULL,
-        session_count INTEGER NOT NULL,
-        input_tokens INTEGER NOT NULL,
-        cached_input_tokens INTEGER NOT NULL,
-        output_tokens INTEGER NOT NULL,
-        reasoning_output_tokens INTEGER NOT NULL,
-        total_tokens INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, bucket, row_id),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_token_rows_order
-        ON usage_scope_token_rows(scope_key, bucket, row_order);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_token_row_models (
-        scope_key TEXT NOT NULL,
-        bucket TEXT NOT NULL,
-        row_id TEXT NOT NULL,
-        model TEXT NOT NULL,
-        model_order INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, bucket, row_id, model),
-        FOREIGN KEY (scope_key, bucket, row_id)
-            REFERENCES usage_scope_token_rows(scope_key, bucket, row_id)
-            ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scope_token_row_projects (
-        scope_key TEXT NOT NULL,
-        bucket TEXT NOT NULL,
-        row_id TEXT NOT NULL,
-        project TEXT NOT NULL,
-        project_order INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, bucket, row_id, project),
-        FOREIGN KEY (scope_key, bucket, row_id)
-            REFERENCES usage_scope_token_rows(scope_key, bucket, row_id)
-            ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scope_daily_usage (
-        scope_key TEXT NOT NULL,
-        row_order INTEGER NOT NULL,
-        date TEXT NOT NULL,
-        input_tokens INTEGER NOT NULL,
-        cached_input_tokens INTEGER NOT NULL,
-        output_tokens INTEGER NOT NULL,
-        reasoning_output_tokens INTEGER NOT NULL,
-        total_tokens INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, date),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_daily_usage_order
-        ON usage_scope_daily_usage(scope_key, row_order);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_daily_usage_models (
-        scope_key TEXT NOT NULL,
-        date TEXT NOT NULL,
-        model TEXT NOT NULL,
-        model_order INTEGER NOT NULL,
-        input_tokens INTEGER NOT NULL,
-        cached_input_tokens INTEGER NOT NULL,
-        output_tokens INTEGER NOT NULL,
-        reasoning_output_tokens INTEGER NOT NULL,
-        total_tokens INTEGER NOT NULL,
-        is_fallback INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, date, model),
-        FOREIGN KEY (scope_key, date)
-            REFERENCES usage_scope_daily_usage(scope_key, date)
-            ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scope_monthly_model_usage (
-        scope_key TEXT NOT NULL,
-        row_order INTEGER NOT NULL,
-        month TEXT NOT NULL,
-        model TEXT NOT NULL,
-        token_total INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, month, model),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_monthly_model_usage_order
-        ON usage_scope_monthly_model_usage(scope_key, row_order);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_sessions (
-        scope_key TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        session_order INTEGER NOT NULL,
-        session_id TEXT NOT NULL,
-        thread_name TEXT NOT NULL,
-        project TEXT NOT NULL,
-        repository TEXT NOT NULL,
-        model TEXT NOT NULL,
-        started_at TEXT NOT NULL,
-        date TEXT NOT NULL,
-        month TEXT NOT NULL,
-        week TEXT NOT NULL,
-        duration TEXT NOT NULL,
-        duration_minutes INTEGER NOT NULL,
-        input_tokens INTEGER NOT NULL,
-        cached_input_tokens INTEGER NOT NULL,
-        output_tokens INTEGER NOT NULL,
-        reasoning_output_tokens INTEGER NOT NULL,
-        token_total INTEGER NOT NULL,
-        last_activity TEXT NOT NULL,
-        top_model TEXT NOT NULL,
-        PRIMARY KEY (scope_key, session_key),
-        FOREIGN KEY (scope_key) REFERENCES usage_scopes(scope_key) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_sessions_order
-        ON usage_scope_sessions(scope_key, session_order);
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_sessions_started_at
-        ON usage_scope_sessions(scope_key, started_at);
-
-    CREATE TABLE IF NOT EXISTS usage_scope_session_models (
-        scope_key TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        model TEXT NOT NULL,
-        model_order INTEGER NOT NULL,
-        PRIMARY KEY (scope_key, session_key, model),
-        FOREIGN KEY (scope_key, session_key)
-            REFERENCES usage_scope_sessions(scope_key, session_key)
-            ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS usage_scope_interactions (
-        scope_key TEXT NOT NULL,
-        session_key TEXT NOT NULL,
-        interaction_order INTEGER NOT NULL,
-        interaction_index INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        model TEXT,
-        role TEXT NOT NULL,
-        timestamp TEXT,
-        type TEXT NOT NULL,
-        input_tokens INTEGER,
-        cached_input_tokens INTEGER,
-        output_tokens INTEGER,
-        reasoning_output_tokens INTEGER,
-        extra_total_tokens INTEGER,
-        total_tokens INTEGER,
-        cache_creation_tokens INTEGER,
-        cache_read_tokens INTEGER,
-        tool_tokens INTEGER,
-        is_fallback_model INTEGER,
-        PRIMARY KEY (scope_key, session_key, interaction_order),
-        FOREIGN KEY (scope_key, session_key)
-            REFERENCES usage_scope_sessions(scope_key, session_key)
-            ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_interactions_role_timestamp
-        ON usage_scope_interactions(scope_key, role, timestamp);
-    CREATE INDEX IF NOT EXISTS idx_usage_scope_interactions_timestamp
-        ON usage_scope_interactions(scope_key, timestamp);
-
-    CREATE TABLE IF NOT EXISTS indexed_files (
-        path TEXT PRIMARY KEY,
-        platform TEXT NOT NULL,
-        cache_signature TEXT NOT NULL DEFAULT '',
-        size INTEGER NOT NULL,
-        mtime_ms INTEGER NOT NULL,
-        updated_at TEXT NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS indexed_file_projects (
-        path TEXT NOT NULL,
-        project_name TEXT NOT NULL,
-        project_order INTEGER NOT NULL,
-        PRIMARY KEY (path, project_name),
-        FOREIGN KEY (path) REFERENCES indexed_files(path) ON DELETE CASCADE
-    );
-
-    CREATE TABLE IF NOT EXISTS indexed_file_fragments (
-        fragment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        path TEXT NOT NULL,
-        fragment_order INTEGER NOT NULL,
-        fragment_key TEXT NOT NULL,
-        project TEXT NOT NULL,
-        repository TEXT NOT NULL,
-        session_id TEXT NOT NULL,
-        started_at TEXT,
-        duration_end_at TEXT,
-        thread_name TEXT NOT NULL,
-        UNIQUE (path, fragment_order),
-        FOREIGN KEY (path) REFERENCES indexed_files(path) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_indexed_file_fragments_path_order
-        ON indexed_file_fragments(path, fragment_order);
-
-    CREATE TABLE IF NOT EXISTS indexed_fragment_interactions (
-        fragment_id INTEGER NOT NULL,
-        interaction_order INTEGER NOT NULL,
-        interaction_index INTEGER NOT NULL,
-        content TEXT NOT NULL,
-        dedupe_key TEXT,
+const SCHEMA_SQL = `
+    CREATE TABLE IF NOT EXISTS sessions (
+        id                  TEXT PRIMARY KEY,
+        session_id          TEXT NOT NULL,
+        interaction_index   INTEGER NOT NULL,
+        platform            TEXT NOT NULL,
+        project_name        TEXT NOT NULL,
+        repository          TEXT NOT NULL DEFAULT '',
+        thread_name         TEXT NOT NULL DEFAULT '',
+        session_started_at  TEXT,
+        timestamp           TEXT,
+        role                TEXT NOT NULL DEFAULT 'unknown',
+        type                TEXT NOT NULL DEFAULT '',
+        model               TEXT,
+        input_token         INTEGER NOT NULL DEFAULT 0,
+        output_token        INTEGER NOT NULL DEFAULT 0,
+        cached_input_token  INTEGER NOT NULL DEFAULT 0,
+        cache_creation      INTEGER NOT NULL DEFAULT 0,
+        cache_read          INTEGER NOT NULL DEFAULT 0,
+        reasoning_token     INTEGER NOT NULL DEFAULT 0,
+        total_token         INTEGER NOT NULL DEFAULT 0,
+        is_fallback_model   INTEGER NOT NULL DEFAULT 0,
+        tool_tokens         INTEGER NOT NULL DEFAULT 0,
+        extra_total_tokens  INTEGER NOT NULL DEFAULT 0,
+        dedupe_key          TEXT,
         fallback_dedupe_key TEXT,
-        is_sidechain INTEGER,
-        model TEXT,
-        role TEXT NOT NULL,
-        timestamp TEXT,
-        type TEXT NOT NULL,
-        input_tokens INTEGER,
-        cached_input_tokens INTEGER,
-        output_tokens INTEGER,
-        reasoning_output_tokens INTEGER,
-        extra_total_tokens INTEGER,
-        total_tokens INTEGER,
-        cache_creation_tokens INTEGER,
-        cache_read_tokens INTEGER,
-        tool_tokens INTEGER,
-        is_fallback_model INTEGER,
-        PRIMARY KEY (fragment_id, interaction_order),
-        FOREIGN KEY (fragment_id) REFERENCES indexed_file_fragments(fragment_id) ON DELETE CASCADE
+        source_file         TEXT,
+        is_sidechain        INTEGER NOT NULL DEFAULT 0,
+        create_time         TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_sessions_platform ON sessions(platform);
+    CREATE INDEX IF NOT EXISTS idx_sessions_project ON sessions(project_name);
+    CREATE INDEX IF NOT EXISTS idx_sessions_session_id ON sessions(session_id);
+    CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(session_started_at);
+    CREATE INDEX IF NOT EXISTS idx_sessions_timestamp ON sessions(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_sessions_model ON sessions(model);
+    CREATE INDEX IF NOT EXISTS idx_sessions_total_token ON sessions(total_token DESC);
+    CREATE INDEX IF NOT EXISTS idx_sessions_platform_project ON sessions(platform, project_name);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_dedupe_key ON sessions(dedupe_key) WHERE dedupe_key IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS source_files (
+        path            TEXT PRIMARY KEY,
+        platform        TEXT NOT NULL,
+        hash            TEXT NOT NULL,
+        size            INTEGER NOT NULL,
+        mtime_ms        INTEGER NOT NULL,
+        updated_at      TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS schema_meta (
+        id              INTEGER PRIMARY KEY CHECK (id = 1),
+        schema_version  INTEGER NOT NULL,
+        package_version TEXT NOT NULL
     );
 `
 
+interface SessionSummaryRow {
+    session_id: string
+    platform: string
+    project_name: string
+    repository: string
+    thread_name: string
+    session_started_at: string | null
+    started_at: string | null
+    last_activity: string | null
+    input_token: number
+    output_token: number
+    cached_input_token: number
+    reasoning_token: number
+    total_token: number
+    models_csv: string | null
+}
+
+interface InteractionInput {
+    sessionId: string
+    interactionIndex: number
+    platform: string
+    projectName: string
+    repository: string
+    threadName: string
+    sessionStartedAt: string | null
+    timestamp: string | null
+    role: string
+    type: string
+    model: string | null
+    inputToken: number
+    outputToken: number
+    cachedInputToken: number
+    cacheCreation: number
+    cacheRead: number
+    reasoningToken: number
+    totalToken: number
+    costUsd: number
+    isFallbackModel: boolean
+    toolTokens: number
+    extraTotalTokens: number
+    dedupeKey: string | null
+    fallbackDedupeKey: string | null
+    sourceFile: string | null
+    isSidechain: boolean
+}
+
 export class UsageCacheRepository {
     private database: SqliteDatabase
+    private readonly databasePath: string
 
     constructor(databasePath: string) {
         mkdirParentDirectory(databasePath)
@@ -352,513 +132,739 @@ export class UsageCacheRepository {
         this.initializeSchema()
     }
 
-    private readonly databasePath: string
-
-    loadBootstrap() {
-        const meta = this.getCacheState('bootstrap')
-
-        if (!meta) {
-            return null
-        }
-
-        const scopes = this.loadHydratedUsageScopes('bootstrap', {
-            includeInteractions: false,
-        })
-        const payload = Object.fromEntries(
-            PROJECT_USAGE_PLATFORMS.map(platform => [
-                platform,
-                scopes.get(createUsageScopeKey('bootstrap', platform)) ?? createEmptyPersistedUsageScope(),
-            ]),
-        ) as unknown as ProjectUsagePlatformRecord<LoadUsageResult>
-
-        return {
-            payload: {
-                ...payload,
-                version: meta.version ?? '',
-            } as TokensConsumptionResult,
-            payloadHash: meta.payload_hash,
-            updatedAt: meta.updated_at,
-        }
-    }
-
-    saveBootstrap(
-        payload: TokensConsumptionResult,
-        options: {
-            platforms?: ProjectUsagePlatform[]
-        } = {},
-    ) {
-        this.persistBootstrap(payload, options)
-    }
-
-    loadProjectCatalog() {
-        const meta = this.getCacheState('project_catalog')
-
-        if (!meta) {
-            return null
-        }
-
-        const rows: ProjectCatalogEntryRow[] = this.database.prepare<ProjectCatalogEntryRow>(`
-            SELECT label, platforms_json, total_tokens
-            FROM project_catalog_entries
-            ORDER BY label ASC
-        `).all()
-
-        return {
-            payload: rows.map(row => ({
-                label: row.label,
-                platforms: parseProjectCatalogPlatforms(row.platforms_json),
-                totalTokens: row.total_tokens,
-            })),
-            payloadHash: meta.payload_hash,
-            updatedAt: meta.updated_at,
-        }
-    }
-
-    saveProjectCatalog(
-        payload: ProjectUsageCatalogItem[],
-        options: {
-            changedEntries?: ProjectUsageCatalogItem[]
-            removedLabels?: string[]
-        } = {},
-    ) {
-        this.persistProjectCatalog(payload, options)
-    }
-
-    loadIndexedSourceFiles() {
-        const files = this.loadIndexedSourceFileMetas()
-
-        if (files.length === 0) {
-            return []
-        }
-
-        const fragments = this.database.prepare<IndexedFragmentRow>(`
-            SELECT
-                fragment_id,
-                path,
-                fragment_order,
-                fragment_key,
-                project,
-                repository,
-                session_id,
-                started_at,
-                duration_end_at,
-                thread_name
-            FROM indexed_file_fragments
-            ORDER BY path ASC, fragment_order ASC
-        `).all()
-        const interactions = this.database.prepare<IndexedInteractionRow>(`
-            SELECT
-                fragment_id,
-                interaction_order,
-                interaction_index,
-                content,
-                dedupe_key,
-                fallback_dedupe_key,
-                is_sidechain,
-                model,
-                role,
-                timestamp,
-                type,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                extra_total_tokens,
-                total_tokens,
-                cache_creation_tokens,
-                cache_read_tokens,
-                tool_tokens,
-                is_fallback_model
-            FROM indexed_fragment_interactions
-            ORDER BY fragment_id ASC, interaction_order ASC
-        `).all()
-
-        const interactionsByFragment = groupIndexedInteractions(interactions)
-        const fragmentsByPath = new Map<string, IndexedUsageSourceFile['payload']>()
-
-        for (const fragment of fragments) {
-            const payload = fragmentsByPath.get(fragment.path) ?? []
-            payload.push({
-                durationEndAt: fragment.duration_end_at ?? '',
-                interactions: interactionsByFragment.get(fragment.fragment_id) ?? [],
-                key: fragment.fragment_key,
-                project: fragment.project,
-                repository: fragment.repository,
-                sessionId: fragment.session_id,
-                startedAt: fragment.started_at,
-                threadName: fragment.thread_name,
-            })
-            fragmentsByPath.set(fragment.path, payload)
-        }
-
-        return files.map(file => ({
-            ...file,
-            payload: fragmentsByPath.get(file.path) ?? [],
-        } satisfies IndexedUsageSourceFile))
-    }
-
-    loadIndexedSourceFileMetas() {
-        const files: IndexedFileRow[] = this.database.prepare<IndexedFileRow>(`
-            SELECT path, platform, cache_signature, size, mtime_ms, updated_at
-            FROM indexed_files
-            ORDER BY path ASC
-        `).all()
-
-        if (files.length === 0) {
-            return []
-        }
-
-        const projectNamesByPath = groupIndexedFileProjects(this.database.prepare<IndexedFileProjectRow>(`
-            SELECT path, project_name, project_order
-            FROM indexed_file_projects
-            ORDER BY path ASC, project_order ASC
-        `).all())
-        return files.map(file => ({
-            cacheSignature: file.cache_signature,
-            mtimeMs: file.mtime_ms,
-            path: file.path,
-            platform: file.platform,
-            projectNames: projectNamesByPath.get(file.path) ?? [],
-            size: file.size,
-            updatedAt: file.updated_at,
-        } satisfies IndexedUsageSourceFileMeta))
-    }
-
-    upsertIndexedSourceFiles(files: IndexedUsageSourceFile[]) {
-        if (files.length === 0) {
-            return
-        }
-
-        const deleteFileStatement = this.database.prepare('DELETE FROM indexed_files WHERE path = ?')
-        const insertFileStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO indexed_files (path, platform, cache_signature, size, mtime_ms, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
-        `)
-        const insertProjectStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO indexed_file_projects (path, project_name, project_order)
-            VALUES (?, ?, ?)
-        `)
-        const insertFragmentStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO indexed_file_fragments (
-                path,
-                fragment_order,
-                fragment_key,
-                project,
-                repository,
-                session_id,
-                started_at,
-                duration_end_at,
-                thread_name
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertInteractionStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO indexed_fragment_interactions (
-                fragment_id,
-                interaction_order,
-                interaction_index,
-                content,
-                dedupe_key,
-                fallback_dedupe_key,
-                is_sidechain,
-                model,
-                role,
-                timestamp,
-                type,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                extra_total_tokens,
-                total_tokens,
-                cache_creation_tokens,
-                cache_read_tokens,
-                tool_tokens,
-                is_fallback_model
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-
-        this.database.exec('BEGIN')
-
-        try {
-            for (const file of files) {
-                deleteFileStatement.run(file.path)
-                insertFileStatement.run(file.path, file.platform, file.cacheSignature, file.size, file.mtimeMs, file.updatedAt)
-
-                for (const [projectOrder, projectName] of file.projectNames.entries()) {
-                    insertProjectStatement.run(file.path, projectName, projectOrder)
-                }
-
-                for (const [fragmentOrder, fragment] of file.payload.entries()) {
-                    const result = insertFragmentStatement.run(
-                        file.path,
-                        fragmentOrder,
-                        fragment.key,
-                        fragment.project,
-                        fragment.repository,
-                        fragment.sessionId,
-                        fragment.startedAt,
-                        fragment.durationEndAt,
-                        fragment.threadName,
-                    )
-                    const fragmentId = Number(result.lastInsertRowid)
-
-                    for (const [interactionOrder, interaction] of fragment.interactions.entries()) {
-                        insertInteractionStatement.run(
-                            fragmentId,
-                            interactionOrder,
-                            interaction.index,
-                            interaction.content,
-                            interaction.dedupeKey ?? null,
-                            interaction.fallbackDedupeKey ?? null,
-                            interaction.isSidechain ? 1 : 0,
-                            interaction.model,
-                            interaction.role,
-                            interaction.timestamp,
-                            interaction.type,
-                            interaction.usage?.inputTokens ?? null,
-                            interaction.usage?.cachedInputTokens ?? null,
-                            interaction.usage?.outputTokens ?? null,
-                            interaction.usage?.reasoningOutputTokens ?? null,
-                            interaction.usage?.extraTotalTokens ?? null,
-                            interaction.usage?.totalTokens ?? null,
-                            interaction.usage?.cacheCreationTokens ?? null,
-                            interaction.usage?.cacheReadTokens ?? null,
-                            interaction.usage?.toolTokens ?? null,
-                            interaction.usage?.isFallbackModel ? 1 : 0,
-                        )
-                    }
-                }
-            }
-
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    deleteIndexedSourceFiles(paths: string[]) {
-        if (paths.length === 0) {
-            return
-        }
-
-        const statement = this.database.prepare('DELETE FROM indexed_files WHERE path = ?')
-        this.database.exec('BEGIN')
-
-        try {
-            for (const path of paths) {
-                statement.run(path)
-            }
-
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    replaceProjectDetails(
-        details: Map<string, ProjectUsageDetail>,
-        onProjectWritten?: (stats: { durationMs: number, label: string, total: number, written: number }) => void,
-    ) {
-        const insertProjectStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO projects (label, create_time, session_count, updated_at)
-            VALUES (?, ?, ?, ?)
-        `)
-        const insertProjectModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO project_models (project_label, model, model_order)
-            VALUES (?, ?, ?)
-        `)
-        const now = new Date().toISOString()
-
-        this.database.exec('BEGIN')
-
-        try {
-            this.database.prepare('DELETE FROM projects').run()
-
-            for (const [projectIndex, [label, detail]] of Array.from(details.entries()).entries()) {
-                const startedAt = Date.now()
-
-                this.insertProjectDetail(label, detail, {
-                    insertProjectModelStatement,
-                    insertProjectStatement,
-                    now,
-                })
-                onProjectWritten?.({
-                    durationMs: Date.now() - startedAt,
-                    label,
-                    total: details.size,
-                    written: projectIndex + 1,
-                })
-            }
-
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    patchProjectDetails(options: {
-        details: Map<string, ProjectUsageDetail>
-        onProjectWritten?: (stats: { durationMs: number, label: string, total: number, written: number }) => void
-        removedProjects: string[]
-        updatedProjects: string[]
-    }) {
-        const insertProjectStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO projects (label, create_time, session_count, updated_at)
-            VALUES (?, ?, ?, ?)
-        `)
-        const insertProjectModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO project_models (project_label, model, model_order)
-            VALUES (?, ?, ?)
-        `)
-        const deleteProjectStatement = this.database.prepare('DELETE FROM projects WHERE label = ?')
-        const now = new Date().toISOString()
-        const updatedProjects = options.updatedProjects.filter((projectName, index, projects) => projects.indexOf(projectName) === index)
-
-        this.database.exec('BEGIN')
-
-        try {
-            for (const projectName of options.removedProjects) {
-                deleteProjectStatement.run(projectName)
-            }
-
-            for (const [projectIndex, projectName] of updatedProjects.entries()) {
-                const startedAt = Date.now()
-                const detail = options.details.get(projectName)
-
-                deleteProjectStatement.run(projectName)
-
-                if (detail) {
-                    this.insertProjectDetail(projectName, detail, {
-                        insertProjectModelStatement,
-                        insertProjectStatement,
-                        now,
-                    })
-                }
-
-                options.onProjectWritten?.({
-                    durationMs: Date.now() - startedAt,
-                    label: projectName,
-                    total: updatedProjects.length,
-                    written: projectIndex + 1,
-                })
-            }
-
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
     close() {
         this.database.close()
     }
 
-    private insertProjectDetail(
-        label: string,
-        detail: ProjectUsageDetail,
-        statements: {
-            insertProjectModelStatement: ReturnType<SqliteDatabase['prepare']>
-            insertProjectStatement: ReturnType<SqliteDatabase['prepare']>
-            now: string
-        },
-    ) {
-        const sanitizedDetail = stripRawPayload(detail)
-
-        statements.insertProjectStatement.run(
-            label,
-            sanitizedDetail.createTime,
-            sanitizedDetail.sessionCount,
-            statements.now,
-        )
-
-        for (const [modelOrder, model] of sanitizedDetail.models.entries()) {
-            statements.insertProjectModelStatement.run(label, model, modelOrder)
+    upsertInteractions(items: InteractionInput[]) {
+        if (items.length === 0) {
+            return
         }
 
-        for (const platform of PROJECT_USAGE_PLATFORMS) {
-            this.insertUsageScope({
-                kind: 'project',
-                platform,
-                projectLabel: label,
-                updatedAt: statements.now,
-                usage: sanitizedDetail.analyzing[platform],
+        const statement = this.database.prepare(`
+            INSERT OR REPLACE INTO sessions (
+                id, session_id, interaction_index, platform, project_name,
+                repository, thread_name, session_started_at,
+                timestamp, role, type, model,
+                input_token, output_token, cached_input_token,
+                cache_creation, cache_read, reasoning_token, total_token,
+                is_fallback_model, tool_tokens, extra_total_tokens,
+                dedupe_key, fallback_dedupe_key, source_file, is_sidechain,
+                create_time
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        const now = new Date().toISOString()
+
+        this.database.exec('BEGIN')
+
+        try {
+            for (const item of items) {
+                const id = `${item.sessionId}:${item.interactionIndex}`
+
+                statement.run(
+                    id,
+                    item.sessionId,
+                    item.interactionIndex,
+                    item.platform,
+                    item.projectName,
+                    item.repository,
+                    item.threadName,
+                    item.sessionStartedAt,
+                    item.timestamp,
+                    item.role,
+                    item.type,
+                    item.model,
+                    item.inputToken,
+                    item.outputToken,
+                    item.cachedInputToken,
+                    item.cacheCreation,
+                    item.cacheRead,
+                    item.reasoningToken,
+                    item.totalToken,
+                    item.isFallbackModel ? 1 : 0,
+                    item.toolTokens,
+                    item.extraTotalTokens,
+                    item.dedupeKey,
+                    item.fallbackDedupeKey,
+                    item.sourceFile,
+                    item.isSidechain ? 1 : 0,
+                    now,
+                )
+            }
+
+            this.database.exec('COMMIT')
+        }
+        catch (error) {
+            this.database.exec('ROLLBACK')
+            throw error
+        }
+    }
+
+    deleteSessionsBySourceFiles(paths: string[]) {
+        if (paths.length === 0) {
+            return
+        }
+
+        const placeholders = paths.map(() => '?').join(', ')
+        this.database.prepare(`DELETE FROM sessions WHERE source_file IN (${placeholders})`).run(...paths)
+    }
+
+    deleteSessionsByPlatform(platform: string) {
+        this.database.prepare('DELETE FROM sessions WHERE platform = ?').run(platform)
+    }
+
+    upsertSourceFiles(files: Array<{ hash: string, mtimeMs: number, path: string, platform: string, size: number }>) {
+        if (files.length === 0) {
+            return
+        }
+
+        const statement = this.database.prepare(`
+            INSERT OR REPLACE INTO source_files (path, platform, hash, size, mtime_ms, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+        `)
+        const now = new Date().toISOString()
+        this.database.exec('BEGIN')
+
+        try {
+            for (const file of files) {
+                statement.run(file.path, file.platform, file.hash, file.size, file.mtimeMs, now)
+            }
+
+            this.database.exec('COMMIT')
+        }
+        catch (error) {
+            this.database.exec('ROLLBACK')
+            throw error
+        }
+    }
+
+    deleteSourceFiles(paths: string[]) {
+        if (paths.length === 0) {
+            return
+        }
+
+        const placeholders = paths.map(() => '?').join(', ')
+        this.database.prepare(`DELETE FROM source_files WHERE path IN (${placeholders})`).run(...paths)
+    }
+
+    loadSourceFileMetas(): IndexedUsageSourceFileMeta[] {
+        const rows = this.database.prepare<SourceFileRow>(
+            'SELECT path, platform, hash, size, mtime_ms, updated_at FROM source_files ORDER BY path ASC',
+        ).all()
+
+        return rows.map(row => ({
+            cacheSignature: row.hash,
+            mtimeMs: row.mtime_ms,
+            path: row.path,
+            platform: row.platform as ProjectUsagePlatform,
+            projectNames: [],
+            size: row.size,
+            updatedAt: row.updated_at,
+        }))
+    }
+
+    querySessionSummariesByPlatform(platforms: readonly ProjectUsagePlatform[]): Map<string, ProjectSessionUsageItem[]> {
+        const result = new Map<string, ProjectSessionUsageItem[]>()
+
+        for (const platform of platforms) {
+            const rows = this.database.prepare<SessionSummaryRow>(`
+                SELECT
+                    session_id,
+                    platform,
+                    project_name,
+                    repository,
+                    thread_name,
+                    MIN(session_started_at) AS session_started_at,
+                    MIN(timestamp) AS started_at,
+                    MAX(timestamp) AS last_activity,
+                    SUM(input_token) AS input_token,
+                    SUM(output_token) AS output_token,
+                    SUM(cached_input_token) AS cached_input_token,
+                    SUM(reasoning_token) AS reasoning_token,
+                    SUM(total_token) AS total_token,
+                    GROUP_CONCAT(DISTINCT model) AS models_csv
+                FROM sessions
+                WHERE platform = ?
+                GROUP BY session_id
+                HAVING SUM(total_token) > 0
+                ORDER BY MIN(COALESCE(session_started_at, timestamp)) DESC
+            `).all(platform)
+
+            result.set(platform, rows.map(row => this.rowToSessionSummary(row)))
+        }
+
+        return result
+    }
+
+    queryInteractionEvents(filters: { projectName?: string, platform?: string } = {}): Array<{
+        cacheCreationTokens: number
+        cachedInputTokens: number
+        costUSD: number
+        inputTokens: number
+        isFallbackModel: boolean
+        model: string
+        outputTokens: number
+        platform: string
+        project: string
+        reasoningOutputTokens: number
+        repository: string
+        sessionId: string
+        timestamp: string
+        toolTokens: number
+        totalTokens: number
+    }> {
+        const conditions: string[] = ['total_token > 0', 'timestamp IS NOT NULL']
+        const params: unknown[] = []
+
+        if (filters.projectName) {
+            conditions.push('project_name = ?')
+            params.push(filters.projectName)
+        }
+
+        if (filters.platform) {
+            conditions.push('platform = ?')
+            params.push(filters.platform)
+        }
+
+        const whereClause = `WHERE ${conditions.join(' AND ')}`
+
+        return this.database.prepare<{
+            session_id: string
+            platform: string
+            project_name: string
+            repository: string
+            model: string | null
+            timestamp: string
+            input_token: number
+            output_token: number
+            cached_input_token: number
+            cache_creation: number
+            cache_read: number
+            reasoning_token: number
+            total_token: number
+            is_fallback_model: number
+            tool_tokens: number
+        }>(`
+            SELECT
+                session_id, platform, project_name, repository, model, timestamp,
+                input_token, output_token, cached_input_token,
+                cache_creation, cache_read, reasoning_token, total_token,
+                is_fallback_model, tool_tokens
+            FROM sessions
+            ${whereClause}
+            ORDER BY timestamp ASC
+        `).all(...params).map(row => ({
+            cacheCreationTokens: row.cache_creation,
+            cachedInputTokens: row.cached_input_token,
+            costUSD: 0,
+            inputTokens: row.input_token,
+            isFallbackModel: row.is_fallback_model === 1,
+            model: row.model ?? 'unknown',
+            outputTokens: row.output_token,
+            platform: row.platform,
+            project: row.project_name,
+            reasoningOutputTokens: row.reasoning_token,
+            repository: row.repository,
+            sessionId: row.session_id,
+            timestamp: row.timestamp,
+            toolTokens: row.tool_tokens,
+            totalTokens: row.total_token,
+        }))
+    }
+
+    queryInteractionEventsByPlatform(): Map<string, Array<{
+        cacheCreationTokens: number
+        cachedInputTokens: number
+        costUSD: number
+        inputTokens: number
+        isFallbackModel: boolean
+        model: string
+        outputTokens: number
+        platform: string
+        project: string
+        reasoningOutputTokens: number
+        repository: string
+        sessionId: string
+        timestamp: string
+        toolTokens: number
+        totalTokens: number
+    }>> {
+        const rows = this.database.prepare<{
+            session_id: string
+            platform: string
+            project_name: string
+            repository: string
+            model: string | null
+            timestamp: string
+            input_token: number
+            output_token: number
+            cached_input_token: number
+            cache_creation: number
+            cache_read: number
+            reasoning_token: number
+            total_token: number
+            is_fallback_model: number
+            tool_tokens: number
+        }>(`
+            SELECT
+                session_id, platform, project_name, repository, model, timestamp,
+                input_token, output_token, cached_input_token,
+                cache_creation, cache_read, reasoning_token, total_token,
+                is_fallback_model, tool_tokens
+            FROM sessions
+            WHERE total_token > 0 AND timestamp IS NOT NULL
+            ORDER BY platform ASC, timestamp ASC
+        `).all()
+
+        const result = new Map<string, Array<{
+            cacheCreationTokens: number
+            cachedInputTokens: number
+            costUSD: number
+            inputTokens: number
+            isFallbackModel: boolean
+            model: string
+            outputTokens: number
+            platform: string
+            project: string
+            reasoningOutputTokens: number
+            repository: string
+            sessionId: string
+            timestamp: string
+            toolTokens: number
+            totalTokens: number
+        }>>()
+
+        for (const row of rows) {
+            const list = result.get(row.platform) ?? []
+            list.push({
+                cacheCreationTokens: row.cache_creation,
+                cachedInputTokens: row.cached_input_token,
+                costUSD: 0,
+                inputTokens: row.input_token,
+                isFallbackModel: row.is_fallback_model === 1,
+                model: row.model ?? 'unknown',
+                outputTokens: row.output_token,
+                platform: row.platform,
+                project: row.project_name,
+                reasoningOutputTokens: row.reasoning_token,
+                repository: row.repository,
+                sessionId: row.session_id,
+                timestamp: row.timestamp,
+                toolTokens: row.tool_tokens,
+                totalTokens: row.total_token,
             })
+            result.set(row.platform, list)
+        }
+
+        return result
+    }
+
+    queryDailyTokenUsage(filters: { projectName?: string, platform?: string } = {}): DailyTokenUsage[] {
+        const conditions: string[] = ['total_token > 0']
+        const params: unknown[] = []
+
+        if (filters.projectName) {
+            conditions.push('project_name = ?')
+            params.push(filters.projectName)
+        }
+
+        if (filters.platform) {
+            conditions.push('platform = ?')
+            params.push(filters.platform)
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+
+        const rows = this.database.prepare<{
+            date_key: string
+            input_token: number
+            output_token: number
+            cached_input_token: number
+            reasoning_token: number
+            total_token: number
+            models_json: string
+        }>(`
+            SELECT
+                DATE(COALESCE(timestamp, session_started_at)) AS date_key,
+                SUM(input_token) AS input_token,
+                SUM(output_token) AS output_token,
+                SUM(cached_input_token) AS cached_input_token,
+                SUM(reasoning_token) AS reasoning_token,
+                SUM(total_token) AS total_token,
+                json_group_array(DISTINCT model) AS models_json
+            FROM sessions
+            ${whereClause}
+            GROUP BY date_key
+            ORDER BY date_key DESC
+        `).all(...params)
+
+        return rows.map((row) => {
+            let models: string[] = []
+
+            try {
+                models = JSON.parse(row.models_json).filter(Boolean)
+            }
+            catch {
+                models = []
+            }
+
+            return {
+                cachedInputTokens: row.cached_input_token,
+                costUSD: 0,
+                date: formatDateLabelFromDateKey(row.date_key),
+                inputTokens: row.input_token,
+                models: Object.fromEntries(models.map(model => [model, {
+                    cachedInputTokens: 0,
+                    costUSD: 0,
+                    inputTokens: 0,
+                    isFallback: false,
+                    outputTokens: 0,
+                    reasoningOutputTokens: 0,
+                    totalTokens: 0,
+                }])),
+                outputTokens: row.output_token,
+                reasoningOutputTokens: row.reasoning_token,
+                totalTokens: row.total_token,
+            }
+        })
+    }
+
+    queryMonthlyModelUsage(filters: { projectName?: string, platform?: string } = {}): MonthlyModelUsage[] {
+        const conditions: string[] = ['model IS NOT NULL', 'total_token > 0']
+        const params: unknown[] = []
+
+        if (filters.projectName) {
+            conditions.push('project_name = ?')
+            params.push(filters.projectName)
+        }
+
+        if (filters.platform) {
+            conditions.push('platform = ?')
+            params.push(filters.platform)
+        }
+
+        const whereClause = `WHERE ${conditions.join(' AND ')}`
+
+        return this.database.prepare<{
+            month: string
+            model: string
+            total_token: number
+        }>(`
+            SELECT
+                SUBSTR(DATE(COALESCE(timestamp, session_started_at)), 1, 7) AS month,
+                model,
+                SUM(total_token) AS total_token
+            FROM sessions
+            ${whereClause}
+            GROUP BY month, model
+            ORDER BY month ASC, model ASC
+        `).all(...params).map(row => ({
+            model: row.model,
+            month: row.month,
+            tokenTotal: row.total_token,
+        }))
+    }
+
+    queryProjectCatalog(): ProjectUsageCatalogItem[] {
+        const rows = this.database.prepare<{
+            project_name: string
+            platforms_json: string
+            total_token: number
+        }>(`
+            SELECT project_name,
+                   json_group_array(DISTINCT platform) AS platforms_json,
+                   SUM(total_token) AS total_token
+            FROM sessions
+            GROUP BY project_name
+            ORDER BY project_name ASC
+        `).all()
+
+        return rows.map((row) => {
+            let platforms: string[] = []
+
+            try {
+                platforms = JSON.parse(row.platforms_json)
+            }
+            catch {
+                platforms = []
+            }
+
+            return {
+                label: row.project_name,
+                platforms: platforms
+                    .filter(p => PROJECT_USAGE_PLATFORMS.includes(p as ProjectUsagePlatform))
+                    .sort() as ProjectUsagePlatform[],
+                totalTokens: row.total_token,
+            }
+        })
+    }
+
+    queryTopProjects(limit = 10): Array<{ projectName: string, sessionCount: number, totalTokens: number }> {
+        const rows = this.database.prepare<{
+            project_name: string
+            session_count: number
+            total_token: number
+        }>(`
+            SELECT project_name,
+                   COUNT(DISTINCT session_id) AS session_count,
+                   SUM(total_token) AS total_token
+            FROM sessions
+            GROUP BY project_name
+            ORDER BY total_token DESC
+            LIMIT ?
+        `).all(limit)
+
+        return rows.map(row => ({
+            projectName: row.project_name,
+            sessionCount: row.session_count,
+            totalTokens: row.total_token,
+        }))
+    }
+
+    querySessionCount(filters: { platform?: string, projectName?: string } = {}): number {
+        const conditions: string[] = []
+        const params: unknown[] = []
+
+        if (filters.platform) {
+            conditions.push('platform = ?')
+            params.push(filters.platform)
+        }
+
+        if (filters.projectName) {
+            conditions.push('project_name = ?')
+            params.push(filters.projectName)
+        }
+
+        const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
+        const row = this.database.prepare<{ count: number }>(
+            `SELECT COUNT(DISTINCT session_id) AS count FROM sessions ${whereClause}`,
+        ).get(...params)
+
+        return row?.count ?? 0
+    }
+
+    queryTodayInsights(): {
+        previousPromptCount: number
+        previousSessionCount: number
+        promptCount: number
+        sessionCount: number
+        todayHourlyUsage: Array<{
+            agents: Record<string, { costUSD: number, totalTokens: number }>
+            costUSD: number
+            hour: number
+            label: string
+            totalTokens: number
+        }>
+    } {
+        const todayDate = new Date()
+        const todayDateKey = getDateKey(todayDate)
+        const previousDate = new Date(todayDate)
+        previousDate.setDate(previousDate.getDate() - 1)
+        const previousDateKey = getDateKey(previousDate)
+        const { previousDayEnd, previousDayStart, todayEnd, todayStart } = getUtcDayBoundaries(todayDate)
+
+        // Today/previous session counts (by session_started_at)
+        const sessionCounts = this.database.prepare<{
+            date_key: string
+            count: number
+        }>(`
+            SELECT CASE
+                WHEN session_started_at >= ? AND session_started_at < ? THEN ?
+                WHEN session_started_at >= ? AND session_started_at < ? THEN ?
+            END AS date_key,
+            COUNT(DISTINCT session_id) AS count
+            FROM sessions
+            WHERE session_started_at IS NOT NULL
+              AND ((session_started_at >= ? AND session_started_at < ?)
+                OR (session_started_at >= ? AND session_started_at < ?))
+            GROUP BY date_key
+        `).all(todayStart, todayEnd, todayDateKey, previousDayStart, previousDayEnd, previousDateKey, todayStart, todayEnd, previousDayStart, previousDayEnd)
+
+        let sessionCount = 0
+        let previousSessionCount = 0
+
+        for (const row of sessionCounts) {
+            if (row.date_key === todayDateKey)
+                sessionCount = row.count
+            if (row.date_key === previousDateKey)
+                previousSessionCount = row.count
+        }
+
+        // Today/previous prompt counts (role = 'user')
+        const promptCounts = this.database.prepare<{
+            date_key: string
+            count: number
+        }>(`
+            SELECT CASE
+                WHEN timestamp >= ? AND timestamp < ? THEN ?
+                WHEN timestamp >= ? AND timestamp < ? THEN ?
+            END AS date_key,
+            COUNT(*) AS count
+            FROM sessions
+            WHERE role = 'user'
+              AND timestamp IS NOT NULL
+              AND ((timestamp >= ? AND timestamp < ?)
+                OR (timestamp >= ? AND timestamp < ?))
+            GROUP BY date_key
+        `).all(todayStart, todayEnd, todayDateKey, previousDayStart, previousDayEnd, previousDateKey, todayStart, todayEnd, previousDayStart, previousDayEnd)
+
+        let promptCount = 0
+        let previousPromptCount = 0
+
+        for (const row of promptCounts) {
+            if (row.date_key === todayDateKey)
+                promptCount = row.count
+            if (row.date_key === previousDateKey)
+                previousPromptCount = row.count
+        }
+
+        // Today hourly usage — use local timezone offset to extract correct hour
+        const offsetMinutes = -todayDate.getTimezoneOffset()
+        const offsetSign = offsetMinutes >= 0 ? '+' : '-'
+        const absOffset = Math.abs(offsetMinutes)
+        const offsetHH = String(Math.floor(absOffset / 60)).padStart(2, '0')
+        const offsetMM = String(absOffset % 60).padStart(2, '0')
+        const tzModifier = `${offsetSign}${offsetHH}:${offsetMM}`
+
+        const hourlyRows = this.database.prepare<{
+            hour: string
+            platform: string
+            total_token: number
+        }>(`
+            SELECT
+                SUBSTR(datetime(timestamp, ?), 12, 2) AS hour,
+                platform,
+                SUM(total_token) AS total_token
+            FROM sessions
+            WHERE timestamp IS NOT NULL
+              AND timestamp >= ? AND timestamp < ?
+              AND total_token > 0
+            GROUP BY hour, platform
+        `).all(tzModifier, todayStart, todayEnd)
+
+        const hourlyMap = new Map<number, {
+            agents: Map<string, { costUSD: number, totalTokens: number }>
+            costUSD: number
+            totalTokens: number
+        }>()
+
+        for (const row of hourlyRows) {
+            const hour = Number.parseInt(row.hour, 10)
+
+            if (!Number.isFinite(hour))
+                continue
+
+            const bucket = hourlyMap.get(hour) ?? { agents: new Map(), costUSD: 0, totalTokens: 0 }
+            bucket.totalTokens += row.total_token
+            bucket.agents.set(row.platform, {
+                costUSD: 0,
+                totalTokens: row.total_token,
+            })
+            hourlyMap.set(hour, bucket)
+        }
+
+        const todayHourlyUsage = Array.from({ length: 24 }, (_, hour) => ({
+            agents: Object.fromEntries(hourlyMap.get(hour)?.agents.entries() ?? []),
+            costUSD: 0,
+            hour,
+            label: `${String(hour).padStart(2, '0')}:00`,
+            totalTokens: hourlyMap.get(hour)?.totalTokens ?? 0,
+        }))
+
+        return {
+            previousPromptCount,
+            previousSessionCount,
+            promptCount,
+            sessionCount,
+            todayHourlyUsage,
+        }
+    }
+
+    createPayloadHash(data: string): string {
+        return createHash('sha1').update(data).digest('hex')
+    }
+
+    private rowToSessionSummary(row: SessionSummaryRow): ProjectSessionUsageItem {
+        const sessionId = row.session_id
+        const modelsStr = row.models_csv ?? ''
+        const models = modelsStr.split(',').filter(Boolean).sort()
+        const topModel = models[0] ?? 'unknown'
+        const startedAt = row.started_at ?? row.session_started_at ?? ''
+        const lastActivity = row.last_activity ?? startedAt
+        const startedAtDate = new Date(startedAt)
+        const hasValidDate = Number.isFinite(startedAtDate.getTime())
+        const dateKey = hasValidDate ? getDateKey(startedAtDate) : ''
+
+        return {
+            cachedInputTokens: row.cached_input_token ?? 0,
+            costUSD: 0,
+            date: dateKey ? formatDateLabelFromDateKey(dateKey) : '',
+            duration: '',
+            durationMinutes: 0,
+            id: sessionId,
+            inputTokens: row.input_token ?? 0,
+            interactions: [],
+            lastActivity,
+            model: topModel,
+            models,
+            month: hasValidDate ? getMonthKey(startedAtDate) : '',
+            outputTokens: row.output_token ?? 0,
+            project: row.project_name ?? '',
+            reasoningOutputTokens: row.reasoning_token ?? 0,
+            repository: row.repository ?? '',
+            sessionId,
+            startedAt,
+            threadName: row.thread_name ?? '',
+            tokenTotal: row.total_token ?? 0,
+            topModel,
+            week: hasValidDate ? getWeekLabel(startedAtDate) : '',
         }
     }
 
     private initializeSchema() {
-        this.database.exec(CACHE_SCHEMA_SQL)
+        this.database.exec(SCHEMA_SQL)
 
-        const currentSchemaVersion = this.getCurrentSchemaVersion()
+        const currentVersion = this.getCurrentSchemaVersion()
+        const hasLegacyTables = this.hasLegacyTables()
 
-        if (this.shouldResetCache(currentSchemaVersion)) {
+        if ((currentVersion > 0 && currentVersion !== SCHEMA_VERSION) || hasLegacyTables) {
             this.resetCacheDatabase()
-            this.database.exec(CACHE_SCHEMA_SQL)
-        }
-        else {
-            this.applySchemaMigrations(currentSchemaVersion)
+            this.database.exec(SCHEMA_SQL)
         }
 
-        this.setSchemaVersion(CACHE_SCHEMA_VERSION)
+        this.setSchemaVersion(SCHEMA_VERSION)
     }
 
-    private getCurrentSchemaVersion() {
-        return this.database.prepare<SchemaVersionRow>(`
-            SELECT schema_version
-            FROM cache_schema_meta
-            WHERE id = 1
-        `).get()?.schema_version ?? 0
+    private hasLegacyTables(): boolean {
+        try {
+            const row = this.database.prepare<{ name: string }>(
+                'SELECT name FROM sqlite_master WHERE type = \'table\' AND name = \'cache_schema_meta\'',
+            ).get()
+
+            return row !== undefined
+        }
+        catch {
+            return false
+        }
+    }
+
+    private getCurrentSchemaVersion(): number {
+        try {
+            const row = this.database.prepare<SchemaMetaRow>(
+                'SELECT schema_version FROM schema_meta WHERE id = 1',
+            ).get()
+
+            return row?.schema_version ?? 0
+        }
+        catch {
+            return 0
+        }
     }
 
     private openDatabase() {
         const database = openSqliteDatabase(this.databasePath)
         database.exec('PRAGMA foreign_keys = ON')
         return database
-    }
-
-    private shouldResetCache(currentSchemaVersion: number) {
-        if (this.hasLegacyData() || !this.hasCompatibleNormalizedSchema()) {
-            return true
-        }
-
-        return currentSchemaVersion > CACHE_SCHEMA_VERSION
-    }
-
-    private applySchemaMigrations(currentSchemaVersion: number) {
-        if (currentSchemaVersion < 12) {
-            this.database.exec(`
-                DROP INDEX IF EXISTS idx_usage_scope_project_usage_order;
-                DROP TABLE IF EXISTS usage_scope_project_usage;
-            `)
-        }
-    }
-
-    private hasCompatibleNormalizedSchema() {
-        return this.hasTableColumns('indexed_files', ['cache_signature'])
-            && this.hasTableColumns('project_catalog_entries', ['platforms_json', 'total_tokens'])
-            && !this.hasTableColumns('project_catalog_entries', ['type'])
-            && this.hasTableColumns('usage_scope_overview_cards', ['subvalue_json'])
-            && this.hasTableColumns('usage_scope_interactions', ['extra_total_tokens'])
-            && this.hasTableColumns('indexed_fragment_interactions', ['extra_total_tokens', 'fallback_dedupe_key', 'is_sidechain'])
-    }
-
-    private hasTableColumns(tableName: string, columnNames: string[]) {
-        if (!this.hasTable(tableName)) {
-            return false
-        }
-
-        const columns = this.database.prepare<SqliteNameRow>(`PRAGMA table_info(${tableName})`).all()
-        return columnNames.every(columnName => columns.some(column => column.name === columnName))
     }
 
     private resetCacheDatabase() {
@@ -875,1074 +881,39 @@ export class UsageCacheRepository {
     }
 
     private setSchemaVersion(version: number) {
+        const row = this.database.prepare<{ package_version: string }>(
+            'SELECT package_version FROM schema_meta WHERE id = 1',
+        ).get()
+        const packageVersion = row?.package_version ?? '0.0.0'
+
         this.database.prepare(`
-            INSERT INTO cache_schema_meta (id, schema_version)
-            VALUES (1, ?)
+            INSERT INTO schema_meta (id, schema_version, package_version)
+            VALUES (1, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
-                schema_version = excluded.schema_version
-        `).run(version)
-    }
-
-    private hasLegacyData() {
-        return this.hasTable('cache_snapshots')
-            || this.hasTable('project_snapshots')
-            || this.hasTable('indexed_source_files')
-    }
-
-    private hasTable(tableName: string) {
-        const row = this.database.prepare<SqliteNameRow>(`
-            SELECT name
-            FROM sqlite_master
-            WHERE type = 'table' AND name = ?
-        `).get(tableName)
-
-        return Boolean(row)
-    }
-
-    private getCacheState(key: SnapshotKey) {
-        return this.database.prepare<CacheStateRow>(`
-            SELECT key, payload_hash, updated_at, version
-            FROM cache_state
-            WHERE key = ?
-        `).get(key)
-    }
-
-    private persistBootstrap(
-        payload: TokensConsumptionResult,
-        options: {
-            payloadHash?: string
-            platforms?: ProjectUsagePlatform[]
-            updatedAt?: string
-            version?: string
-        } = {},
-    ) {
-        const updatedAt = options.updatedAt ?? new Date().toISOString()
-        const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
-        const platforms = options.platforms?.length
-            ? PROJECT_USAGE_PLATFORMS.filter(platform => options.platforms!.includes(platform))
-            : PROJECT_USAGE_PLATFORMS
-        const version = options.version ?? payload.version
-
-        this.database.exec('BEGIN')
-
-        try {
-            const deleteScopeStatement = this.database.prepare('DELETE FROM usage_scopes WHERE scope_key = ?')
-
-            for (const platform of platforms) {
-                deleteScopeStatement.run(createUsageScopeKey('bootstrap', platform))
-                this.insertUsageScope({
-                    kind: 'bootstrap',
-                    platform,
-                    updatedAt,
-                    usage: payload[platform] as unknown as PersistedUsageScope,
-                })
-            }
-
-            this.upsertCacheState('bootstrap', payloadHash, updatedAt, version)
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    private persistProjectCatalog(
-        payload: ProjectUsageCatalogItem[],
-        options: {
-            changedEntries?: ProjectUsageCatalogItem[]
-            payloadHash?: string
-            removedLabels?: string[]
-            updatedAt?: string
-        } = {},
-    ) {
-        const changedEntries = options.changedEntries
-        const updatedAt = options.updatedAt ?? new Date().toISOString()
-        const payloadHash = options.payloadHash ?? createPayloadHash(JSON.stringify(payload))
-        const deleteAllStatement = this.database.prepare('DELETE FROM project_catalog_entries')
-        const deleteEntryStatement = this.database.prepare('DELETE FROM project_catalog_entries WHERE label = ?')
-        const insertStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO project_catalog_entries (label, platforms_json, total_tokens, updated_at)
-            VALUES (?, ?, ?, ?)
-        `)
-
-        this.database.exec('BEGIN')
-
-        try {
-            if (changedEntries) {
-                for (const label of options.removedLabels ?? []) {
-                    deleteEntryStatement.run(label)
-                }
-
-                for (const item of changedEntries) {
-                    insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
-                }
-            }
-            else {
-                deleteAllStatement.run()
-
-                for (const item of payload) {
-                    insertStatement.run(item.label, JSON.stringify(item.platforms), item.totalTokens, updatedAt)
-                }
-            }
-
-            this.upsertCacheState('project_catalog', payloadHash, updatedAt)
-            this.database.exec('COMMIT')
-        }
-        catch (error) {
-            this.database.exec('ROLLBACK')
-            throw error
-        }
-    }
-
-    private upsertCacheState(
-        key: SnapshotKey,
-        payloadHash: string,
-        updatedAt: string,
-        version?: string,
-    ) {
-        this.database.prepare(`
-            INSERT INTO cache_state (key, payload_hash, updated_at, version)
-            VALUES (?, ?, ?, ?)
-            ON CONFLICT(key) DO UPDATE SET
-                payload_hash = excluded.payload_hash,
-                updated_at = excluded.updated_at,
-                version = excluded.version
-        `).run(key, payloadHash, updatedAt, version ?? null)
-    }
-
-    private insertUsageScope(options: {
-        kind: UsageScopeKind
-        platform: ProjectUsagePlatform
-        projectLabel?: string
-        updatedAt: string
-        usage: PersistedUsageScope
-    }) {
-        const scopeKey = createUsageScopeKey(options.kind, options.platform, options.projectLabel)
-        const payloadHash = createPayloadHash(JSON.stringify(options.usage))
-        const insertScopeStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scopes (
-                scope_key,
-                scope_kind,
-                project_label,
-                platform,
-                payload_hash,
-                updated_at,
-                today_total_tokens,
-                today_top_model,
-                today_top_model_total_tokens,
-                today_top_project,
-                today_top_project_session_count
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertOverviewCardStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_overview_cards (
-                scope_key,
-                position,
-                icon,
-                name,
-                value,
-                detail,
-                subvalue_json,
-                trend,
-                trend_tone
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertTokenRowStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_token_rows (
-                scope_key,
-                bucket,
-                row_order,
-                row_id,
-                label,
-                period,
-                session_count,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                total_tokens
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertTokenRowModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_token_row_models (
-                scope_key,
-                bucket,
-                row_id,
-                model,
-                model_order
-            )
-            VALUES (?, ?, ?, ?, ?)
-        `)
-        const insertTokenRowProjectStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_token_row_projects (
-                scope_key,
-                bucket,
-                row_id,
-                project,
-                project_order
-            )
-            VALUES (?, ?, ?, ?, ?)
-        `)
-        const insertDailyUsageStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_daily_usage (
-                scope_key,
-                row_order,
-                date,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                total_tokens
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertDailyUsageModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_daily_usage_models (
-                scope_key,
-                date,
-                model,
-                model_order,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                total_tokens,
-                is_fallback
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertMonthlyModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_monthly_model_usage (
-                scope_key,
-                row_order,
-                month,
-                model,
-                token_total
-            )
-            VALUES (?, ?, ?, ?, ?)
-        `)
-        const insertSessionStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_sessions (
-                scope_key,
-                session_key,
-                session_order,
-                session_id,
-                thread_name,
-                project,
-                repository,
-                model,
-                started_at,
-                date,
-                month,
-                week,
-                duration,
-                duration_minutes,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                token_total,
-                last_activity,
-                top_model
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-        const insertSessionModelStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_session_models (
-                scope_key,
-                session_key,
-                model,
-                model_order
-            )
-            VALUES (?, ?, ?, ?)
-        `)
-        const insertInteractionStatement = this.database.prepare(`
-            INSERT OR REPLACE INTO usage_scope_interactions (
-                scope_key,
-                session_key,
-                interaction_order,
-                interaction_index,
-                content,
-                model,
-                role,
-                timestamp,
-                type,
-                input_tokens,
-                cached_input_tokens,
-                output_tokens,
-                reasoning_output_tokens,
-                extra_total_tokens,
-                total_tokens,
-                cache_creation_tokens,
-                cache_read_tokens,
-                tool_tokens,
-                is_fallback_model
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `)
-
-        insertScopeStatement.run(
-            scopeKey,
-            options.kind,
-            options.projectLabel ?? null,
-            options.platform,
-            payloadHash,
-            options.updatedAt,
-            options.usage.todayTotalTokens,
-            options.usage.todayTopModel?.model ?? null,
-            options.usage.todayTopModel?.totalTokens ?? null,
-            options.usage.todayTopProject?.project ?? null,
-            options.usage.todayTopProject?.sessionCount ?? null,
-        )
-
-        for (const [position, card] of getPersistedOverviewCards(options.usage.overviewCards).entries()) {
-            insertOverviewCardStatement.run(
-                scopeKey,
-                position,
-                card.icon,
-                card.name,
-                card.value,
-                card.detail ?? null,
-                card.subvalue ? JSON.stringify(card.subvalue) : null,
-                card.trend,
-                card.trendTone,
-            )
-        }
-
-        for (const bucket of ['daily', 'monthly', 'session', 'weekly'] as TokenRowBucket[]) {
-            const rows = getTokenRowsByBucket(options.usage, bucket)
-
-            for (const [rowOrder, row] of rows.entries()) {
-                insertTokenRowStatement.run(
-                    scopeKey,
-                    bucket,
-                    rowOrder,
-                    row.id,
-                    row.label,
-                    row.period,
-                    row.sessionCount,
-                    row.inputTokens,
-                    row.cachedInputTokens,
-                    row.outputTokens,
-                    row.reasoningOutputTokens,
-                    row.totalTokens,
-                )
-
-                for (const [modelOrder, model] of row.models.entries()) {
-                    insertTokenRowModelStatement.run(scopeKey, bucket, row.id, model, modelOrder)
-                }
-
-                for (const [projectOrder, project] of row.projects.entries()) {
-                    insertTokenRowProjectStatement.run(scopeKey, bucket, row.id, project, projectOrder)
-                }
-            }
-        }
-
-        for (const [rowOrder, row] of options.usage.dailyTokenUsage.entries()) {
-            insertDailyUsageStatement.run(
-                scopeKey,
-                rowOrder,
-                row.date,
-                row.inputTokens,
-                row.cachedInputTokens,
-                row.outputTokens,
-                row.reasoningOutputTokens,
-                row.totalTokens,
-            )
-
-            for (const [modelOrder, [model, usage]] of Object.entries(row.models).entries()) {
-                insertDailyUsageModelStatement.run(
-                    scopeKey,
-                    row.date,
-                    model,
-                    modelOrder,
-                    usage.inputTokens,
-                    usage.cachedInputTokens,
-                    usage.outputTokens,
-                    usage.reasoningOutputTokens,
-                    usage.totalTokens,
-                    usage.isFallback ? 1 : 0,
-                )
-            }
-        }
-
-        for (const [rowOrder, row] of options.usage.monthlyModelUsage.entries()) {
-            insertMonthlyModelStatement.run(
-                scopeKey,
-                rowOrder,
-                row.month,
-                row.model,
-                row.tokenTotal,
-            )
-        }
-
-        for (const [sessionOrder, session] of options.usage.sessionUsage.entries()) {
-            insertSessionStatement.run(
-                scopeKey,
-                session.id,
-                sessionOrder,
-                session.sessionId,
-                session.threadName,
-                session.project,
-                session.repository,
-                session.model,
-                session.startedAt,
-                session.date,
-                session.month,
-                session.week,
-                session.duration,
-                session.durationMinutes,
-                session.inputTokens,
-                session.cachedInputTokens,
-                session.outputTokens,
-                session.reasoningOutputTokens,
-                session.tokenTotal,
-                session.lastActivity,
-                session.topModel,
-            )
-
-            for (const [modelOrder, model] of session.models.entries()) {
-                insertSessionModelStatement.run(scopeKey, session.id, model, modelOrder)
-            }
-
-            for (const [interactionOrder, interaction] of session.interactions.entries()) {
-                insertInteractionStatement.run(
-                    scopeKey,
-                    session.id,
-                    interactionOrder,
-                    interaction.index,
-                    interaction.content,
-                    interaction.model,
-                    interaction.role,
-                    interaction.timestamp,
-                    interaction.type,
-                    interaction.usage?.inputTokens ?? null,
-                    interaction.usage?.cachedInputTokens ?? null,
-                    interaction.usage?.outputTokens ?? null,
-                    interaction.usage?.reasoningOutputTokens ?? null,
-                    interaction.usage?.extraTotalTokens ?? null,
-                    interaction.usage?.totalTokens ?? null,
-                    interaction.usage?.cacheCreationTokens ?? null,
-                    interaction.usage?.cacheReadTokens ?? null,
-                    interaction.usage?.toolTokens ?? null,
-                    interaction.usage?.isFallbackModel ? 1 : 0,
-                )
-            }
-        }
-    }
-
-    private loadHydratedUsageScopes(kind: UsageScopeKind, options: {
-        includeInteractions?: boolean
-        projectLabel?: string
-    } = {}) {
-        const includeInteractions = options.includeInteractions ?? true
-        const baseScopeWhere = options.projectLabel === undefined
-            ? 'scope_kind = ?'
-            : 'scope_kind = ? AND project_label = ?'
-        const joinedScopeWhere = options.projectLabel === undefined
-            ? 'scope.scope_kind = ?'
-            : 'scope.scope_kind = ? AND scope.project_label = ?'
-        const scopeParameters = options.projectLabel === undefined
-            ? [kind]
-            : [kind, options.projectLabel]
-        const scopes: UsageScopeRow[] = this.database.prepare<UsageScopeRow>(`
-            SELECT
-                scope_key,
-                scope_kind,
-                project_label,
-                platform,
-                payload_hash,
-                updated_at,
-                today_total_tokens,
-                today_top_model,
-                today_top_model_total_tokens,
-                today_top_project,
-                today_top_project_session_count
-            FROM usage_scopes
-            WHERE ${baseScopeWhere}
-            ORDER BY project_label ASC, platform ASC
-        `).all(...scopeParameters)
-
-        if (scopes.length === 0) {
-            return new Map<string, PersistedUsageScope>()
-        }
-
-        const scopeSet = new Set(scopes.map(scope => scope.scope_key))
-        const overviewCards = groupOverviewCards(this.database.prepare<OverviewCardRow>(`
-            SELECT card.scope_key, card.position, card.icon, card.name, card.value, card.detail, card.subvalue_json, card.trend, card.trend_tone
-            FROM usage_scope_overview_cards AS card
-            JOIN usage_scopes AS scope ON scope.scope_key = card.scope_key
-            WHERE ${joinedScopeWhere}
-            ORDER BY card.scope_key ASC, card.position ASC
-        `).all(...scopeParameters))
-        const tokenRows = groupTokenRows(
-            this.database.prepare<TokenRowRow>(`
-                SELECT
-                    row.scope_key,
-                    row.bucket,
-                    row.row_order,
-                    row.row_id,
-                    row.label,
-                    row.period,
-                    row.session_count,
-                    row.input_tokens,
-                    row.cached_input_tokens,
-                    row.output_tokens,
-                    row.reasoning_output_tokens,
-                    row.total_tokens
-                FROM usage_scope_token_rows AS row
-                JOIN usage_scopes AS scope ON scope.scope_key = row.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY row.scope_key ASC, row.bucket ASC, row.row_order ASC
-            `).all(...scopeParameters),
-            this.database.prepare<TokenRowModelRow>(`
-                SELECT model.scope_key, model.bucket, model.row_id, model.model, model.model_order
-                FROM usage_scope_token_row_models AS model
-                JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY model.scope_key ASC, model.bucket ASC, model.row_id ASC, model.model_order ASC
-            `).all(...scopeParameters),
-            this.database.prepare<TokenRowProjectRow>(`
-                SELECT project.scope_key, project.bucket, project.row_id, project.project, project.project_order
-                FROM usage_scope_token_row_projects AS project
-                JOIN usage_scopes AS scope ON scope.scope_key = project.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY project.scope_key ASC, project.bucket ASC, project.row_id ASC, project.project_order ASC
-            `).all(...scopeParameters),
-        )
-        const dailyUsage = groupDailyUsage(
-            this.database.prepare<DailyUsageRow>(`
-                SELECT
-                    daily.scope_key,
-                    daily.row_order,
-                    daily.date,
-                    daily.input_tokens,
-                    daily.cached_input_tokens,
-                    daily.output_tokens,
-                    daily.reasoning_output_tokens,
-                    daily.total_tokens
-                FROM usage_scope_daily_usage AS daily
-                JOIN usage_scopes AS scope ON scope.scope_key = daily.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY daily.scope_key ASC, daily.row_order ASC
-            `).all(...scopeParameters),
-            this.database.prepare<DailyUsageModelRow>(`
-                SELECT
-                    model.scope_key,
-                    model.date,
-                    model.model,
-                    model.model_order,
-                    model.input_tokens,
-                    model.cached_input_tokens,
-                    model.output_tokens,
-                    model.reasoning_output_tokens,
-                    model.total_tokens,
-                    model.is_fallback
-                FROM usage_scope_daily_usage_models AS model
-                JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY model.scope_key ASC, model.date ASC, model.model_order ASC
-            `).all(...scopeParameters),
-        )
-        const monthlyUsage = groupMonthlyModelUsage(this.database.prepare<MonthlyModelUsageRow>(`
-            SELECT monthly.scope_key, monthly.row_order, monthly.month, monthly.model, monthly.token_total
-            FROM usage_scope_monthly_model_usage AS monthly
-            JOIN usage_scopes AS scope ON scope.scope_key = monthly.scope_key
-            WHERE ${joinedScopeWhere}
-            ORDER BY monthly.scope_key ASC, monthly.row_order ASC
-        `).all(...scopeParameters))
-        const sessions = groupSessions(
-            this.database.prepare<SessionRow>(`
-                SELECT
-                    session.scope_key,
-                    session.session_key,
-                    session.session_order,
-                    session.session_id,
-                    session.thread_name,
-                    session.project,
-                    session.repository,
-                    session.model,
-                    session.started_at,
-                    session.date,
-                    session.month,
-                    session.week,
-                    session.duration,
-                    session.duration_minutes,
-                    session.input_tokens,
-                    session.cached_input_tokens,
-                    session.output_tokens,
-                    session.reasoning_output_tokens,
-                    session.token_total,
-                    session.last_activity,
-                    session.top_model
-                FROM usage_scope_sessions AS session
-                JOIN usage_scopes AS scope ON scope.scope_key = session.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY session.scope_key ASC, session.session_order ASC
-            `).all(...scopeParameters),
-            this.database.prepare<SessionModelRow>(`
-                SELECT model.scope_key, model.session_key, model.model, model.model_order
-                FROM usage_scope_session_models AS model
-                JOIN usage_scopes AS scope ON scope.scope_key = model.scope_key
-                WHERE ${joinedScopeWhere}
-                ORDER BY model.scope_key ASC, model.session_key ASC, model.model_order ASC
-            `).all(...scopeParameters),
-            includeInteractions
-                ? this.database.prepare<ScopeInteractionRow>(`
-                    SELECT
-                        interaction.scope_key,
-                        interaction.session_key,
-                        interaction.interaction_order,
-                        interaction.interaction_index,
-                        interaction.content,
-                        interaction.model,
-                        interaction.role,
-                        interaction.timestamp,
-                        interaction.type,
-                        interaction.input_tokens,
-                        interaction.cached_input_tokens,
-                        interaction.output_tokens,
-                        interaction.reasoning_output_tokens,
-                        interaction.extra_total_tokens,
-                        interaction.total_tokens,
-                        interaction.cache_creation_tokens,
-                        interaction.cache_read_tokens,
-                        interaction.tool_tokens,
-                        interaction.is_fallback_model
-                    FROM usage_scope_interactions AS interaction
-                    JOIN usage_scopes AS scope ON scope.scope_key = interaction.scope_key
-                    WHERE ${joinedScopeWhere}
-                    ORDER BY interaction.scope_key ASC, interaction.session_key ASC, interaction.interaction_order ASC
-                `).all(...scopeParameters)
-                : [],
-        )
-        const hydrated = new Map<string, PersistedUsageScope>()
-
-        for (const scope of scopes) {
-            if (!scopeSet.has(scope.scope_key)) {
-                continue
-            }
-
-            const scopeTokenRows = tokenRows.get(scope.scope_key)
-            const sessionUsage = sessions.get(scope.scope_key) ?? []
-
-            hydrated.set(scope.scope_key, {
-                dailyRows: scopeTokenRows?.daily ?? [],
-                dailyTokenUsage: dailyUsage.get(scope.scope_key) ?? [],
-                monthlyModelUsage: monthlyUsage.get(scope.scope_key) ?? [],
-                monthlyRows: scopeTokenRows?.monthly ?? [],
-                overviewCards: overviewCards.get(scope.scope_key) ?? [],
-                projectUsage: [],
-                sessionRows: scopeTokenRows?.session ?? [],
-                sessionUsage,
-                todayTopModel: scope.today_top_model
-                    ? {
-                            model: scope.today_top_model,
-                            totalTokens: scope.today_top_model_total_tokens ?? 0,
-                        }
-                    : null,
-                todayTopProject: scope.today_top_project
-                    ? {
-                            project: scope.today_top_project,
-                            sessionCount: scope.today_top_project_session_count ?? 0,
-                        }
-                    : null,
-                todayTotalCost: 0,
-                todayTotalTokens: scope.today_total_tokens,
-                weeklyRows: scopeTokenRows?.weekly ?? [],
-            })
-        }
-
-        return hydrated
+                schema_version = excluded.schema_version,
+                package_version = excluded.package_version
+        `).run(version, packageVersion)
     }
 }
 
-function getPersistedOverviewCards(cards: UsageOverviewCard[]) {
-    return cards.filter(card => card.name !== 'Today Spend')
-}
+function getUtcDayBoundaries(localDate: Date) {
+    const year = localDate.getFullYear()
+    const month = localDate.getMonth()
+    const day = localDate.getDate()
+    const todayStart = new Date(year, month, day).toISOString()
+    const todayEnd = new Date(year, month, day + 1).toISOString()
+    const previousDayStart = new Date(year, month, day - 1).toISOString()
+    const previousDayEnd = todayStart
 
-function getTokenRowsByBucket(usage: PersistedUsageScope, bucket: TokenRowBucket): TokenUsageRow[] {
-    switch (bucket) {
-        case 'daily':
-            return usage.dailyRows
-        case 'monthly':
-            return usage.monthlyRows
-        case 'session':
-            return usage.sessionRows
-        case 'weekly':
-            return usage.weeklyRows
-    }
-}
-
-function groupIndexedFileProjects(rows: IndexedFileProjectRow[]) {
-    const grouped = new Map<string, string[]>()
-
-    for (const row of rows) {
-        const projects = grouped.get(row.path) ?? []
-        projects.push(row.project_name)
-        grouped.set(row.path, projects)
-    }
-
-    return grouped
-}
-
-function groupIndexedInteractions(rows: IndexedInteractionRow[]) {
-    const grouped = new Map<number, IndexedUsageSourceFile['payload'][number]['interactions']>()
-
-    for (const row of rows) {
-        const interactions = grouped.get(row.fragment_id) ?? []
-        interactions.push({
-            content: row.content,
-            costUSD: 0,
-            dedupeKey: row.dedupe_key,
-            fallbackDedupeKey: row.fallback_dedupe_key,
-            index: row.interaction_index,
-            isSidechain: row.is_sidechain === 1,
-            model: row.model,
-            role: row.role,
-            timestamp: row.timestamp,
-            type: row.type,
-            usage: buildInteractionUsage(row),
-        })
-        grouped.set(row.fragment_id, interactions)
-    }
-
-    return grouped
-}
-
-function groupOverviewCards(rows: OverviewCardRow[]) {
-    const grouped = new Map<string, UsageOverviewCard[]>()
-
-    for (const row of rows) {
-        const cards = grouped.get(row.scope_key) ?? []
-        cards.push({
-            detail: row.detail ?? undefined,
-            icon: row.icon,
-            name: row.name,
-            subvalue: parseOverviewCardSubvalue(row.subvalue_json),
-            trend: row.trend,
-            trendTone: row.trend_tone,
-            value: row.value,
-        })
-        grouped.set(row.scope_key, cards)
-    }
-
-    return grouped
-}
-
-function parseOverviewCardSubvalue(value: string | null): UsageOverviewCard['subvalue'] | undefined {
-    if (!value) {
-        return undefined
-    }
-
-    const subvalue = parse(value) as UsageOverviewCard['subvalue'] | null
-
-    return Array.isArray(subvalue?.items) ? subvalue : undefined
-}
-
-function groupTokenRows(
-    rows: TokenRowRow[],
-    modelRows: TokenRowModelRow[],
-    projectRows: TokenRowProjectRow[],
-) {
-    const modelsByRow = new Map<string, string[]>()
-    const projectsByRow = new Map<string, string[]>()
-
-    for (const row of modelRows) {
-        const key = createCompositeKey(row.scope_key, row.bucket, row.row_id)
-        const models = modelsByRow.get(key) ?? []
-        models.push(row.model)
-        modelsByRow.set(key, models)
-    }
-
-    for (const row of projectRows) {
-        const key = createCompositeKey(row.scope_key, row.bucket, row.row_id)
-        const projects = projectsByRow.get(key) ?? []
-        projects.push(row.project)
-        projectsByRow.set(key, projects)
-    }
-
-    const grouped = new Map<string, Record<TokenRowBucket, TokenUsageRow[]>>()
-
-    for (const row of rows) {
-        const buckets = grouped.get(row.scope_key) ?? {
-            daily: [],
-            monthly: [],
-            session: [],
-            weekly: [],
-        }
-        const key = createCompositeKey(row.scope_key, row.bucket, row.row_id)
-
-        buckets[row.bucket].push({
-            cachedInputTokens: row.cached_input_tokens,
-            costUSD: 0,
-            id: row.row_id,
-            inputTokens: row.input_tokens,
-            label: row.label,
-            models: modelsByRow.get(key) ?? [],
-            outputTokens: row.output_tokens,
-            period: row.period,
-            projects: projectsByRow.get(key) ?? [],
-            reasoningOutputTokens: row.reasoning_output_tokens,
-            sessionCount: row.session_count,
-            totalTokens: row.total_tokens,
-        })
-        grouped.set(row.scope_key, buckets)
-    }
-
-    return grouped
-}
-
-function groupDailyUsage(rows: DailyUsageRow[], modelRows: DailyUsageModelRow[]) {
-    const modelsByRow = new Map<string, DailyTokenUsage['models']>()
-
-    for (const row of modelRows) {
-        const key = createCompositeKey(row.scope_key, row.date)
-        const models = modelsByRow.get(key) ?? {}
-        models[row.model] = {
-            cachedInputTokens: row.cached_input_tokens,
-            costUSD: 0,
-            inputTokens: row.input_tokens,
-            isFallback: Boolean(row.is_fallback),
-            outputTokens: row.output_tokens,
-            reasoningOutputTokens: row.reasoning_output_tokens,
-            totalTokens: row.total_tokens,
-        }
-        modelsByRow.set(key, models)
-    }
-
-    const grouped = new Map<string, DailyTokenUsage[]>()
-
-    for (const row of rows) {
-        const items = grouped.get(row.scope_key) ?? []
-        items.push({
-            cachedInputTokens: row.cached_input_tokens,
-            costUSD: 0,
-            date: row.date,
-            inputTokens: row.input_tokens,
-            models: modelsByRow.get(createCompositeKey(row.scope_key, row.date)) ?? {},
-            outputTokens: row.output_tokens,
-            reasoningOutputTokens: row.reasoning_output_tokens,
-            totalTokens: row.total_tokens,
-        })
-        grouped.set(row.scope_key, items)
-    }
-
-    return grouped
-}
-
-function groupMonthlyModelUsage(rows: MonthlyModelUsageRow[]) {
-    const grouped = new Map<string, MonthlyModelUsage[]>()
-
-    for (const row of rows) {
-        const items = grouped.get(row.scope_key) ?? []
-        items.push({
-            model: row.model,
-            month: row.month,
-            tokenTotal: row.token_total,
-        })
-        grouped.set(row.scope_key, items)
-    }
-
-    return grouped
-}
-
-function groupSessions(
-    rows: SessionRow[],
-    modelRows: SessionModelRow[],
-    interactionRows: ScopeInteractionRow[],
-) {
-    const sessionModels = new Map<string, string[]>()
-    const interactions = new Map<string, ProjectSessionInteractionItem[]>()
-
-    for (const row of modelRows) {
-        const key = createCompositeKey(row.scope_key, row.session_key)
-        const models = sessionModels.get(key) ?? []
-        models.push(row.model)
-        sessionModels.set(key, models)
-    }
-
-    for (const row of interactionRows) {
-        const key = createCompositeKey(row.scope_key, row.session_key)
-        const items = interactions.get(key) ?? []
-        items.push({
-            content: row.content,
-            costUSD: 0,
-            index: row.interaction_index,
-            model: row.model,
-            raw: null,
-            role: row.role,
-            timestamp: row.timestamp,
-            type: row.type,
-            usage: buildInteractionUsage(row),
-        })
-        interactions.set(key, items)
-    }
-
-    const grouped = new Map<string, ProjectSessionUsageItem[]>()
-
-    for (const row of rows) {
-        const items = grouped.get(row.scope_key) ?? []
-        const key = createCompositeKey(row.scope_key, row.session_key)
-
-        items.push({
-            cachedInputTokens: row.cached_input_tokens,
-            costUSD: 0,
-            date: row.date,
-            duration: row.duration,
-            durationMinutes: row.duration_minutes,
-            id: row.session_key,
-            inputTokens: row.input_tokens,
-            interactions: interactions.get(key) ?? [],
-            lastActivity: row.last_activity,
-            model: row.model,
-            models: sessionModels.get(key) ?? [],
-            month: row.month,
-            outputTokens: row.output_tokens,
-            project: row.project,
-            reasoningOutputTokens: row.reasoning_output_tokens,
-            repository: row.repository,
-            sessionId: row.session_id,
-            startedAt: row.started_at,
-            threadName: row.thread_name,
-            tokenTotal: row.token_total,
-            topModel: row.top_model,
-            week: row.week,
-        })
-        grouped.set(row.scope_key, items)
-    }
-
-    return grouped
-}
-
-function buildInteractionUsage(row: {
-    cache_creation_tokens: number | null
-    cache_read_tokens: number | null
-    cached_input_tokens: number | null
-    extra_total_tokens: number | null
-    input_tokens: number | null
-    is_fallback_model: number | null
-    output_tokens: number | null
-    reasoning_output_tokens: number | null
-    tool_tokens: number | null
-    total_tokens: number | null
-}) {
-    if (
-        row.input_tokens === null
-        || row.cached_input_tokens === null
-        || row.output_tokens === null
-        || row.reasoning_output_tokens === null
-        || row.total_tokens === null
-    ) {
-        return null
-    }
-
-    const usage: ProjectInteractionUsage = {
-        cachedInputTokens: row.cached_input_tokens,
-        costUSD: 0,
-        inputTokens: row.input_tokens,
-        outputTokens: row.output_tokens,
-        reasoningOutputTokens: row.reasoning_output_tokens,
-        totalTokens: row.total_tokens,
-    }
-
-    if (row.extra_total_tokens !== null) {
-        usage.extraTotalTokens = row.extra_total_tokens
-    }
-
-    if (row.cache_creation_tokens !== null) {
-        usage.cacheCreationTokens = row.cache_creation_tokens
-    }
-
-    if (row.cache_read_tokens !== null) {
-        usage.cacheReadTokens = row.cache_read_tokens
-    }
-
-    if (row.tool_tokens !== null) {
-        usage.toolTokens = row.tool_tokens
-    }
-
-    if (row.is_fallback_model !== null) {
-        usage.isFallbackModel = Boolean(row.is_fallback_model)
-    }
-
-    return usage
-}
-
-function createEmptyPersistedUsageScope(): PersistedUsageScope {
-    return {
-        ...createEmptyLoadUsageResult(),
-        sessionUsage: [],
-    }
-}
-
-function stripRawPayload(detail: ProjectUsageDetail): ProjectUsageDetail {
-    return {
-        ...detail,
-        analyzing: Object.fromEntries(
-            PROJECT_USAGE_PLATFORMS.map(platform => [platform, stripRawInteractions(detail.analyzing[platform])]),
-        ) as ProjectUsagePlatformRecord<ProjectUsageDetail['analyzing'][ProjectUsagePlatform]>,
-    }
-}
-
-function stripRawInteractions(detail: ProjectUsageDetail['analyzing'][ProjectUsagePlatform]) {
-    return {
-        ...detail,
-        sessionUsage: stripRawFromSessionList(detail.sessionUsage),
-        sessions: stripRawFromSessionList(detail.sessions),
-    }
-}
-
-function stripRawFromSessionList<T extends { interactions: Array<{ raw: unknown }> }>(sessions: T[]) {
-    return sessions.map(session => ({
-        ...session,
-        interactions: session.interactions.map(({ raw: _raw, ...interaction }) => ({
-            ...interaction,
-            raw: null,
-        })),
-    }))
-}
-
-function createUsageScopeKey(
-    kind: UsageScopeKind,
-    platform: ProjectUsagePlatform,
-    projectLabel?: string,
-) {
-    return kind === 'bootstrap'
-        ? `bootstrap:${platform}`
-        : `project:${projectLabel ?? ''}:${platform}`
-}
-
-function createCompositeKey(...parts: Array<string | number>) {
-    return parts.join(ROW_KEY_SEPARATOR)
-}
-
-function createPayloadHash(value: string) {
-    return createHash('sha1').update(value).digest('hex')
-}
-
-function parseProjectCatalogPlatforms(value: string) {
-    return normalizeProjectCatalogPlatforms(parse(value))
-}
-
-function normalizeProjectCatalogPlatforms(value: unknown): ProjectUsagePlatform[] {
-    if (!Array.isArray(value)) {
-        return []
-    }
-
-    return value.filter((platform): platform is ProjectUsagePlatform =>
-        typeof platform === 'string' && PROJECT_USAGE_PLATFORMS.includes(platform as ProjectUsagePlatform),
-    )
+    return { previousDayEnd, previousDayStart, todayEnd, todayStart }
 }
 
 function mkdirParentDirectory(filePath: string) {
-    const directory = dirname(filePath)
+    const directoryPath = dirname(filePath)
 
-    if (!existsSync(directory)) {
-        mkdirSync(directory, { recursive: true })
+    if (!existsSync(directoryPath)) {
+        mkdirSync(directoryPath, {
+            recursive: true,
+        })
     }
 }

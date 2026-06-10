@@ -90,7 +90,6 @@ export const codebuffUsageAdapter = {
             const timestamp = getCodebuffMessageTimestamp(message) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                content: '',
                 costUSD,
                 dedupeKey: getCodebuffDedupeKey(message, sessionId, timestamp ?? '', model, usage, index),
                 index,
