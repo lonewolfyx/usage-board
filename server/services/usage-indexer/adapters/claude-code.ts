@@ -23,7 +23,7 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 
-const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:daily-agent-progress-v2'
+const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:assistant-message-v3'
 
 export const claudeCodeUsageAdapter = {
     async createPricingResolver() {
@@ -194,8 +194,10 @@ function getClaudeUsageLine(line: Record<string, any>): ClaudeUsageLine | null {
             : undefined
     const messageId = typeof message.id === 'string' ? message.id.trim() : ''
     const model = typeof message.model === 'string' ? message.model.trim() : ''
+    const messageRole = typeof message.role === 'string' ? message.role.trim() : ''
+    const messageType = typeof message.type === 'string' ? message.type.trim() : ''
 
-    if (!version || !sessionId || !messageId || !model) {
+    if (!version || !sessionId || !messageId || !model || messageRole !== 'assistant' || messageType !== 'message') {
         return null
     }
 
@@ -211,8 +213,8 @@ function getClaudeUsageLine(line: Record<string, any>): ClaudeUsageLine | null {
             ...message,
             id: messageId,
             model,
-            role: typeof message.role === 'string' ? message.role.trim() : undefined,
-            type: typeof message.type === 'string' ? message.type.trim() : undefined,
+            role: messageRole,
+            type: messageType,
         },
         requestId,
         sessionId,
