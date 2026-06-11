@@ -1,8 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
-import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import {
     addFragmentInteraction,
@@ -12,7 +10,6 @@ import {
 import {
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -85,19 +82,19 @@ export const gooseUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
-    const sessionId = normalizeStringValue(row.id)
-    const modelConfig = parse(normalizeStringValue(row.model_config_json)) as Record<string, unknown> | null
-    const model = normalizeStringValue(normalizeUnknownRecord(modelConfig)?.model_name)
+function parseGooseRow(row: any, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
+    const sessionId = row.id.trim()
+    const modelConfig = JSON.parse(row.model_config_json.trim())
+    const model = modelConfig?.model_name.trim()
     const timestamp = toIsoString(row.created_at)
 
     if (!sessionId || !model || !timestamp) {
         return null
     }
 
-    const inputTokens = normalizeUsageNumber(row.accumulated_input_tokens as number | undefined) || normalizeUsageNumber(row.input_tokens as number | undefined)
-    const outputTokens = normalizeUsageNumber(row.accumulated_output_tokens as number | undefined) || normalizeUsageNumber(row.output_tokens as number | undefined)
-    const totalTokens = normalizeUsageNumber(row.accumulated_total_tokens as number | undefined) || normalizeUsageNumber(row.total_tokens as number | undefined) || (inputTokens + outputTokens)
+    const inputTokens = row.accumulated_input_tokens || row.input_tokens
+    const outputTokens = row.accumulated_output_tokens || row.output_tokens
+    const totalTokens = row.accumulated_total_tokens || row.total_tokens || (inputTokens + outputTokens)
     const extraTotalTokens = Math.max(0, totalTokens - inputTokens - outputTokens)
     const usage = toInteractionUsage({
         extraTotalTokens,
@@ -109,7 +106,7 @@ function parseGooseRow(row: Record<string, unknown>, resolvePricing: Parameters<
         return null
     }
 
-    const provider = normalizeGooseProvider(normalizeStringValue(row.provider_name) ?? null, model)
+    const provider = normalizeGooseProvider(row.provider_name.trim() ?? null, model)
     const costUSD = calculateUsageCostFromCandidates(usage, [model, `${provider}/${model}`], resolvePricing)
 
     return {

@@ -17,8 +17,8 @@ import { join } from 'node:path'
 import { UsageCacheRepository } from '#server/repositories/sqlite/usage-cache.repository'
 import { UsageCleaningConsoleReporter } from '#server/services/usage-cleaning-reporter'
 import {
+    buildEventsByPlatformFromFiles,
     buildIncrementalUsageIndex,
-    buildPlatformEventsByPlatform,
     buildPlatformSessionsByPlatform,
     getUsageCacheUpdateState,
     hydrateIndexedUsageSourceFiles,
@@ -269,7 +269,7 @@ class UsageDataRuntime {
         const bootstrapByPlatform = buildPlatformSessionsByPlatform(repricedFiles, {
             updatedPlatforms: PROJECT_USAGE_PLATFORMS,
         })
-        const eventsByPlatform = buildPlatformEventsByPlatform(repricedFiles)
+        const eventsByPlatform = buildEventsByPlatformFromFiles(repricedFiles)
 
         const bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform, eventsByPlatform)
 
@@ -350,7 +350,7 @@ class UsageDataRuntime {
                 cachedFiles: this.state.indexedFiles ?? undefined,
                 cachedPlatformSessions: options.hydrateCachedPricing
                     ? undefined
-                    : (this.state.bootstrap ? getCachedPlatformSessions(this.state.bootstrap) : undefined),
+                    : (this.state.bootstrap ? Object.fromEntries(PROJECT_USAGE_PLATFORMS.map(platform => [platform, this.state.bootstrap![platform].sessionUsage as ProjectSessionUsageItem[]])) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]> : undefined),
                 discoveredFiles,
                 forceLog: options.forceLog,
                 hydrateCachedPricing: options.hydrateCachedPricing,
@@ -367,7 +367,7 @@ class UsageDataRuntime {
                 projectCount: projectCatalog.length,
                 projectDetailsRemovedCount: 0,
                 projectDetailsWriteCount: 0,
-                sessionCount: getTotalSessionCount(bootstrapByPlatform),
+                sessionCount: PROJECT_USAGE_PLATFORMS.reduce((sum, platform) => sum + bootstrapByPlatform[platform].length, 0),
                 sourceFileCount: indexed.indexedFiles.length,
                 updatedSessions: indexed.updatedSessions,
             }
@@ -377,10 +377,10 @@ class UsageDataRuntime {
             }
 
             this.state.bootstrap = bootstrap
-            this.state.discoveredFiles = toDiscoveredUsageFiles(indexed.indexedFiles)
+            this.state.discoveredFiles = indexed.indexedFiles.map(({ cacheSignature, mtimeMs, path, platform, size }) => ({ cacheSignature, mtimeMs, path, platform, size }))
             this.state.eventsByPlatform = eventsByPlatform
             this.state.indexedFiles = indexed.indexedFiles
-            this.state.indexedFileMetas = toIndexedUsageSourceFileMetas(indexed.indexedFiles)
+            this.state.indexedFileMetas = indexed.indexedFiles.map(({ cacheSignature, mtimeMs, path, platform, projectNames, size, updatedAt }) => ({ cacheSignature, mtimeMs, path, platform, projectNames, size, updatedAt }))
             this.state.projectCatalog = projectCatalog
             this.state.projectDetails = null
             this.state.hasLoadedAllProjectDetails = false
@@ -443,7 +443,7 @@ class UsageDataRuntime {
             return
         }
 
-        const watcher = chokidar.watch(getUsageWatchPatterns(this.config), {
+        const watcher = chokidar.watch(PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(this.config)), {
             awaitWriteFinish: {
                 pollInterval: 100,
                 stabilityThreshold: 250,
@@ -558,25 +558,13 @@ export function getUsageDataRuntime(config: IConfig) {
 }
 
 function resolveUsageCachePath(config: IConfig) {
-    if (isWritableDirectory(config.home)) {
+    try {
+        accessSync(config.home, constants.W_OK)
         return join(config.home, '.usage-board', 'cache.sqlite')
     }
-
-    return join(process.cwd(), '.data', 'usage-board', 'cache.sqlite')
-}
-
-function isWritableDirectory(directoryPath: string) {
-    try {
-        accessSync(directoryPath, constants.W_OK)
-        return true
-    }
     catch {
-        return false
+        return join(process.cwd(), '.data', 'usage-board', 'cache.sqlite')
     }
-}
-
-function getUsageWatchPatterns(config: IConfig) {
-    return PROJECT_USAGE_PLATFORMS.flatMap(platform => usagePlatformAdapters[platform].watchPatterns(config))
 }
 
 function buildBootstrapFromPlatformSessions(
@@ -623,38 +611,4 @@ function buildProjectCatalogFromPlatformSessions(
             totalTokens: project.totalTokens,
         }))
         .sort((a, b) => a.label.localeCompare(b.label))
-}
-
-function getTotalSessionCount(platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>) {
-    return PROJECT_USAGE_PLATFORMS.reduce((sum, platform) => sum + platformSessions[platform].length, 0)
-}
-
-function getCachedPlatformSessions(bootstrap: TokensConsumptionResult) {
-    return Object.fromEntries(
-        PROJECT_USAGE_PLATFORMS.map(platform => [platform, bootstrap[platform].sessionUsage as ProjectSessionUsageItem[]]),
-    ) as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>
-}
-
-function toDiscoveredUsageFiles(
-    indexedFiles: Array<Pick<IndexedUsageSourceFileMeta, 'cacheSignature' | 'mtimeMs' | 'path' | 'platform' | 'size'>>,
-): DiscoveredUsageFile[] {
-    return indexedFiles.map(file => ({
-        cacheSignature: file.cacheSignature,
-        mtimeMs: file.mtimeMs,
-        path: file.path,
-        platform: file.platform,
-        size: file.size,
-    }))
-}
-
-function toIndexedUsageSourceFileMetas(indexedFiles: IndexedUsageSourceFile[]): IndexedUsageSourceFileMeta[] {
-    return indexedFiles.map(file => ({
-        cacheSignature: file.cacheSignature,
-        mtimeMs: file.mtimeMs,
-        path: file.path,
-        platform: file.platform,
-        projectNames: file.projectNames,
-        size: file.size,
-        updatedAt: file.updatedAt,
-    }))
 }

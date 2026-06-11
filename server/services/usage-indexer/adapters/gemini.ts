@@ -20,7 +20,6 @@ import {
     parseJsonFile,
     toIsoString,
 } from '#shared/utils/platform'
-import { normalizeNumber } from '#shared/utils/usage-dashboard'
 import { glob } from 'glob'
 import {
     addFragmentInteraction,
@@ -53,9 +52,9 @@ export const geminiUsageAdapter = {
         return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'gemini'))
     },
     parseFile(filePath) {
-        const data = parseJsonFile(filePath)
+        const data = parseJsonFile<GeminiSessionFile>(filePath)
 
-        if (!isGeminiSessionFile(data)) {
+        if (!data || !Array.isArray(data.messages)) {
             return []
         }
 
@@ -90,7 +89,7 @@ export const geminiUsageAdapter = {
                 costUSD: usage?.costUSD ?? 0,
                 index,
                 model,
-                role: getGeminiRole(message),
+                role: message.type === 'gemini' ? 'assistant' : normalizeRole(message.type ?? ''),
                 timestamp,
                 type: message.type ?? 'message',
                 usage,
@@ -111,10 +110,10 @@ function getGeminiInteractionUsage(
     tokens: GeminiTokenSnapshot,
 ) {
     const baseUsage = convertGeminiTokenUsage(tokens)
-    const extraTotalTokens = normalizeNumber(tokens.thoughts)
+    const extraTotalTokens = tokens.thoughts ?? 0
     const usage = {
         ...baseUsage,
-        inputTokens: baseUsage.inputTokens + normalizeNumber(tokens.tool),
+        inputTokens: baseUsage.inputTokens + (tokens.tool ?? 0),
         reasoningOutputTokens: 0,
     }
 
@@ -127,22 +126,6 @@ function getGeminiInteractionUsage(
         costUSD: 0,
         extraTotalTokens,
     }
-}
-
-function getGeminiRole(message: GeminiSessionFile['messages'][number]) {
-    if (message.type === 'gemini') {
-        return 'assistant'
-    }
-
-    return normalizeRole(message.type ?? '')
-}
-
-function isGeminiSessionFile(value: unknown): value is GeminiSessionFile {
-    if (!value || typeof value !== 'object') {
-        return false
-    }
-
-    return Array.isArray((value as Record<string, unknown>).messages)
 }
 
 function getGeminiThreadName(data: GeminiSessionFile, project: string) {

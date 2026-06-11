@@ -7,7 +7,6 @@ import {
     CODEX_MODEL_ALIASES,
 } from '#shared/platform/constant'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import {
     convertCodexRawUsage,
     extractModelName,
@@ -55,12 +54,14 @@ export const codexUsageAdapter = {
         return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'codex', cacheSignature))
     },
     parseFile(filePath, resolvePricing, file) {
-        const lines = parseJsonlFile<Record<string, unknown>>(filePath)
-        const sessionMeta = normalizeUnknownRecord(lines.find(line => normalizeStringValue(line.type) === 'session_meta')?.payload)
-        const sessionId = getSessionId(filePath, normalizeStringValue(sessionMeta?.id))
+        const lines = parseJsonlFile<Record<string, any>>(filePath)
+        const sessionMeta = lines.find(line => typeof line.type === 'string' && line.type.trim() === 'session_meta')?.payload
+        const sessionId = typeof sessionMeta?.id === 'string' && sessionMeta.id.trim()
+            ? sessionMeta.id.trim()
+            : basename(filePath, '.jsonl')
         const startedAt = getCodexTimestamp(sessionMeta) ?? lines.map(line => getCodexTimestamp(line)).find(Boolean) ?? getFileModifiedAtIso(filePath)
-        const project = getProjectName(normalizeStringValue(sessionMeta?.cwd) ?? '')
-        const repository = normalizeRepositoryUrl(normalizeStringValue(normalizeUnknownRecord(sessionMeta?.git)?.repository_url)) || `local/${project}`
+        const project = getProjectName(typeof sessionMeta?.cwd === 'string' ? sessionMeta.cwd.trim() : '')
+        const repository = normalizeRepositoryUrl(typeof sessionMeta?.git?.repository_url === 'string' ? sessionMeta.git.repository_url.trim() : undefined) || `local/${project}`
         const fragment = createSessionFragment({
             project,
             repository,
@@ -68,16 +69,18 @@ export const codexUsageAdapter = {
             startedAt,
             threadName: `Session for ${project}`,
         })
-        const speed = getCodexSpeedFromSignature(file.cacheSignature)
+        const speed = file.cacheSignature === `${CODEX_SPEED_CACHE_PREFIX}fast` ? 'fast' : 'standard'
         let previousTotals: RawUsage | null = null
         let currentModel: string | undefined
         let currentModelIsFallback = false
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
-            const payload = normalizeUnknownRecord(line.payload)
+            const payload = line.payload
+            const lineType = line?.type?.trim() ?? ''
+            const payloadType = payload?.type?.trim() ?? ''
 
-            if (normalizeStringValue(line.type) === 'turn_context') {
+            if (lineType === 'turn_context') {
                 const contextModel = extractModelName(payload)
 
                 if (contextModel) {
@@ -95,7 +98,7 @@ export const codexUsageAdapter = {
             }
 
             const rawUsage = getCodexRawUsage(line, previousTotals)
-            const totalUsage = normalizeRawUsage(normalizeUnknownRecord(payload?.info)?.total_token_usage as RawUsage | null | undefined)
+            const totalUsage = normalizeRawUsage(payload?.info?.total_token_usage as RawUsage | null | undefined)
 
             if (totalUsage) {
                 previousTotals = totalUsage
@@ -114,7 +117,7 @@ export const codexUsageAdapter = {
                 isFallbackModel = true
             }
 
-            const effectiveType = normalizeStringValue(payload?.type) || normalizeStringValue(line.type) || 'event'
+            const effectiveType = payloadType || lineType || 'event'
 
             if (effectiveType !== 'token_count') {
                 continue
@@ -150,11 +153,13 @@ export const codexUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function getCodexRawUsage(line: Record<string, unknown>, previousTotals: RawUsage | null) {
-    const payload = normalizeUnknownRecord(line.payload)
+function getCodexRawUsage(line: Record<string, any>, previousTotals: RawUsage | null) {
+    const payload = line.payload
+    const lineType = typeof line.type === 'string' ? line.type.trim() : ''
+    const payloadType = typeof payload?.type === 'string' ? payload.type.trim() : ''
 
-    if (normalizeStringValue(line.type) === 'event_msg' && normalizeStringValue(payload?.type) === 'token_count') {
-        const info = normalizeUnknownRecord(payload?.info)
+    if (lineType === 'event_msg' && payloadType === 'token_count') {
+        const info = payload?.info
         const lastUsage = normalizeRawUsage(info?.last_token_usage as RawUsage | null | undefined)
         const totalUsage = normalizeRawUsage(info?.total_token_usage as RawUsage | null | undefined)
         const sessionUsage = lastUsage ?? (totalUsage ? subtractRawUsage(totalUsage, previousTotals) : null)
@@ -193,11 +198,7 @@ function getCodexInteractionUsage(
 }
 
 function getCodexConfigSignature(codexPath: string) {
-    return `${CODEX_SPEED_CACHE_PREFIX}${readCodexConfigSpeed(getCodexConfigPath(codexPath))}`
-}
-
-function getCodexConfigPath(codexPath: string) {
-    return join(codexPath, 'config.toml')
+    return `${CODEX_SPEED_CACHE_PREFIX}${readCodexConfigSpeed(join(codexPath, 'config.toml'))}`
 }
 
 function readCodexConfigSpeed(configPath: string): 'fast' | 'standard' {
@@ -209,14 +210,14 @@ function readCodexConfigSpeed(configPath: string): 'fast' | 'standard' {
     }
 }
 
-function getCodexSpeedFromSignature(cacheSignature: string): 'fast' | 'standard' {
-    return cacheSignature === `${CODEX_SPEED_CACHE_PREFIX}fast` ? 'fast' : 'standard'
-}
-
 const CODEX_CONFIG_ASSIGNMENT_REGEX = /^\s*([a-z_][\w-]*)\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/i
 const CODEX_CONFIG_SECTION_REGEX = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/
 
 function parseCodexConfigSpeed(content: string): 'fast' | 'standard' | undefined {
+    const cs = (v: string) => {
+        const n = v.trim().toLowerCase()
+        return n === 'priority' || n === 'fast' ? 'fast' as const : 'standard' as const
+    }
     let activeProfile: string | undefined
     let currentSection: string | null = null
     let topLevelSpeed: 'fast' | 'standard' | undefined
@@ -244,7 +245,7 @@ function parseCodexConfigSpeed(content: string): 'fast' | 'standard' | undefined
                 activeProfile = value
             }
             else if (key === 'service_tier') {
-                topLevelSpeed = toCodexSpeed(value)
+                topLevelSpeed = cs(value)
             }
 
             continue
@@ -253,7 +254,7 @@ function parseCodexConfigSpeed(content: string): 'fast' | 'standard' | undefined
         const profileName = getCodexProfileName(currentSection)
 
         if (profileName && key === 'service_tier') {
-            profileSpeeds.set(profileName, toCodexSpeed(value))
+            profileSpeeds.set(profileName, cs(value))
         }
     }
 
@@ -276,14 +277,12 @@ function stripTomlQuotes(value: string) {
         : value
 }
 
-function toCodexSpeed(value: string): 'fast' | 'standard' {
-    const normalized = value.trim().toLowerCase()
-
-    return normalized === 'priority' || normalized === 'fast' ? 'fast' : 'standard'
-}
-
-function getCodexRole(line: Record<string, unknown>, hasUsage: boolean) {
-    const type = normalizeStringValue(normalizeUnknownRecord(line.payload)?.type) || normalizeStringValue(line.type) || ''
+function getCodexRole(line: Record<string, any>, hasUsage: boolean) {
+    const type = typeof line.payload?.type === 'string'
+        ? line.payload.type.trim()
+        : typeof line.type === 'string'
+            ? line.type.trim()
+            : ''
 
     if (type === 'token_count' || hasUsage) {
         return 'usage'
@@ -292,11 +291,7 @@ function getCodexRole(line: Record<string, unknown>, hasUsage: boolean) {
     return normalizeRole(type)
 }
 
-function getSessionId(filePath: string, sessionMetaId: string | undefined) {
-    return sessionMetaId?.trim() || basename(filePath, '.jsonl')
-}
-
-function getHeadlessCodexRawUsage(line: Record<string, unknown>) {
+function getHeadlessCodexRawUsage(line: Record<string, any>) {
     const usage = getHeadlessUsageRecord(line)
 
     if (!usage) {
@@ -312,18 +307,18 @@ function getHeadlessCodexRawUsage(line: Record<string, unknown>) {
             : null
 }
 
-function getHeadlessUsageRecord(line: Record<string, unknown>) {
+function getHeadlessUsageRecord(line: Record<string, any>) {
     const candidates = [
-        normalizeUnknownRecord(line.usage),
-        normalizeUnknownRecord(normalizeUnknownRecord(line.data)?.usage),
-        normalizeUnknownRecord(normalizeUnknownRecord(line.result)?.usage),
-        normalizeUnknownRecord(normalizeUnknownRecord(line.response)?.usage),
+        line.usage,
+        line.data?.usage,
+        line.result?.usage,
+        line.response?.usage,
     ]
 
     return candidates.find(Boolean) ?? null
 }
 
-function readHeadlessCodexUsage(usage: Record<string, unknown>): RawUsage | null {
+function readHeadlessCodexUsage(usage: Record<string, any>): RawUsage | null {
     const hasStandardUsageField = [
         'input_tokens',
         'cached_input_tokens',
@@ -341,20 +336,21 @@ function readHeadlessCodexUsage(usage: Record<string, unknown>): RawUsage | null
         }
     }
 
+    const nfn = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : null
     const inputTokens = Math.max(
         0,
-        Math.trunc(normalizeFiniteNumberOrNull(usage.input_tokens) ?? normalizeFiniteNumberOrNull(usage.prompt_tokens) ?? 0),
+        Math.trunc(nfn(usage.input_tokens) ?? nfn(usage.prompt_tokens) ?? 0),
     )
     const cachedInputTokens = Math.max(
         0,
-        Math.trunc(normalizeFiniteNumberOrNull(usage.cached_input_tokens) ?? normalizeFiniteNumberOrNull(usage.cached_tokens) ?? 0),
+        Math.trunc(nfn(usage.cached_input_tokens) ?? nfn(usage.cached_tokens) ?? 0),
     )
     const outputTokens = Math.max(
         0,
-        Math.trunc(normalizeFiniteNumberOrNull(usage.output_tokens) ?? normalizeFiniteNumberOrNull(usage.completion_tokens) ?? 0),
+        Math.trunc(nfn(usage.output_tokens) ?? nfn(usage.completion_tokens) ?? 0),
     )
-    const reasoningOutputTokens = Math.max(0, Math.trunc(normalizeFiniteNumberOrNull(usage.reasoning_output_tokens) ?? 0))
-    const totalTokens = Math.max(0, Math.trunc(normalizeFiniteNumberOrNull(usage.total_tokens) ?? 0))
+    const reasoningOutputTokens = Math.max(0, Math.trunc(nfn(usage.reasoning_output_tokens) ?? 0))
+    const totalTokens = Math.max(0, Math.trunc(nfn(usage.total_tokens) ?? 0))
 
     return {
         cached_input_tokens: cachedInputTokens,
@@ -365,14 +361,14 @@ function readHeadlessCodexUsage(usage: Record<string, unknown>): RawUsage | null
     }
 }
 
-function extractCodexModel(line: Record<string, unknown>) {
-    const payload = normalizeUnknownRecord(line.payload)
+function extractCodexModel(line: Record<string, any>) {
+    const payload = line.payload
     const candidates = [
         payload,
         line,
-        normalizeUnknownRecord(line.data),
-        normalizeUnknownRecord(line.result),
-        normalizeUnknownRecord(line.response),
+        line.data,
+        line.result,
+        line.response,
     ]
 
     for (const candidate of candidates) {
@@ -386,15 +382,15 @@ function extractCodexModel(line: Record<string, unknown>) {
     return undefined
 }
 
-function getCodexTimestamp(line: Record<string, unknown> | null | undefined) {
+function getCodexTimestamp(line: Record<string, any> | null | undefined) {
     if (!line) {
         return null
     }
 
-    const data = normalizeUnknownRecord(line.data)
-    const result = normalizeUnknownRecord(line.result)
-    const response = normalizeUnknownRecord(line.response)
-    const payload = normalizeUnknownRecord(line.payload)
+    const data = line.data
+    const result = line.result
+    const response = line.response
+    const payload = line.payload
 
     return toIsoString(line.timestamp)
         || toIsoString(line.created_at)

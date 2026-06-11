@@ -1,27 +1,23 @@
 import type { UsageUpdateMessage } from '#shared/types/ws'
-import { normalizeUnknownRecord } from '#shared/utils/normalize'
 
 export function isUsageUpdateMessage(value: unknown): value is UsageUpdateMessage {
-    const record = normalizeUnknownRecord(value)
-
-    return record !== null
-        && record.type === 'usage_update'
-        && typeof record.payload === 'object'
-        && record.payload !== null
+    return value !== null
+        && typeof value === 'object'
+        && (value as Record<string, unknown>).type === 'usage_update'
+        && typeof (value as Record<string, unknown>).payload === 'object'
+        && (value as Record<string, unknown>).payload !== null
 }
 
 export function isWebSocketError(value: unknown): value is { message: string, type: 'error' } {
-    const record = normalizeUnknownRecord(value)
-
-    return record !== null
-        && record.type === 'error'
-        && typeof record.message === 'string'
+    return value !== null
+        && typeof value === 'object'
+        && (value as Record<string, unknown>).type === 'error'
+        && typeof (value as Record<string, unknown>).message === 'string'
 }
 
 export function isProjectWebSocketResponse(value: unknown): value is { data: unknown, requestId: string } {
-    const record = normalizeUnknownRecord(value)
-
-    return record !== null
-        && typeof record.requestId === 'string'
-        && 'data' in record
+    return value !== null
+        && typeof value === 'object'
+        && typeof (value as Record<string, unknown>).requestId === 'string'
+        && 'data' in (value as Record<string, unknown>)
 }

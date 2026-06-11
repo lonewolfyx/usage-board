@@ -793,11 +793,12 @@ function matchesModelSuffix(part: string, base: string) {
 }
 
 function pricingKeyMatches(candidate: string, model: string) {
-    const normalizedModel = normalizedPricingKey(model)
+    const nmk = (v: string) => v.replace(/[.@]/gu, '-')
+    const normalizedModel = nmk(model)
     return containsPricingKey(model, candidate)
         || containsPricingKey(candidate, model)
-        || containsPricingKey(normalizedModel, normalizedPricingKey(candidate))
-        || containsPricingKey(normalizedPricingKey(candidate), normalizedModel)
+        || containsPricingKey(normalizedModel, nmk(candidate))
+        || containsPricingKey(nmk(candidate), normalizedModel)
 }
 
 function containsPricingKey(value: string, key: string) {
@@ -853,10 +854,6 @@ function suffixStartsWithNumericModelVersion(key: string, suffix: string) {
     const afterDigits = rest[digitLength] ?? null
 
     return !(digitLength === MODEL_DATE_SUFFIX_DIGITS && (afterDigits == null || !/[a-zA-Z0-9]/u.test(afterDigits)))
-}
-
-function normalizedPricingKey(value: string) {
-    return value.replace(/[.@]/gu, '-')
 }
 
 function createZeroPricing(): ModelPricing {

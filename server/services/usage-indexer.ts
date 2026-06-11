@@ -16,14 +16,16 @@ import type { ProjectSessionInteractionItem, ProjectSessionUsageItem } from '#sh
 import { usagePlatformAdapters } from '#server/services/usage-indexer/adapters'
 import { resolveUsageCostFromCandidates } from '#shared/platform/pricing'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { formatDuration, nowIsoString, useDateFormat } from '#shared/utils/date'
-import { normalizeTimestampValue } from '#shared/utils/normalize'
+import { formatDuration, useDateFormat } from '#shared/utils/date'
 import {
     getDurationMinutes,
     getMonthKey,
-    getWeekLabel,
 } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey, getDateKey, roundCurrency, sumCurrency } from '#shared/utils/usage-dashboard'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+
+dayjs.extend(utc)
 
 interface MutableSessionDetail {
     cachedInputTokens: number
@@ -513,11 +515,11 @@ function parseUsageFile(
         platform: file.platform,
         projectNames: Array.from(new Set(payload.map(fragment => fragment.project))).sort((a, b) => a.localeCompare(b)),
         size: file.size,
-        updatedAt: nowIsoString(),
+        updatedAt: dayjs().toISOString(),
     }
 }
 
-function buildEventsByPlatformFromFiles(
+export function buildEventsByPlatformFromFiles(
     indexedFiles: IndexedUsageSourceFile[],
     updatedPlatformEvents: Partial<ProjectUsagePlatformRecord<UsageAggregateEvent[]>> = {},
 ) {
@@ -532,10 +534,6 @@ function buildEventsByPlatformFromFiles(
             return [platform, buildPlatformEvents(indexedFiles, platform)]
         }),
     ) as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
-}
-
-export function buildPlatformEventsByPlatform(indexedFiles: IndexedUsageSourceFile[]) {
-    return buildEventsByPlatformFromFiles(indexedFiles)
 }
 
 export function buildPlatformSessionsByPlatform(
@@ -708,7 +706,7 @@ function buildPlatformSessionsFromFiles(
 
     return Array.from(details.values())
         .map(finalizeSessionDetail)
-        .filter(hasBillableSessionDetail)
+        .filter(detail => detail.tokenTotal > 0 || detail.costUSD > 0)
         .map(toProjectSessionUsageItem)
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }
@@ -794,18 +792,14 @@ function shouldReplaceDedupedInteraction(candidate: IndexedUsageInteraction, exi
         return candidateTotal > existingTotal
     }
 
-    const candidateIsFast = isFastModel(candidate.model)
-    const existingIsFast = isFastModel(existing.model)
+    const candidateIsFast = candidate.model?.endsWith('-fast') ?? false
+    const existingIsFast = existing.model?.endsWith('-fast') ?? false
 
     if (candidateIsFast !== existingIsFast) {
         return candidateIsFast
     }
 
     return (candidate.rawCostUSD ?? candidate.costUSD) > (existing.rawCostUSD ?? existing.costUSD)
-}
-
-function isFastModel(model: string | null) {
-    return model?.endsWith('-fast') ?? false
 }
 
 function createSessionDetail(fragment: IndexedUsageSessionFragment): MutableSessionDetail {
@@ -882,15 +876,28 @@ function finalizeSessionDetail(detail: MutableSessionDetail) {
     return detail
 }
 
-function hasBillableSessionDetail(detail: MutableSessionDetail) {
-    return detail.tokenTotal > 0 || detail.costUSD > 0
-}
-
 function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSessionUsageItem {
-    const startedAt = normalizeTimestampValue(detail.startedAt) ?? normalizeTimestampValue(detail.lastActivity) ?? '1970-01-01T00:00:00.000Z'
-    const lastActivity = normalizeTimestampValue(detail.lastActivity) ?? startedAt
+    const validTimestamp = (value: unknown) => {
+        if (typeof value !== 'string') {
+            return null
+        }
+
+        const trimmed = value.trim()
+        return trimmed && Number.isFinite(Date.parse(trimmed)) ? trimmed : null
+    }
+    const startedAt = validTimestamp(detail.startedAt) ?? validTimestamp(detail.lastActivity) ?? '1970-01-01T00:00:00.000Z'
+    const lastActivity = detail.lastActivity ?? startedAt
     const hasValidStartedAtDate = useDateFormat(startedAt) !== null
     const dateKey = hasValidStartedAtDate ? getDateKey(startedAt) : ''
+    const weekLabel = hasValidStartedAtDate
+        ? ((): string => {
+                const d = dayjs(startedAt).startOf('day')
+                const day = d.day()
+                const diff = day === 0 ? -6 : 1 - day
+                const ws = d.add(diff, 'day')
+                return `${ws.format('YYYY-MM-DD')} - ${ws.add(6, 'day').format('YYYY-MM-DD')}`
+            })()
+        : ''
 
     return {
         cachedInputTokens: detail.cachedInputTokens,
@@ -917,7 +924,7 @@ function toProjectSessionUsageItem(detail: MutableSessionDetail): ProjectSession
         topModel: detail.topModel,
         threadName: detail.threadName,
         tokenTotal: detail.tokenTotal,
-        week: hasValidStartedAtDate ? getWeekLabel(startedAt) : '',
+        week: weekLabel,
     }
 }
 

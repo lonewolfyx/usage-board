@@ -2,8 +2,6 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
-import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -16,7 +14,6 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -37,7 +34,7 @@ export const qwenUsageAdapter = {
     },
     parseFile(filePath, resolvePricing) {
         const project = getQwenProject(filePath)
-        const sessionId = getQwenSessionId(filePath, project)
+        const sessionId = basename(filePath, '.jsonl') ? `${project}-${basename(filePath, '.jsonl')}` : project
         const fragment = createSessionFragment({
             project,
             repository: `local/${project}`,
@@ -52,20 +49,20 @@ export const qwenUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = normalizeUnknownRecord(parse(lines[index]!))
-            const usageRecord = normalizeUnknownRecord(record?.usageMetadata)
+            const record = JSON.parse(lines[index]!)
+            const usageRecord = record?.usageMetadata
 
-            if (!record || normalizeStringValue(record.type) !== 'assistant' || !usageRecord) {
+            if (!record || record.type.trim() !== 'assistant' || !usageRecord) {
                 continue
             }
 
-            const extraTotalTokens = normalizeUsageNumber(usageRecord.thoughtsTokenCount as number | undefined)
+            const extraTotalTokens = usageRecord.thoughtsTokenCount ?? 0
             const usage = toInteractionUsage({
                 ...applyTotalUsageFallback({
-                    cacheReadTokens: normalizeUsageNumber(usageRecord.cachedContentTokenCount as number | undefined),
-                    inputTokens: normalizeUsageNumber(usageRecord.promptTokenCount as number | undefined),
-                    outputTokens: normalizeUsageNumber(usageRecord.candidatesTokenCount as number | undefined),
-                    totalTokens: Math.max(normalizeUsageNumber(usageRecord.totalTokenCount as number | undefined) - extraTotalTokens, 0),
+                    cacheReadTokens: usageRecord.cachedContentTokenCount as number | undefined,
+                    inputTokens: usageRecord.promptTokenCount as number | undefined,
+                    outputTokens: usageRecord.candidatesTokenCount as number | undefined,
+                    totalTokens: Math.max((typeof usageRecord.totalTokenCount === 'number' && Number.isFinite(usageRecord.totalTokenCount) ? usageRecord.totalTokenCount : 0) - extraTotalTokens, 0),
                 }),
                 extraTotalTokens,
             })
@@ -74,7 +71,7 @@ export const qwenUsageAdapter = {
                 continue
             }
 
-            const model = normalizeStringValue(record.model) || 'unknown'
+            const model = record.model.trim() || 'unknown'
             const costUSD = calculateUsageCostFromCandidates(usage, [model, `qwen/${model}`, `alibaba/${model}`], resolvePricing)
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 
@@ -117,8 +114,4 @@ function getQwenProject(filePath: string) {
     }
 
     return 'unknown'
-}
-
-function getQwenSessionId(filePath: string, project: string) {
-    return basename(filePath, '.jsonl') ? `${project}-${basename(filePath, '.jsonl')}` : project
 }

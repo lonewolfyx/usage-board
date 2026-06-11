@@ -14,7 +14,6 @@ import {
     buildPercentTrend,
     formatCompactNumber,
     formatCurrency,
-    formatDate,
     formatDateLabelFromDateKey,
     formatPercent,
     getDateKey,
@@ -160,7 +159,7 @@ export function toProjectSessionTableRow(
         platform,
         reasoningTokens: formatNumber(session.reasoningOutputTokens),
         sessionId: session.sessionId,
-        startedAt: formatProjectSessionDate(session.startedAt, formatDate),
+        startedAt: formatProjectSessionDate(session.startedAt, date => useDateFormat(date, 'display') ?? String(date)),
         threadName: session.threadName,
         tokens: formatNumber(session.tokenTotal),
     }

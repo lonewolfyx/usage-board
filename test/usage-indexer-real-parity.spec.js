@@ -6,8 +6,8 @@ import { buildProjectLoadUsageResult } from '../shared/platform/project.ts'
 import { PROJECT_USAGE_PLATFORMS } from '../shared/types/ai.ts'
 import { buildHomeDashboardModules } from '../shared/utils/analysis-dashboard.ts'
 import { resolveConfig } from '../shared/utils/configs.ts'
+import { useDateFormat } from '../shared/utils/date.ts'
 import { parse } from '../shared/utils/parse.ts'
-import { getDateKeyFromLabel } from '../shared/utils/usage-dashboard.ts'
 
 describe('usage indexer real parity with installed ccusage', () => {
     it('matches daily totals for all 15 agent platforms on this machine', async () => {
@@ -263,7 +263,7 @@ function normalizeDailyTokenUsageRows(rows) {
         .map(row => ({
             cachedInputTokens: row.cachedInputTokens,
             costUSD: round4(row.costUSD),
-            date: getDateKeyFromLabel(row.date),
+            date: useDateFormat(row.date) ?? row.date,
             inputTokens: row.inputTokens,
             outputTokens: row.outputTokens,
             totalTokens: row.totalTokens,

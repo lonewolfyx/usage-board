@@ -3,7 +3,6 @@ import { statSync } from 'node:fs'
 import { basename, dirname, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { useDateFormat } from '#shared/utils/date'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -53,9 +52,10 @@ export const codebuffUsageAdapter = {
         const fallbackTimestamp = getCodebuffFallbackTimestamp(filePath, context.chatId)
 
         for (let index = 0; index < data.length; index += 1) {
-            const message = normalizeUnknownRecord(data[index])
+            const message = data[index]
 
-            if (!message || !isCodebuffAssistantMessage(message)) {
+            const messageRole = message ? (message.variant.trim() || message.role.trim()) : undefined
+            if (!message || !(messageRole === 'ai' || messageRole === 'agent' || messageRole === 'assistant')) {
                 continue
             }
 
@@ -81,9 +81,11 @@ export const codebuffUsageAdapter = {
                 continue
             }
 
+            const provider = inferCodebuffProvider(model)
+            const candidates = provider !== 'unknown' && !model.startsWith(`${provider}/`) ? [model, `${provider}/${model}`] : [model]
             const costUSD = calculateUsageCostFromCandidates(
                 usage,
-                getCodebuffCandidates(model, inferCodebuffProvider(model)),
+                candidates,
                 resolvePricing,
                 { includeExtraTotalAsOutput: true, includeReasoningAsOutput: false },
             )
@@ -95,11 +97,11 @@ export const codebuffUsageAdapter = {
                 dedupeKey: getCodebuffDedupeKey(message, sessionId, timestamp ?? '', model, usage, index),
                 index,
                 model,
-                modelLookupCandidates: getCodebuffCandidates(model, inferCodebuffProvider(model)),
+                modelLookupCandidates: candidates,
                 rawCostUSD: null,
                 role: 'assistant',
                 timestamp,
-                type: normalizeStringValue(message.variant) || normalizeStringValue(message.role) || 'assistant',
+                type: message.variant.trim() || message.role.trim() || 'assistant',
                 usage: toInteractionUsage({
                     ...usage,
                     costUSD,
@@ -137,33 +139,28 @@ function getCodebuffContext(filePath: string) {
     }
 }
 
-function isCodebuffAssistantMessage(message: Record<string, unknown>) {
-    const role = normalizeStringValue(message.variant) || normalizeStringValue(message.role)
-    return role === 'ai' || role === 'agent' || role === 'assistant'
-}
-
-function extractCodebuffUsage(message: Record<string, unknown>): CodebuffUsageSnapshot | null {
+function extractCodebuffUsage(message: Record<string, any>): CodebuffUsageSnapshot | null {
     const usage = emptyCodebuffUsage()
-    const metadata = normalizeUnknownRecord(message.metadata)
+    const metadata = message.metadata
 
     if (metadata) {
-        usage.model = normalizeStringValue(metadata.model) || usage.model
+        usage.model = metadata.model.trim() || usage.model
         mergeCodebuffUsage(usage, parseCodebuffUsageRecord(metadata.usage))
-        mergeCodebuffUsage(usage, parseCodebuffUsageRecord(normalizeUnknownRecord(metadata.codebuff)?.usage))
+        mergeCodebuffUsage(usage, parseCodebuffUsageRecord(metadata.codebuff?.usage))
         mergeCodebuffUsage(usage, extractCodebuffRunStateUsage(metadata))
     }
 
     if (usage.credits <= 0) {
-        usage.credits = getFiniteNumber(message.credits)
+        usage.credits = typeof message.credits === 'number' && Number.isFinite(message.credits) ? Math.max(0, Math.trunc(message.credits)) : 0
     }
 
     return usage
 }
 
-function extractCodebuffRunStateUsage(metadata: Record<string, unknown>) {
-    const history = normalizeUnknownRecord(metadata.runState)
-    const items = normalizeUnknownRecord(history?.sessionState)
-    const messages = normalizeUnknownRecord(items?.mainAgentState)?.messageHistory
+function extractCodebuffRunStateUsage(metadata: Record<string, any>) {
+    const history = metadata.runState
+    const items = history?.sessionState
+    const messages = items?.mainAgentState?.messageHistory
 
     if (!Array.isArray(messages)) {
         return null
@@ -172,13 +169,13 @@ function extractCodebuffRunStateUsage(metadata: Record<string, unknown>) {
     const usage = emptyCodebuffUsage()
 
     for (let index = messages.length - 1; index >= 0; index -= 1) {
-        const entry = normalizeUnknownRecord(messages[index])
+        const entry = messages[index]
 
-        if (!entry || normalizeStringValue(entry.role) !== 'assistant') {
+        if (!entry || entry.role.trim() !== 'assistant') {
             continue
         }
 
-        const providerOptions = normalizeUnknownRecord(entry.providerOptions)
+        const providerOptions = entry.providerOptions
 
         if (!providerOptions) {
             continue
@@ -186,9 +183,9 @@ function extractCodebuffRunStateUsage(metadata: Record<string, unknown>) {
 
         const entryUsage = emptyCodebuffUsage()
         mergeCodebuffUsage(entryUsage, parseCodebuffUsageRecord(providerOptions.usage))
-        const codebuff = normalizeUnknownRecord(providerOptions.codebuff)
+        const codebuff = providerOptions.codebuff
         mergeCodebuffUsage(entryUsage, parseCodebuffUsageRecord(codebuff?.usage))
-        entryUsage.model = normalizeStringValue(codebuff?.model) || entryUsage.model
+        entryUsage.model = codebuff?.model.trim() || entryUsage.model
         mergeCodebuffUsage(usage, entryUsage)
     }
 
@@ -196,7 +193,7 @@ function extractCodebuffRunStateUsage(metadata: Record<string, unknown>) {
 }
 
 function parseCodebuffUsageRecord(value: unknown): CodebuffUsageSnapshot | null {
-    const record = normalizeUnknownRecord(value)
+    const record = value as Record<string, any> | null
 
     if (!record) {
         return null
@@ -217,10 +214,10 @@ function parseCodebuffUsageRecord(value: unknown): CodebuffUsageSnapshot | null 
     return {
         cacheCreationTokens: raw.cacheCreationTokens,
         cacheReadTokens: raw.cacheReadTokens,
-        credits: getFiniteNumber(record.credits),
+        credits: typeof record.credits === 'number' && Number.isFinite(record.credits) ? Math.max(0, Math.trunc(record.credits)) : 0,
         extraTotalTokens: raw.extraTotalTokens,
         inputTokens: raw.inputTokens,
-        model: normalizeStringValue(record.model) ?? null,
+        model: record.model.trim() ?? null,
         outputTokens: raw.outputTokens,
         totalTokens: raw.inputTokens + raw.outputTokens + raw.cacheCreationTokens + raw.cacheReadTokens + raw.extraTotalTokens,
     }
@@ -287,10 +284,10 @@ function hasCodebuffSignal(usage: CodebuffUsageSnapshot) {
         || usage.credits > 0
 }
 
-function getCodebuffMessageTimestamp(message: Record<string, unknown>) {
+function getCodebuffMessageTimestamp(message: Record<string, any>) {
     return toIsoString(message.timestamp)
         || toIsoString(message.createdAt)
-        || toIsoString(normalizeUnknownRecord(message.metadata)?.timestamp)
+        || toIsoString(message.metadata?.timestamp)
 }
 
 function getCodebuffFallbackTimestamp(filePath: string, chatId: string) {
@@ -334,21 +331,15 @@ function inferCodebuffProvider(model: string) {
     return 'unknown'
 }
 
-function getCodebuffCandidates(model: string, provider: string) {
-    return provider !== 'unknown' && !model.startsWith(`${provider}/`)
-        ? [model, `${provider}/${model}`]
-        : [model]
-}
-
 function getCodebuffDedupeKey(
-    message: Record<string, unknown>,
+    message: Record<string, any>,
     sessionId: string,
     timestamp: string,
     model: string,
     usage: ReturnType<typeof toInteractionUsage>,
     index: number,
 ) {
-    const messageId = normalizeStringValue(message.id)
+    const messageId = message.id.trim()
 
     if (messageId) {
         return `codebuff:${sessionId}:${messageId}`
@@ -368,14 +359,13 @@ function getCodebuffDedupeKey(
     ].join(':')
 }
 
-function pickUsageNumber(record: Record<string, unknown>, keys: string[]) {
-    return keys.reduce((maximum, key) => Math.max(maximum, getFiniteNumber(record[key])), 0)
+function pickUsageNumber(record: Record<string, any>, keys: string[]) {
+    return keys.reduce((maximum, key) => {
+        const v = record[key]
+        return Math.max(maximum, typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0)
+    }, 0)
 }
 
-function pickNestedUsageNumber(record: Record<string, unknown>, parentKey: string, keys: string[]) {
-    return pickUsageNumber(normalizeUnknownRecord(record[parentKey]) ?? {}, keys)
-}
-
-function getFiniteNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
+function pickNestedUsageNumber(record: Record<string, any>, parentKey: string, keys: string[]) {
+    return pickUsageNumber(record[parentKey] ?? {}, keys)
 }

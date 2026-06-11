@@ -70,7 +70,7 @@ export function defineHomeAnalysisHandler<TResult>(
     select: (modules: HomeDashboardModules, event: H3Event) => TResult | Promise<TResult>,
 ) {
     return defineEventHandler(async (event) => {
-        return select(await getHomeAnalysisModules(event), event)
+        return select(await getAnalysisRuntime(event).getHomeDashboardModules(), event)
     })
 }
 
@@ -85,7 +85,7 @@ export function defineScopedAnalysisHandler<TResult>(options: {
             return options.agent(await getAnalysisRuntime(event).getAgentDashboard(agent))
         }
 
-        return options.home(await getHomeAnalysisModules(event))
+        return options.home(await getAnalysisRuntime(event).getHomeDashboardModules())
     })
 }
 
@@ -97,10 +97,6 @@ export function defineRequiredAgentAnalysisHandler<TResult>(
 
         return select(await getAnalysisRuntime(event).getAgentDashboard(agent), event)
     })
-}
-
-async function getHomeAnalysisModules(event: H3Event) {
-    return getAnalysisRuntime(event).getHomeDashboardModules()
 }
 
 function normalizeQueryString(value: unknown) {

@@ -1,13 +1,10 @@
-import type { UsageRuntimeUpdate } from '#server/services/usage-data-runtime'
 import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
-import type { ProjectUsageDataModule, ProjectWebSocketRequest, UsageUpdateMessage } from '#shared/types/ws'
+import type { ProjectUsageDataModule, ProjectWebSocketRequest } from '#shared/types/ws'
 import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
+import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
+import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { resolveConfig } from '#shared/utils/configs'
-import {
-    normalizeStringList,
-    normalizeStringValue,
-    normalizeUnknownRecord,
-} from '#shared/utils/normalize'
+import { normalizeStringList } from '#shared/utils/normalize'
 
 const MAX_PAGE_SIZE = 100
 const MAX_CONNECTIONS = 50
@@ -39,7 +36,7 @@ export default defineWebSocketHandler({
             }
         }
         catch (error) {
-            sendError(peer, error instanceof Error ? error.message : 'Failed to handle websocket request.')
+            peer.send(JSON.stringify({ message: error instanceof Error ? error.message : 'Failed to handle websocket request.', type: 'error' }))
         }
     },
 
@@ -53,62 +50,47 @@ export default defineWebSocketHandler({
 })
 
 function parseProjectRequest(value: unknown): ProjectWebSocketRequest {
-    const record = normalizeUnknownRecord(value)
+    const record = value && typeof value === 'object' ? value as Record<string, unknown> : null
 
     if (!record) {
         throw new Error('Websocket message must be a JSON object with a "type" field.')
     }
 
-    const type = normalizeStringValue<string>(record.type) ?? ''
+    const type = typeof record.type === 'string' ? record.type.trim() : ''
 
     if (type === 'project') {
         return {
-            requestId: normalizeStringValue<string>(record.requestId),
+            requestId: typeof record.requestId === 'string' ? record.requestId.trim() : '',
             type,
         }
     }
 
     if (type === 'project_data') {
+        const rawPageSize = typeof record.pageSize === 'number' && Number.isFinite(record.pageSize)
+            ? record.pageSize
+            : undefined
+        const pageSize = rawPageSize === undefined ? undefined : Math.min(Math.max(rawPageSize, 1), MAX_PAGE_SIZE)
+        const module = typeof record.module === 'string' && PROJECT_USAGE_DATA_MODULES.includes(record.module as ProjectUsageDataModule)
+            ? record.module as ProjectUsageDataModule
+            : undefined
+        const platform = typeof record.platform === 'string'
+            && (record.platform === 'all' || PROJECT_USAGE_PLATFORMS.includes(record.platform as typeof PROJECT_USAGE_PLATFORMS[number]))
+            ? record.platform as ProjectDashboardScope
+            : undefined
+
         return {
-            module: normalizeStringValue<ProjectUsageDataModule>(record.module),
+            module,
             modules: normalizeStringList<ProjectUsageDataModule>(record.modules),
-            page: normalizeNumberValue(record.page),
-            pageSize: clampPageSize(normalizeNumberValue(record.pageSize)),
-            platform: normalizeStringValue<ProjectDashboardScope>(record.platform),
-            project: normalizeStringValue<string>(record.project),
-            requestId: normalizeStringValue<string>(record.requestId),
+            page: typeof record.page === 'number' && Number.isFinite(record.page) ? record.page : undefined,
+            pageSize,
+            platform,
+            project: typeof record.project === 'string' ? record.project.trim() : '',
+            requestId: typeof record.requestId === 'string' ? record.requestId.trim() : '',
             type,
         }
     }
 
     throw new Error(`Unsupported websocket request type: ${type || 'unknown'}.`)
-}
-
-function sendError(peer: { send: (data: string) => void }, message: string) {
-    peer.send(JSON.stringify({
-        message,
-        type: 'error',
-    }))
-}
-
-function normalizeNumberValue(value: unknown) {
-    const stringValue = normalizeStringValue<string>(value)
-
-    if (!stringValue) {
-        return undefined
-    }
-
-    const numberValue = Number(stringValue)
-
-    return Number.isFinite(numberValue) ? numberValue : undefined
-}
-
-function clampPageSize(value: number | undefined) {
-    if (value === undefined) {
-        return undefined
-    }
-
-    return Math.min(Math.max(value, 1), MAX_PAGE_SIZE)
 }
 
 function sendData(
@@ -134,7 +116,15 @@ function subscribePeerToUsageUpdates(peer: { id: string, send: (data: string) =>
     const config = resolveConfig(runtimeConfig.public)
     const runtime = getUsageDataRuntime(config)
     const unsubscribe = runtime.subscribeToUpdates((update) => {
-        peer.send(JSON.stringify(toUsageUpdateMessage(update)))
+        peer.send(JSON.stringify({
+            payload: {
+                affectedProjects: update.affectedProjects,
+                updatedAt: update.updatedAt,
+                updatedPlatforms: [...update.updatedPlatforms],
+                updatedSessions: update.updatedSessions,
+            },
+            type: 'usage_update',
+        }))
     })
 
     peerSubscriptions.set(peer.id, unsubscribe)
@@ -143,16 +133,4 @@ function subscribePeerToUsageUpdates(peer: { id: string, send: (data: string) =>
 function unsubscribePeer(peerId: string) {
     peerSubscriptions.get(peerId)?.()
     peerSubscriptions.delete(peerId)
-}
-
-function toUsageUpdateMessage(update: UsageRuntimeUpdate): UsageUpdateMessage {
-    return {
-        payload: {
-            affectedProjects: update.affectedProjects,
-            updatedAt: update.updatedAt,
-            updatedPlatforms: [...update.updatedPlatforms],
-            updatedSessions: update.updatedSessions,
-        },
-        type: 'usage_update',
-    }
 }

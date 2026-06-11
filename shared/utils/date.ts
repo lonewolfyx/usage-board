@@ -129,13 +129,6 @@ export function getWeekLabel(date: DateInput): string {
 }
 
 /**
- * Formats a month key ('YYYY-MM') into a display label ('MMM YYYY').
- */
-export function formatMonthLabel(monthKey: string): string {
-    return dayjs.utc(`${monthKey}-01`).format('MMM YYYY')
-}
-
-/**
  * Formats a duration in minutes into a human-readable string.
  */
 export function formatDuration(minutes: number): string {
@@ -154,13 +147,6 @@ export function formatDuration(minutes: number): string {
 }
 
 /**
- * Returns the current timestamp as an ISO string.
- */
-export function nowIsoString(): string {
-    return dayjs().toISOString()
-}
-
-/**
  * Creates a Date from a timestamp. Handles both seconds and milliseconds.
  */
 export function fromDateTimestamp(value: number): Date | null {
@@ -170,11 +156,4 @@ export function fromDateTimestamp(value: number): Date | null {
 
     const milliseconds = value > 1e12 ? value : value * 1000
     return dayjs(milliseconds).toDate()
-}
-
-/**
- * Returns a Date object representing midnight UTC of the given date.
- */
-export function dateUtcMidnight(year: number, month: number, day: number): Date {
-    return dayjs.utc(Date.UTC(year, month, day)).toDate()
 }

@@ -1,5 +1,4 @@
 import type { UsageUpdateMessage } from '#shared/types/ws'
-import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { isUsageUpdateMessage } from '#shared/utils/ws'
 import { fetchAnalysisLiveState } from '~/lib/analysis-repository'
@@ -182,7 +181,7 @@ function isTransientLiveStateFetchError(error: unknown) {
 }
 
 function collectErrorMessages(error: unknown, messages: string[] = []): string[] {
-    const record = normalizeUnknownRecord(error)
+    const record = error as Record<string, unknown> | undefined
 
     if (!record) {
         return typeof error === 'string' ? [...messages, error] : messages
