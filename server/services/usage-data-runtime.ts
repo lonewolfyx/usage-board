@@ -34,6 +34,7 @@ import {
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import { useDateFormat } from '#shared/utils/date'
+import { log } from '@clack/prompts'
 import chokidar from 'chokidar'
 
 const WATCHER_DEBOUNCE_MS = 350
@@ -60,7 +61,7 @@ interface UsageRuntimeState {
     refreshStartedAt: number
 }
 
-class UsageDataRuntime {
+export class UsageDataRuntime {
     private readonly repository: UsageCacheRepository
     private readonly state: UsageRuntimeState = {
         bootstrap: null,
@@ -94,10 +95,42 @@ class UsageDataRuntime {
 
     async initialize() {
         if (!this.initializePromise) {
-            this.initializePromise = this.refreshNow({
-                reparseAllFiles: true,
-                updatedPlatforms: PROJECT_USAGE_PLATFORMS,
-            })
+            this.initializePromise = (async () => {
+                const indexedFileMetas = this.repository.loadSourceFileMetas()
+                const cachedPlatformSessions = this.repository.querySessionSummariesByPlatform(PROJECT_USAGE_PLATFORMS)
+                const cachedEventsByPlatform = this.repository.queryInteractionEventsByPlatform()
+                const bootstrapByPlatform = PROJECT_USAGE_PLATFORMS.reduce<ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>>((result, platform) => {
+                    result[platform] = cachedPlatformSessions.get(platform) ?? []
+                    return result
+                }, {} as ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>)
+                const eventsByPlatform = PROJECT_USAGE_PLATFORMS.reduce<ProjectUsagePlatformRecord<UsageAggregateEvent[]>>((result, platform) => {
+                    result[platform] = cachedEventsByPlatform.get(platform) ?? []
+                    return result
+                }, {} as ProjectUsagePlatformRecord<UsageAggregateEvent[]>)
+
+                this.state.bootstrap = buildBootstrapFromPlatformSessions(this.config.version, bootstrapByPlatform, eventsByPlatform)
+                this.state.discoveredFiles = indexedFileMetas.map(({ cacheSignature, mtimeMs, path, platform, size }) => ({
+                    cacheSignature,
+                    mtimeMs,
+                    path,
+                    platform,
+                    size,
+                }))
+                this.state.eventsByPlatform = eventsByPlatform
+                this.state.hasIndexedCurrentProcess = false
+                this.state.indexedFiles = null
+                this.state.indexedFileMetas = indexedFileMetas
+                this.state.projectCatalog = buildProjectCatalogFromPlatformSessions(bootstrapByPlatform)
+                this.state.projectDetails = null
+                this.state.hasLoadedAllProjectDetails = false
+                this.state.hydratedAt = indexedFileMetas.reduce((latest, file) => {
+                    const updatedAt = Date.parse(file.updatedAt)
+
+                    return Number.isFinite(updatedAt) && updatedAt > latest
+                        ? updatedAt
+                        : latest
+                }, 0)
+            })()
                 .finally(() => {
                     this.startWatcher()
                 })
@@ -114,7 +147,9 @@ class UsageDataRuntime {
         }
 
         if (this.state.bootstrap) {
-            this.refreshLiveBootstrapInBackground()
+            if (this.state.indexedFiles) {
+                this.refreshLiveBootstrapInBackground()
+            }
             return this.state.bootstrap
         }
 
@@ -125,6 +160,12 @@ class UsageDataRuntime {
         verboseWhenChanged?: boolean
     } = {}) {
         await this.initialize()
+        const shouldLogStartupScan = options.verboseWhenChanged !== false
+
+        if (shouldLogStartupScan) {
+            log.step('正在读取 AI Coding 会话记录...')
+        }
+
         const updateState = await getUsageCacheUpdateState(
             this.config,
             this.repository,
@@ -135,6 +176,10 @@ class UsageDataRuntime {
         if (this.state.bootstrap && !updateState.hasChanges) {
             this.state.discoveredFiles = updateState.discoveredFiles
             this.state.hasIndexedCurrentProcess = true
+
+            if (shouldLogStartupScan) {
+                log.info(`查找到 ${updateState.discoveredFiles.length} 个会话记录文件，cache.sqlite 已命中 ${updateState.cachedFiles} 个，无需重新解析源文件`)
+            }
             return
         }
 
