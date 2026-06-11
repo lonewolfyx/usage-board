@@ -17,7 +17,7 @@ import { previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#
 import { getMonthKey } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
 import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc'
+import utc from 'dayjs/plugin/utc.js'
 
 dayjs.extend(utc)
 
