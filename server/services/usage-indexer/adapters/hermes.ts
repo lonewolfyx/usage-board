@@ -85,26 +85,31 @@ export const hermesUsageAdapter = {
 function parseHermesRow(row: Record<string, unknown>, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
     const sessionId = typeof row.id === 'string' ? row.id.trim() : ''
     const model = typeof row.model === 'string' ? row.model.trim() : ''
-    const timestamp = timestampFromHermesValue(row.started_at)
+    const rawTs = row.started_at
+    const timestamp = typeof rawTs === 'number' && Number.isFinite(rawTs) && rawTs > 0
+        ? fromDateTimestamp(rawTs)?.toISOString() ?? null
+        : null
 
     if (!sessionId || !model || !timestamp) {
         return null
     }
 
+    const n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0
+    const on = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null
     const usage = toInteractionUsage({
-        cacheCreationTokens: toNumber(row.cache_write_tokens),
-        cacheReadTokens: toNumber(row.cache_read_tokens),
-        extraTotalTokens: toNumber(row.reasoning_tokens),
-        inputTokens: toNumber(row.input_tokens),
-        outputTokens: toNumber(row.output_tokens),
+        cacheCreationTokens: n(row.cache_write_tokens),
+        cacheReadTokens: n(row.cache_read_tokens),
+        extraTotalTokens: n(row.reasoning_tokens),
+        inputTokens: n(row.input_tokens),
+        outputTokens: n(row.output_tokens),
     })
 
-    if (isZeroInteractionUsage(usage) && !toOptionalNumber(row.actual_cost_usd) && !toOptionalNumber(row.estimated_cost_usd)) {
+    if (isZeroInteractionUsage(usage) && !on(row.actual_cost_usd) && !on(row.estimated_cost_usd)) {
         return null
     }
 
     const provider = normalizeHermesProvider(typeof row.billing_provider === 'string' ? row.billing_provider : null, model)
-    const directCost = toOptionalNumber(row.actual_cost_usd) ?? toOptionalNumber(row.estimated_cost_usd)
+    const directCost = on(row.actual_cost_usd) ?? on(row.estimated_cost_usd)
     const costUSD = directCost ?? calculateUsageCostFromCandidates(usage, [model, `${provider}/${model}`], resolvePricing)
 
     return {
@@ -156,21 +161,4 @@ function normalizeHermesProvider(provider: string | null, model: string) {
 
             return 'hermes'
     }
-}
-
-function timestampFromHermesValue(value: unknown) {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) {
-        return null
-    }
-
-    const date = fromDateTimestamp(value)
-    return date ? date.toISOString() : null
-}
-
-function toNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0
-}
-
-function toOptionalNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
 }

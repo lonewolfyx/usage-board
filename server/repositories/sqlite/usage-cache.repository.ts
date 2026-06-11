@@ -13,9 +13,13 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { dateUtcMidnight, nowIsoString, previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
-import { getMonthKey, getWeekLabel } from '#shared/utils/platform'
+import { previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
+import { getMonthKey } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
+import dayjs from 'dayjs'
+import utc from 'dayjs/plugin/utc'
+
+dayjs.extend(utc)
 
 const SCHEMA_VERSION = 4
 
@@ -161,7 +165,7 @@ export class UsageCacheRepository {
                 create_time
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
-        const now = nowIsoString()
+        const now = dayjs().toISOString()
 
         this.database.exec('BEGIN')
 
@@ -233,7 +237,7 @@ export class UsageCacheRepository {
             INSERT OR REPLACE INTO source_files (path, platform, hash, size, mtime_ms, updated_at)
             VALUES (?, ?, ?, ?, ?, ?)
         `)
-        const now = nowIsoString()
+        const now = dayjs().toISOString()
         this.database.exec('BEGIN')
 
         try {
@@ -828,6 +832,15 @@ export class UsageCacheRepository {
         const startedAt = row.started_at ?? row.session_started_at ?? ''
         const lastActivity = row.last_activity ?? startedAt
         const dateKey = useDateFormat(startedAt) ?? ''
+        const weekLabel = dateKey
+            ? ((): string => {
+                    const d = dayjs(startedAt).startOf('day')
+                    const day = d.day()
+                    const diff = day === 0 ? -6 : 1 - day
+                    const ws = d.add(diff, 'day')
+                    return `${ws.format('YYYY-MM-DD')} - ${ws.add(6, 'day').format('YYYY-MM-DD')}`
+                })()
+            : ''
 
         return {
             cachedInputTokens: row.cached_input_token ?? 0,
@@ -851,7 +864,7 @@ export class UsageCacheRepository {
             threadName: row.thread_name ?? '',
             tokenTotal: row.total_token ?? 0,
             topModel,
-            week: dateKey ? getWeekLabel(startedAt) : '',
+            week: weekLabel,
         }
     }
 
@@ -934,9 +947,9 @@ function getUtcDayBoundaries(localDate: Date) {
     const year = localDate.getFullYear()
     const month = localDate.getMonth()
     const day = localDate.getDate()
-    const todayStart = dateUtcMidnight(year, month, day).toISOString()
-    const todayEnd = dateUtcMidnight(year, month, day + 1).toISOString()
-    const previousDayStart = dateUtcMidnight(year, month, day - 1).toISOString()
+    const todayStart = dayjs.utc(Date.UTC(year, month, day)).toDate().toISOString()
+    const todayEnd = dayjs.utc(Date.UTC(year, month, day + 1)).toDate().toISOString()
+    const previousDayStart = dayjs.utc(Date.UTC(year, month, day - 1)).toDate().toISOString()
     const previousDayEnd = todayStart
 
     return { previousDayEnd, previousDayStart, todayEnd, todayStart }

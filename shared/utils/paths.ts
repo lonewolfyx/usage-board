@@ -91,10 +91,6 @@ export function getClaudeCodePaths(): string[] {
     )
 }
 
-export function getGeminiPath(): string {
-    return resolve(USER_HOME_DIR, '.gemini')
-}
-
 export function getAmpPaths(): string[] {
     return getDirectoryPathsFromEnv('AMP_DATA_DIR', [DEFAULT_AMP_DIR])
 }
@@ -184,23 +180,12 @@ function getDirectoryPathsFromEnv(
 ) {
     const envValue = process.env[envName]?.trim()
     const candidates = envValue
-        ? splitEnvPathList(envValue)
+        ? envValue.split(',').map(path => path.trim()).filter(Boolean)
         : defaultPaths.map(path => options.mapDefaultPath?.(path) ?? path)
 
-    return dedupePaths(
+    return Array.from(new Set(
         candidates
             .map(path => resolve(path))
             .filter(isDirectorySync),
-    )
-}
-
-function splitEnvPathList(value: string) {
-    return value
-        .split(',')
-        .map(path => path.trim())
-        .filter(Boolean)
-}
-
-function dedupePaths(paths: string[]) {
-    return Array.from(new Set(paths))
+    ))
 }

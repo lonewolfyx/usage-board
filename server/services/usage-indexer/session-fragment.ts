@@ -31,7 +31,7 @@ export function createSessionFragment(options: {
     return {
         durationEndAt: '',
         interactions: [],
-        key: getSessionLookupKey(options.repository, options.sessionId),
+        key: `${options.repository}:${options.sessionId}`,
         project: options.project,
         repository: options.repository,
         sessionId: options.sessionId,
@@ -54,10 +54,6 @@ export function addFragmentInteraction(fragment: IndexedUsageSessionFragment, in
     if (!fragment.durationEndAt || Date.parse(interaction.timestamp) > Date.parse(fragment.durationEndAt)) {
         fragment.durationEndAt = interaction.timestamp
     }
-}
-
-export function getSessionLookupKey(project: string, sessionId: string) {
-    return `${project}:${sessionId}`
 }
 
 export function normalizeRole(value: string): ProjectInteractionRole {

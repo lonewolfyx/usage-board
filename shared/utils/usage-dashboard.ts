@@ -10,7 +10,7 @@ import type {
     UsageSessionUsageItem,
 } from '#shared/types/usage-dashboard'
 import type { DateInput } from '#shared/utils/date'
-import { previousDateKey, todayDateKey, useDateFormat } from '#shared/utils/date'
+import { todayDateKey, useDateFormat } from '#shared/utils/date'
 
 const compactNumberFormatter = new Intl.NumberFormat('en-US', {
     notation: 'compact',
@@ -30,10 +30,6 @@ const percentFormatter = new Intl.NumberFormat('en-US', {
     maximumFractionDigits: 1,
 })
 
-export function normalizeNumber(value: unknown) {
-    return typeof value === 'number' && Number.isFinite(value) ? value : 0
-}
-
 export function roundCurrency(value: number) {
     return Math.round(value * 1_000_000) / 1_000_000
 }
@@ -47,24 +43,20 @@ export function uniqueItems<T>(items: T[]) {
 }
 
 export function formatCompactNumber(value: number) {
-    return compactNumberFormatter.format(normalizeNumber(value))
+    return compactNumberFormatter.format(value)
 }
 
 export function formatCurrency(value: number) {
-    return currencyFormatter.format(normalizeNumber(value))
+    return currencyFormatter.format(value)
 }
 
 export function formatPercent(value: number) {
-    return percentFormatter.format(normalizeNumber(value))
-}
-
-export function formatDate(value: Date | string) {
-    return useDateFormat(value, 'display') ?? String(value)
+    return percentFormatter.format(value)
 }
 
 export function buildPercentTrend(currentValue: number, previousValue: number): { label: string, tone: TrendTone } {
-    const current = normalizeNumber(currentValue)
-    const previous = normalizeNumber(previousValue)
+    const current = currentValue
+    const previous = previousValue
 
     if (previous === 0) {
         return {
@@ -86,8 +78,8 @@ export function buildGrowthTrend(
     previousValue: number,
     formatValue: (value: number) => string,
 ): Pick<UsageOverviewCard, 'trend' | 'trendTone'> {
-    const current = Math.max(normalizeNumber(currentValue), 0)
-    const previous = Math.max(normalizeNumber(previousValue), 0)
+    const current = Math.max(currentValue, 0)
+    const previous = Math.max(previousValue, 0)
 
     if (previous === 0) {
         if (current === 0) {
@@ -138,7 +130,7 @@ export function buildOverviewCardsWithTodayTokenBreakdown(
         ? {
                 ...card,
                 subvalue: buildInputOutputTokenSubvalue(
-                    dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === today),
+                    dailyTokenUsage.find(item => useDateFormat(item.date) ?? item.date === today),
                 ),
             }
         : card)
@@ -146,14 +138,6 @@ export function buildOverviewCardsWithTodayTokenBreakdown(
 
 export function getDateKey(date: DateInput) {
     return useDateFormat(date) ?? String(date)
-}
-
-export function getDateKeyFromLabel(label: string) {
-    return useDateFormat(label) ?? label
-}
-
-export function getPreviousDateKey(dateKey: string) {
-    return previousDateKey(dateKey)
 }
 
 export function formatDateLabelFromDateKey(dateKey: string, fallback = dateKey) {
@@ -219,7 +203,7 @@ export function mergeDailyTokenUsage(items: DailyTokenUsage[]) {
     }>()
 
     for (const item of items) {
-        const dateKey = getDateKeyFromLabel(item.date)
+        const dateKey = useDateFormat(item.date) ?? item.date
         const group = groups.get(dateKey) ?? {
             cachedInputTokens: 0,
             costUSD: 0,

@@ -2,7 +2,6 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -70,8 +69,8 @@ export const copilotUsageAdapter = {
             .map(line => line.trim())
             .filter(line => line.includes('"attributes"'))
         const records = lines
-            .map(line => parse(line) as Record<string, unknown> | null)
-            .filter((record): record is Record<string, unknown> => record !== null)
+            .map(line => parse(line) as Record<string, any> | null)
+            .filter((record): record is Record<string, any> => record !== null)
         const traceContexts = collectCopilotTraceContexts(records)
         const fallbackTimestamp = getFileModifiedAtIso(filePath)
         const candidates = records
@@ -118,12 +117,12 @@ export const copilotUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function collectCopilotTraceContexts(records: Record<string, unknown>[]) {
+function collectCopilotTraceContexts(records: Record<string, any>[]) {
     const contexts = new Map<string, { model: string | null, priority: number, sessionId: string | null }>()
 
     for (const record of records) {
         const traceId = getCopilotTraceId(record)
-        const attributes = normalizeUnknownRecord(record.attributes)
+        const attributes = record.attributes
 
         if (!traceId || !attributes) {
             continue
@@ -145,12 +144,12 @@ function collectCopilotTraceContexts(records: Record<string, unknown>[]) {
 }
 
 function getCopilotCandidate(
-    record: Record<string, unknown>,
+    record: Record<string, any>,
     index: number,
     fallbackTimestamp: string | null,
     traceContexts: Map<string, { model: string | null, priority: number, sessionId: string | null }>,
 ): CopilotCandidate | null {
-    const attributes = normalizeUnknownRecord(record.attributes)
+    const attributes = record.attributes
 
     if (!attributes) {
         return null
@@ -191,7 +190,7 @@ function getCopilotCandidate(
         || traceContext?.sessionId
         || traceId
         || 'unknown-session'
-    const responseId = getCopilotAttributeString(attributes, 'gen_ai.response.id') ?? undefined
+    const responseId = attributes['gen_ai.response.id'].trim() ?? undefined
     const timestamp = getCopilotTimestamp(record) || fallbackTimestamp
 
     if (!timestamp) {
@@ -247,12 +246,12 @@ function filterCopilotCandidates(candidates: CopilotCandidate[]) {
     })
 }
 
-function getCopilotSource(record: Record<string, unknown>, attributes: Record<string, unknown>): CopilotSource | null {
+function getCopilotSource(record: Record<string, any>, attributes: Record<string, any>): CopilotSource | null {
     const isSpan = isCopilotSpanRecord(record)
-    const eventName = getCopilotAttributeString(attributes, 'event.name')
-    const operation = getCopilotAttributeString(attributes, 'gen_ai.operation.name')
-    const body = normalizeStringValue(record.body) || normalizeStringValue(record._body)
-    const name = normalizeStringValue(record.name)
+    const eventName = attributes['event.name'].trim()
+    const operation = attributes['gen_ai.operation.name'].trim()
+    const body = record.body.trim() || record._body.trim()
+    const name = record.name.trim()
 
     if (isSpan && (operation === 'chat' || name?.startsWith('chat '))) {
         return 'chatSpan'
@@ -273,14 +272,14 @@ function getCopilotSource(record: Record<string, unknown>, attributes: Record<st
     return null
 }
 
-function isCopilotSpanRecord(record: Record<string, unknown>) {
-    const type = normalizeStringValue(record.type)
+function isCopilotSpanRecord(record: Record<string, any>) {
+    const type = record.type.trim()
 
     return type === 'span'
-        || (!!normalizeStringValue(record.name)
+        || (!!record.name.trim()
             && (
-                !!normalizeStringValue(record.spanId)
-                || !!normalizeStringValue(record.traceId)
+                !!record.spanId.trim()
+                || !!record.traceId.trim()
                 || record.startTime != null
                 || record.endTime != null
                 || record.duration != null
@@ -290,14 +289,14 @@ function isCopilotSpanRecord(record: Record<string, unknown>) {
 
 function getCopilotDedupeKey(
     source: CopilotSource,
-    record: Record<string, unknown>,
-    attributes: Record<string, unknown>,
+    record: Record<string, any>,
+    attributes: Record<string, any>,
     traceId: string | null,
     sessionId: string,
     timestamp: string,
     index: number,
 ) {
-    const spanId = normalizeStringValue(record.spanId) || normalizeStringValue(normalizeUnknownRecord(record.spanContext)?.spanId)
+    const spanId = record.spanId.trim() || (record.spanContext as Record<string, unknown> | undefined)?.spanId
 
     if (source === 'chatSpan' || source === 'agentSummarySpan') {
         return traceId && spanId ? `${traceId}:${spanId}` : `span:${sessionId}:${timestamp}:${index}`
@@ -311,15 +310,11 @@ function getCopilotDedupeKey(
     return traceId ? `agent-turn:${traceId}:${turnIndex || index}` : `agent-turn:${sessionId}:${turnIndex || index}:${index}`
 }
 
-function getCopilotTraceId(record: Record<string, unknown>) {
-    return normalizeStringValue(record.traceId) || normalizeStringValue(normalizeUnknownRecord(record.spanContext)?.traceId) || null
+function getCopilotTraceId(record: Record<string, any>) {
+    return record.traceId.trim() || (record.spanContext as Record<string, unknown> | undefined)?.traceId || null
 }
 
-function getCopilotAttributeString(attributes: Record<string, unknown>, key: string) {
-    return normalizeStringValue(attributes[key])
-}
-
-function getCopilotAttributeNumber(attributes: Record<string, unknown>, key: string) {
+function getCopilotAttributeNumber(attributes: Record<string, any>, key: string) {
     const value = attributes[key]
 
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -334,7 +329,7 @@ function getCopilotAttributeNumber(attributes: Record<string, unknown>, key: str
     return 0
 }
 
-function getCopilotAttributeNumberFirst(attributes: Record<string, unknown>, keys: readonly string[]) {
+function getCopilotAttributeNumberFirst(attributes: Record<string, any>, keys: readonly string[]) {
     for (const key of keys) {
         const value = getCopilotAttributeNumber(attributes, key)
 
@@ -346,9 +341,9 @@ function getCopilotAttributeNumberFirst(attributes: Record<string, unknown>, key
     return 0
 }
 
-function getFirstCopilotAttribute(attributes: Record<string, unknown>, keys: readonly string[]) {
+function getFirstCopilotAttribute(attributes: Record<string, any>, keys: readonly string[]) {
     for (const key of keys) {
-        const value = getCopilotAttributeString(attributes, key)
+        const value = attributes[key].trim()
 
         if (value) {
             return value
@@ -358,11 +353,11 @@ function getFirstCopilotAttribute(attributes: Record<string, unknown>, keys: rea
     return null
 }
 
-function getBestCopilotSessionAttribute(attributes: Record<string, unknown>) {
+function getBestCopilotSessionAttribute(attributes: Record<string, any>) {
     let best: { priority: number, value: string } | null = null
 
     for (const [key, priority] of COPILOT_SESSION_ATTRS) {
-        const value = getCopilotAttributeString(attributes, key)
+        const value = attributes[key].trim()
 
         if (value && (!best || priority > best.priority)) {
             best = { priority, value }
@@ -372,7 +367,7 @@ function getBestCopilotSessionAttribute(attributes: Record<string, unknown>) {
     return best
 }
 
-function getCopilotTimestamp(record: Record<string, unknown>) {
+function getCopilotTimestamp(record: Record<string, any>) {
     return toIsoString(record.endTime)
         || toIsoString(record.startTime)
         || toIsoString(record.hrTime)

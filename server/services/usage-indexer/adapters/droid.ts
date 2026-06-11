@@ -2,7 +2,6 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -15,7 +14,6 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -32,22 +30,24 @@ export const droidUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'droid'))
     },
     parseFile(filePath, resolvePricing) {
-        const data = parseJsonFile(filePath)
-        const settings = normalizeUnknownRecord(data)
-        const tokenUsage = normalizeUnknownRecord(settings?.tokenUsage)
+        const data = parseJsonFile<Record<string, any>>(filePath)
+        const settings = data
+        const tokenUsage = settings?.tokenUsage
 
         if (!settings || !tokenUsage) {
             return []
         }
 
-        const extraTotalTokens = normalizeUsageNumber(tokenUsage.thinkingTokens as number | undefined)
+        const extraTotalTokens = typeof tokenUsage.thinkingTokens === 'number' && Number.isFinite(tokenUsage.thinkingTokens)
+            ? tokenUsage.thinkingTokens
+            : 0
         const usage = toInteractionUsage({
             ...applyTotalUsageFallback({
-                cacheCreationTokens: normalizeUsageNumber(tokenUsage.cacheCreationTokens as number | undefined),
-                cacheReadTokens: normalizeUsageNumber(tokenUsage.cacheReadTokens as number | undefined),
-                inputTokens: normalizeUsageNumber(tokenUsage.inputTokens as number | undefined),
-                outputTokens: normalizeUsageNumber(tokenUsage.outputTokens as number | undefined),
-                totalTokens: Math.max(normalizeUsageNumber(tokenUsage.totalTokens as number | undefined) - extraTotalTokens, 0),
+                cacheCreationTokens: tokenUsage.cacheCreationTokens as number | undefined,
+                cacheReadTokens: tokenUsage.cacheReadTokens as number | undefined,
+                inputTokens: tokenUsage.inputTokens as number | undefined,
+                outputTokens: tokenUsage.outputTokens as number | undefined,
+                totalTokens: Math.max((typeof tokenUsage.totalTokens === 'number' && Number.isFinite(tokenUsage.totalTokens) ? tokenUsage.totalTokens : 0) - extraTotalTokens, 0),
             }),
             extraTotalTokens,
         })
@@ -56,7 +56,7 @@ export const droidUsageAdapter = {
             return []
         }
 
-        const provider = normalizeDroidProvider(normalizeStringValue(settings.providerLock) ?? null)
+        const provider = normalizeDroidProvider(settings.providerLock.trim() ?? null)
         const model = getDroidModel(settings, filePath, provider)
         const normalizedProvider = provider === 'unknown' ? inferDroidProviderFromModel(model) : provider
         const timestamp = toIsoString(settings.providerLockTimestamp) ?? getFileModifiedAtIso(filePath)
@@ -94,8 +94,8 @@ export const droidUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function getDroidModel(settings: Record<string, unknown>, settingsPath: string, provider: string) {
-    const explicitModel = normalizeStringValue(settings.model)
+function getDroidModel(settings: Record<string, any>, settingsPath: string, provider: string) {
+    const explicitModel = settings.model.trim()
 
     if (explicitModel) {
         return normalizeDroidModelName(explicitModel)
@@ -263,7 +263,7 @@ function selectLatestDroidSettingsFiles(filePaths: string[]) {
 }
 
 function getDroidSnapshotTimestamp(filePath: string) {
-    const settings = normalizeUnknownRecord(parseJsonFile(filePath))
+    const settings = parseJsonFile<Record<string, any>>(filePath)
     const timestamp = toIsoString(settings?.providerLockTimestamp)
 
     return timestamp ? Date.parse(timestamp) : Date.parse(getFileModifiedAtIso(filePath) ?? '') || 0

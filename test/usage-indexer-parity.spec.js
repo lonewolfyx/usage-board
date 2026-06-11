@@ -359,6 +359,38 @@ describe('usage indexer parity with ccusage', () => {
         expect(numericInteraction.usage.inputTokens).toBe(90)
     })
 
+    it('ignores Codex records with missing payload types instead of crashing', () => {
+        const filePath = createTempFile('codex/missing-payload-type.jsonl', [
+            JSON.stringify({
+                type: 'session_meta',
+                payload: {
+                    id: 'session-missing-payload-type',
+                },
+            }),
+            JSON.stringify({
+                timestamp: '2026-01-02T00:00:01.000Z',
+                type: 'event_msg',
+                payload: {
+                    info: {
+                        model: 'gpt-5',
+                        last_token_usage: {
+                            cached_input_tokens: 10,
+                            input_tokens: 100,
+                            output_tokens: 50,
+                            total_tokens: 160,
+                        },
+                    },
+                },
+            }),
+        ])
+
+        const interactions = getUsageInteractions(
+            codexUsageAdapter.parseFile(filePath, zeroPricingResolver, discovered(filePath, 'codex')),
+        )
+
+        expect(interactions).toHaveLength(0)
+    })
+
     it('ignores Codex token_count deltas that only carry total_tokens', () => {
         const filePath = createTempFile('codex/total-only-token-count.jsonl', [
             JSON.stringify({

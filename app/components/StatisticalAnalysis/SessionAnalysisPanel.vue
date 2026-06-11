@@ -186,12 +186,12 @@ const chartData = computed<SessionProjectDatum[]>(() => {
     return rows.map((row, index) => ({
         ...row,
         costLabel: formatCurrency(row.costUSD),
-        costScore: normalizeScore(row.costUSD, maxCost),
+        costScore: maxCost > 0 ? (row.costUSD / maxCost) * 100 : 0,
         durationLabel: formatDuration(row.durationMinutes),
-        durationScore: normalizeScore(row.durationMinutes, maxDuration),
+        durationScore: maxDuration > 0 ? (row.durationMinutes / maxDuration) * 100 : 0,
         index,
         tokenLabel: formatCompactNumber(row.tokenTotal),
-        tokenScore: normalizeScore(row.tokenTotal, maxTokens),
+        tokenScore: maxTokens > 0 ? (row.tokenTotal / maxTokens) * 100 : 0,
     }))
 })
 
@@ -211,10 +211,6 @@ function parseDurationMinutes(duration: string) {
     const minutes = duration.match(/(\d+)m/)?.[1]
 
     return Number(hours ?? 0) * 60 + Number(minutes ?? 0)
-}
-
-function normalizeScore(value: number, maxValue: number) {
-    return maxValue > 0 ? (value / maxValue) * 100 : 0
 }
 
 function getSegmentColor(_: SessionProjectDatum, index: number) {

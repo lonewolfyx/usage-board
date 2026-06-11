@@ -1,7 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -15,7 +14,6 @@ import {
     createZeroPricingResolver,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -50,50 +48,50 @@ export const openClawUsageAdapter = {
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
-            const record = normalizeUnknownRecord(parse(line))
+            const record = parse(line) as Record<string, any> | null
 
             if (!record) {
                 continue
             }
 
             if (isOpenClawModelChange(record)) {
-                const source = normalizeUnknownRecord(record.data) ?? record
-                currentModel = normalizeStringValue(source.modelId) || normalizeStringValue(source.model) || currentModel
-                currentProvider = normalizeStringValue(source.provider) || currentProvider
+                const source = record.data ?? record
+                currentModel = source.modelId.trim() || source.model.trim() || currentModel
+                currentProvider = source.provider.trim() || currentProvider
                 continue
             }
 
-            if (normalizeStringValue(record.type) !== 'message') {
+            if (record.type.trim() !== 'message') {
                 continue
             }
 
-            const message = normalizeUnknownRecord(record.message)
-            const usageRecord = normalizeUnknownRecord(message?.usage)
+            const message = record.message
+            const usageRecord = message?.usage
 
-            if (!message || normalizeStringValue(message.role) !== 'assistant' || !usageRecord) {
+            if (!message || message.role.trim() !== 'assistant' || !usageRecord) {
                 continue
             }
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: normalizeUsageNumber(usageRecord.cacheWrite as number | undefined),
-                    cacheReadTokens: normalizeUsageNumber(usageRecord.cacheRead as number | undefined),
-                    inputTokens: normalizeUsageNumber(usageRecord.input as number | undefined),
-                    outputTokens: normalizeUsageNumber(usageRecord.output as number | undefined),
-                    totalTokens: normalizeUsageNumber(usageRecord.totalTokens as number | undefined),
+                    cacheCreationTokens: usageRecord.cacheWrite as number | undefined,
+                    cacheReadTokens: usageRecord.cacheRead as number | undefined,
+                    inputTokens: usageRecord.input as number | undefined,
+                    outputTokens: usageRecord.output as number | undefined,
+                    totalTokens: usageRecord.totalTokens as number | undefined,
                 }),
-                costUSD: normalizeFiniteNumberOrNull(normalizeUnknownRecord(usageRecord.cost)?.total) ?? 0,
+                costUSD: usageRecord.cost?.total ?? 0,
             })
 
             if (isZeroInteractionUsage(usage)) {
                 continue
             }
 
-            const rawModel = normalizeStringValue(message.modelId)
-                || normalizeStringValue(message.model)
+            const rawModel = message.modelId.trim()
+                || message.model.trim()
                 || currentModel
                 || 'unknown'
-            const provider = normalizeStringValue(message.provider) || currentProvider
+            const provider = message.provider.trim() || currentProvider
             const timestamp = toIsoString(message.timestamp) ?? toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
@@ -128,11 +126,11 @@ export const openClawUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function isOpenClawModelChange(record: Record<string, unknown>) {
-    const type = normalizeStringValue(record.type)
+function isOpenClawModelChange(record: Record<string, any>) {
+    const type = record.type.trim()
 
     return type === 'model_change'
-        || (type === 'custom' && normalizeStringValue(record.customType) === 'model-snapshot')
+        || (type === 'custom' && record.customType.trim() === 'model-snapshot')
 }
 
 function isOpenClawSessionFile(name: string) {

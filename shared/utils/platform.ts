@@ -28,13 +28,12 @@ import { existsSync, readFileSync } from 'node:fs'
 import { dirname, sep } from 'node:path'
 import {
     formatDuration,
-    formatMonthLabel,
     getWeekLabel as getWeekLabelFromDayjs,
+    previousDateKey,
     todayDateKey,
     toIsoStringSafe,
     useDateFormat,
 } from '#shared/utils/date'
-import { normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import {
     buildGrowthTrend,
@@ -44,8 +43,6 @@ import {
     formatCurrency,
     formatDateLabelFromDateKey,
     getDateKey,
-    getPreviousDateKey,
-    normalizeNumber,
     roundCurrency,
     sumCurrency,
     uniqueItems,
@@ -94,9 +91,9 @@ export function parseJsonlFile<T = unknown>(filePath: string) {
  * const data = parseJsonFile('/path/to/session.json')
  * ```
  */
-export function parseJsonFile(filePath: string) {
+export function parseJsonFile<T = unknown>(filePath: string): T | null {
     try {
-        return parse(readFileSync(filePath, 'utf8'))
+        return parse(readFileSync(filePath, 'utf8')) as T | null
     }
     catch {
         return null
@@ -229,9 +226,9 @@ function buildPeriodRows<TEvent extends UsageAggregateEvent>(
     for (const event of events) {
         const key = periodType === 'month'
             ? getMonthKey(event.timestamp)
-            : getWeekLabel(event.timestamp)
+            : getWeekLabelFromDayjs(event.timestamp)
         const label = periodType === 'month'
-            ? formatMonthLabel(key)
+            ? useDateFormat(`${key}-01`, 'month-label') ?? key
             : key
         const group = groups.get(key) ?? {
             ...createAggregateGroup(label),
@@ -364,7 +361,7 @@ function toUsageSessionUsageItem<TSession extends SessionUsageSummaryLike>(
         startedAt: session.startedAt,
         threadName: session.threadName,
         tokenTotal: session.tokenTotal,
-        week: getWeekLabel(session.startedAt),
+        week: getWeekLabelFromDayjs(session.startedAt),
     }
 }
 
@@ -477,7 +474,7 @@ export function buildLoadUsageResult<
     const sessionUsage = sortedSessions.map(session => toUsageSessionUsageItem(session, sessionOptions))
     const dailyGroups = buildDailyUsageGroups(events, aggregateOptions)
     const todayDateKeyVal = todayDateKey()
-    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
+    const previousDayDateKey = previousDateKey(todayDateKeyVal)
     const todayDailyGroup = dailyGroups.get(todayDateKeyVal)
     const previousDayDailyGroup = dailyGroups.get(previousDayDateKey)
     const todayEvents = events.filter(event => getDateKey(event.timestamp) === todayDateKeyVal)
@@ -731,19 +728,6 @@ export function getMonthKey(date: DateInput) {
 }
 
 /**
- * Gets a week label where Monday is the start and Sunday is the end.
- *
- * @example
- * ```ts
- * getWeekLabel(new Date('2026-04-16'))
- * // '2026-04-13 - 2026-04-19'
- * ```
- */
-export function getWeekLabel(date: DateInput) {
-    return getWeekLabelFromDayjs(date)
-}
-
-/**
  * Normalizes a raw Codex token snapshot into a complete RawUsage shape.
  *
  * @example
@@ -756,11 +740,11 @@ export function normalizeRawUsage(usage: TokenUsageSnapshot | null | undefined):
         return null
     }
 
-    const input = normalizeNumber(usage.input_tokens)
-    const cachedInput = normalizeNumber(usage.cached_input_tokens ?? usage.cache_read_input_tokens)
-    const output = normalizeNumber(usage.output_tokens)
-    const reasoning = normalizeNumber(usage.reasoning_output_tokens)
-    const total = normalizeNumber(usage.total_tokens)
+    const input = usage.input_tokens ?? 0
+    const cachedInput = usage.cached_input_tokens ?? usage.cache_read_input_tokens ?? 0
+    const output = usage.output_tokens ?? 0
+    const reasoning = usage.reasoning_output_tokens ?? 0
+    const total = usage.total_tokens ?? 0
 
     return {
         cached_input_tokens: cachedInput,
@@ -820,12 +804,12 @@ export function convertCodexRawUsage(rawUsage: RawUsage): TokenUsageDelta {
  * ```
  */
 export function convertGeminiTokenUsage(tokens: GeminiTokenSnapshot): TokenUsageDelta {
-    const rawInputTokens = normalizeNumber(tokens.input)
-    const cachedInputTokens = Math.min(normalizeNumber(tokens.cached), rawInputTokens)
-    const outputTokens = normalizeNumber(tokens.output)
-    const reasoningOutputTokens = normalizeNumber(tokens.thoughts)
-    const toolTokens = normalizeNumber(tokens.tool)
-    const totalTokens = normalizeNumber(tokens.total)
+    const rawInputTokens = tokens.input ?? 0
+    const cachedInputTokens = Math.min(tokens.cached ?? 0, rawInputTokens)
+    const outputTokens = tokens.output ?? 0
+    const reasoningOutputTokens = tokens.thoughts ?? 0
+    const toolTokens = tokens.tool ?? 0
+    const totalTokens = tokens.total ?? 0
 
     return {
         cachedInputTokens,
@@ -848,17 +832,19 @@ export function convertGeminiTokenUsage(tokens: GeminiTokenSnapshot): TokenUsage
  * ```
  */
 export function extractModelName(value: unknown): string | undefined {
-    const record = normalizeUnknownRecord(value)
+    const record = value
 
-    if (!record) {
+    if (!record || typeof record !== 'object') {
         return undefined
     }
-    const info = normalizeUnknownRecord(record.info)
-    const metadata = normalizeUnknownRecord(record.metadata)
-    const infoMetadata = normalizeUnknownRecord(info?.metadata)
+
+    const obj = record as Record<string, unknown>
+    const info = obj.info && typeof obj.info === 'object' ? obj.info as Record<string, unknown> : null
+    const metadata = obj.metadata && typeof obj.metadata === 'object' ? obj.metadata as Record<string, unknown> : null
+    const infoMetadata = info?.metadata && typeof info.metadata === 'object' ? info.metadata as Record<string, unknown> : null
     const candidates = [
-        record.model,
-        record.model_name,
+        obj.model,
+        obj.model_name,
         info?.model,
         info?.model_name,
         infoMetadata?.model,

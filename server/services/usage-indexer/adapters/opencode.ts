@@ -3,7 +3,6 @@ import { existsSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -16,7 +15,6 @@ import {
     applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -58,7 +56,7 @@ export const openCodeUsageAdapter = {
                 const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
                 for (const row of rows) {
-                    const record = parse(row.data) as Record<string, unknown> | null
+                    const record = parse(row.data) as Record<string, any> | null
                     const entry = record
                         ? getOpenCodeMessageEntry(record, resolvePricing, {
                                 interactionId: row.id,
@@ -101,9 +99,9 @@ export const openCodeUsageAdapter = {
             }
         }
 
-        const value = parseJsonFile(filePath)
-        const record = normalizeUnknownRecord(value)
-        const interactionId = normalizeStringValue(record?.id)
+        const value = parseJsonFile<Record<string, any>>(filePath)
+        const record = value
+        const interactionId = record?.id.trim()
 
         if (interactionId && isDuplicatedByOpenCodeDatabase(filePath, interactionId)) {
             return []
@@ -112,7 +110,7 @@ export const openCodeUsageAdapter = {
         const entry = record
             ? getOpenCodeMessageEntry(record, resolvePricing, {
                     interactionId,
-                    sessionId: normalizeStringValue(record.sessionID),
+                    sessionId: record.sessionID.trim(),
                 })
             : null
 
@@ -166,16 +164,16 @@ async function getOpenCodeDatabaseFile(root: string) {
 }
 
 function getOpenCodeMessageEntry(
-    value: Record<string, unknown>,
+    value: Record<string, any>,
     resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1],
     options: {
         interactionId?: string | null
         sessionId?: string | null
     } = {},
 ) {
-    const tokens = normalizeUnknownRecord(value.tokens)
-    const model = normalizeStringValue(value.modelID)
-    const provider = normalizeStringValue(value.providerID) ?? null
+    const tokens = value.tokens
+    const model = value.modelID.trim()
+    const provider = value.providerID.trim() ?? null
 
     if (!tokens || !model || !provider) {
         return null
@@ -183,11 +181,11 @@ function getOpenCodeMessageEntry(
 
     const usage = toInteractionUsage({
         ...applyTotalUsageAsExtra({
-            cacheCreationTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.write as number | undefined),
-            cacheReadTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.read as number | undefined),
-            inputTokens: normalizeUsageNumber(tokens.input as number | undefined),
-            outputTokens: normalizeUsageNumber(tokens.output as number | undefined),
-            totalTokens: normalizeUsageNumber(tokens.total as number | undefined),
+            cacheCreationTokens: tokens.cache?.write as number | undefined,
+            cacheReadTokens: tokens.cache?.read as number | undefined,
+            inputTokens: tokens.input as number | undefined,
+            outputTokens: tokens.output as number | undefined,
+            totalTokens: tokens.total as number | undefined,
         }),
     })
 
@@ -195,14 +193,15 @@ function getOpenCodeMessageEntry(
         return null
     }
 
-    const timestamp = toIsoString(normalizeUnknownRecord(value.time)?.created)
+    const timestamp = toIsoString(value.time?.created)
 
     if (!timestamp) {
         return null
     }
 
     const sessionId = options.sessionId || 'unknown'
-    const directCost = normalizeFiniteNumberOrNull(value.cost)
+    const rawCost = value.cost
+    const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
     const costUSD = directCost && directCost > 0
         ? directCost
         : calculateUsageCostFromCandidates(usage, getOpenCodeModelCandidates(model, provider), resolvePricing, {
@@ -211,7 +210,7 @@ function getOpenCodeMessageEntry(
             })
 
     return {
-        interactionId: options.interactionId || normalizeStringValue(value.id) || `${sessionId}:${timestamp}:${model}`,
+        interactionId: options.interactionId || value.id.trim() || `${sessionId}:${timestamp}:${model}`,
         model,
         modelLookupCandidates: getOpenCodeModelCandidates(model, provider),
         provider,
@@ -232,7 +231,9 @@ function getOpenCodeLookupCandidates(model: string) {
 }
 
 function isDuplicatedByOpenCodeDatabase(filePath: string, interactionId: string) {
-    const root = getOpenCodeRootFromMessageFile(filePath)
+    const marker = `${join('storage', 'message')}/`
+    const markerIndex = filePath.lastIndexOf(marker)
+    const root = markerIndex >= 0 ? filePath.slice(0, markerIndex) : null
 
     if (!root) {
         return false
@@ -315,17 +316,7 @@ function getOpenCodeDatabaseFileSync(root: string) {
     }
 
     return readdirSync(root, { withFileTypes: true })
-        .filter(entry => entry.isFile() && isOpenCodeChannelDatabase(entry.name))
+        .filter(entry => entry.isFile() && /^opencode-[\w-]+\.db$/u.test(entry.name))
         .map(entry => join(root, entry.name))
         .sort((left, right) => left.localeCompare(right))[0] ?? null
-}
-
-function getOpenCodeRootFromMessageFile(filePath: string) {
-    const marker = `${join('storage', 'message')}/`
-    const index = filePath.lastIndexOf(marker)
-    return index >= 0 ? filePath.slice(0, index) : null
-}
-
-function isOpenCodeChannelDatabase(name: string) {
-    return /^opencode-[\w-]+\.db$/u.test(name)
 }

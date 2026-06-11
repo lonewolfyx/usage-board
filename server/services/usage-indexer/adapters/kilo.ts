@@ -2,7 +2,6 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { join } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import {
@@ -14,7 +13,6 @@ import {
     applyTotalUsageFallback,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -42,7 +40,7 @@ export const kiloUsageAdapter = {
             const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
             for (const row of rows) {
-                const record = parse(row.data) as Record<string, unknown> | null
+                const record = parse(row.data) as Record<string, any> | null
                 const parsed = record ? parseKiloMessage(record, row, filePath, resolvePricing) : null
 
                 if (!parsed) {
@@ -85,31 +83,33 @@ export const kiloUsageAdapter = {
 } satisfies UsagePlatformAdapter
 
 function parseKiloMessage(
-    value: Record<string, unknown>,
+    value: Record<string, any>,
     row: { data: string, id: string, session_id: string },
     filePath: string,
     resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1],
 ) {
-    if (normalizeStringValue(value.role) !== 'assistant') {
+    if (value.role.trim() !== 'assistant') {
         return null
     }
 
-    const tokens = normalizeUnknownRecord(value.tokens)
-    const model = normalizeStringValue(value.modelID)
-    const timestamp = toIsoString(normalizeUnknownRecord(value.time)?.created)
+    const tokens = value.tokens
+    const model = value.modelID.trim()
+    const timestamp = toIsoString(value.time?.created)
 
     if (!tokens || !model || !timestamp) {
         return null
     }
 
-    const extraTotalTokens = normalizeUsageNumber(tokens.reasoning as number | undefined)
+    const extraTotalTokens = typeof tokens.reasoning === 'number' && Number.isFinite(tokens.reasoning)
+        ? tokens.reasoning
+        : 0
     const usage = toInteractionUsage({
         ...applyTotalUsageFallback({
-            cacheCreationTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.write as number | undefined),
-            cacheReadTokens: normalizeUsageNumber(normalizeUnknownRecord(tokens.cache)?.read as number | undefined),
-            inputTokens: normalizeUsageNumber(tokens.input as number | undefined),
-            outputTokens: normalizeUsageNumber(tokens.output as number | undefined),
-            totalTokens: Math.max(normalizeUsageNumber(tokens.total as number | undefined) - extraTotalTokens, 0),
+            cacheCreationTokens: tokens.cache?.write as number | undefined,
+            cacheReadTokens: tokens.cache?.read as number | undefined,
+            inputTokens: tokens.input as number | undefined,
+            outputTokens: tokens.output as number | undefined,
+            totalTokens: Math.max((typeof tokens.total === 'number' && Number.isFinite(tokens.total) ? tokens.total : 0) - extraTotalTokens, 0),
         }),
         extraTotalTokens,
     })
@@ -118,16 +118,17 @@ function parseKiloMessage(
         return null
     }
 
-    const sessionId = normalizeStringValue(value.session_id) || row.session_id
-    const interactionId = normalizeStringValue(value.id) || `${filePath}:${row.id}`
-    const directCost = normalizeFiniteNumberOrNull(value.cost)
-    const provider = normalizeStringValue(value.providerID) ?? null
-    const costUSD = directCost ?? calculateUsageCostFromCandidates(usage, getKiloCandidates(model, provider), resolvePricing)
+    const sessionId = value.session_id.trim() || row.session_id
+    const interactionId = value.id.trim() || `${filePath}:${row.id}`
+    const rawCost = value.cost
+    const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
+    const provider = value.providerID.trim() ?? null
+    const costUSD = directCost ?? calculateUsageCostFromCandidates(usage, provider ? [model, `${provider}/${model}`] : [model], resolvePricing)
 
     return {
         interactionId,
         model,
-        modelLookupCandidates: getKiloCandidates(model, provider),
+        modelLookupCandidates: provider ? [model, `${provider}/${model}`] : [model],
         provider,
         rawCostUSD: directCost,
         sessionId,
@@ -137,8 +138,4 @@ function parseKiloMessage(
             costUSD,
         }),
     }
-}
-
-function getKiloCandidates(model: string, provider: string | null) {
-    return provider ? [model, `${provider}/${model}`] : [model]
 }

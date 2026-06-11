@@ -277,7 +277,7 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
 
     fail(error: unknown) {
         this.stopAgentUpdateSpinner()
-        log.error(`数据清洗失败：${formatErrorMessage(error)}`)
+        log.error(`数据清洗失败：${error instanceof Error ? error.message : String(error)}`)
     }
 
     private advanceCacheStep(message: string) {
@@ -310,10 +310,6 @@ function formatDurationMs(durationMs: number) {
     }
 
     return `${(durationMs / 1000).toFixed(1)}s`
-}
-
-function formatErrorMessage(error: unknown) {
-    return error instanceof Error ? error.message : String(error)
 }
 
 function formatUpdatedSessionSummary(updatedSessions: UpdatedUsageSession[]) {

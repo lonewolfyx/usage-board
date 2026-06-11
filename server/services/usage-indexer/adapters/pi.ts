@@ -1,6 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { basename, join } from 'node:path'
-import { normalizeFiniteNumberOrNull, normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonlFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -12,7 +11,6 @@ import {
     applyTotalUsageAsExtra,
     createZeroPricingResolver,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -28,7 +26,7 @@ export const piUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'pi'))
     },
     parseFile(filePath) {
-        const lines = parseJsonlFile<Record<string, unknown>>(filePath)
+        const lines = parseJsonlFile<Record<string, any>>(filePath)
         const sessionId = getPiSessionId(filePath)
         const project = getPiProject(filePath)
         const fragment = createSessionFragment({
@@ -40,14 +38,14 @@ export const piUsageAdapter = {
         })
 
         for (let index = 0; index < lines.length; index += 1) {
-            const line = normalizeUnknownRecord(lines[index])
-            const message = normalizeUnknownRecord(line?.message)
+            const line = lines[index]
+            const message = line?.message
 
-            if (!line || !message || normalizeStringValue(message.role) !== 'assistant' || !message.usage) {
+            if (!line || !message || (message as Record<string, unknown>).role !== 'assistant' || !(message as Record<string, unknown>).usage) {
                 continue
             }
 
-            const usageRecord = normalizeUnknownRecord(message.usage)
+            const usageRecord = (message as Record<string, unknown>).usage
             const timestamp = toIsoString(line.timestamp)
 
             if (!usageRecord || !timestamp) {
@@ -56,20 +54,20 @@ export const piUsageAdapter = {
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: normalizeUsageNumber(usageRecord.cacheWrite as number | undefined),
-                    cacheReadTokens: normalizeUsageNumber(usageRecord.cacheRead as number | undefined),
-                    inputTokens: normalizeUsageNumber(usageRecord.input as number | undefined),
-                    outputTokens: normalizeUsageNumber(usageRecord.output as number | undefined),
-                    totalTokens: normalizeUsageNumber(usageRecord.totalTokens as number | undefined),
+                    cacheCreationTokens: (usageRecord as Record<string, any>).cacheWrite as number | undefined,
+                    cacheReadTokens: (usageRecord as Record<string, any>).cacheRead as number | undefined,
+                    inputTokens: (usageRecord as Record<string, any>).input as number | undefined,
+                    outputTokens: (usageRecord as Record<string, any>).output as number | undefined,
+                    totalTokens: (usageRecord as Record<string, any>).totalTokens as number | undefined,
                 }),
-                costUSD: normalizeFiniteNumberOrNull(normalizeUnknownRecord(usageRecord.cost)?.total) ?? 0,
+                costUSD: (usageRecord as Record<string, any>).cost?.total ?? 0,
             })
 
             if (isZeroInteractionUsage(usage)) {
                 continue
             }
 
-            const rawModel = normalizeStringValue(message.model)
+            const rawModel = (message as Record<string, any>).model.trim()
 
             addFragmentInteraction(fragment, {
                 costUSD: usage.costUSD,
@@ -91,7 +89,7 @@ export const piUsageAdapter = {
                 rawCostUSD: usage.costUSD,
                 role: 'assistant',
                 timestamp,
-                type: normalizeStringValue(line.type) || 'message',
+                type: line.type.trim() || 'message',
                 usage,
             })
         }

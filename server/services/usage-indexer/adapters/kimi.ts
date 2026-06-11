@@ -2,7 +2,6 @@ import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platfo
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parse } from '#shared/utils/parse'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -16,7 +15,6 @@ import {
     calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -55,22 +53,22 @@ export const kimiUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = normalizeUnknownRecord(parse(lines[index]!))
-            const message = normalizeUnknownRecord(record?.message)
-            const payload = normalizeUnknownRecord(message?.payload)
-            const tokenUsage = normalizeUnknownRecord(payload?.token_usage)
+            const record = parse(lines[index]!) as Record<string, any> | null
+            const message = record?.message
+            const payload = message?.payload
+            const tokenUsage = payload?.token_usage
 
-            if (!record || !message || normalizeStringValue(message.type) !== 'StatusUpdate' || !payload || !tokenUsage) {
+            if (!record || !message || message.type.trim() !== 'StatusUpdate' || !payload || !tokenUsage) {
                 continue
             }
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: normalizeUsageNumber(tokenUsage.input_cache_creation as number | undefined),
-                    cacheReadTokens: normalizeUsageNumber(tokenUsage.input_cache_read as number | undefined),
-                    inputTokens: normalizeUsageNumber(tokenUsage.input_other as number | undefined),
-                    outputTokens: normalizeUsageNumber(tokenUsage.output as number | undefined),
-                    totalTokens: normalizeUsageNumber(tokenUsage.total as number | undefined),
+                    cacheCreationTokens: tokenUsage.input_cache_creation as number | undefined,
+                    cacheReadTokens: tokenUsage.input_cache_read as number | undefined,
+                    inputTokens: tokenUsage.input_other as number | undefined,
+                    outputTokens: tokenUsage.output as number | undefined,
+                    totalTokens: tokenUsage.total as number | undefined,
                 }),
             })
 
@@ -85,7 +83,7 @@ export const kimiUsageAdapter = {
                 costUSD,
                 dedupeKey: [
                     sessionId,
-                    normalizeStringValue(payload.message_id) || '',
+                    payload.message_id.trim() || '',
                     timestamp || '',
                     model,
                     String(usage.inputTokens),
@@ -116,8 +114,8 @@ export const kimiUsageAdapter = {
 } satisfies UsagePlatformAdapter
 
 function getKimiModel(filePath: string) {
-    const config = parseJsonFile(join(dirname(dirname(dirname(filePath))), 'config.json'))
-    return normalizeStringValue(normalizeUnknownRecord(config)?.model) || KIMI_DEFAULT_MODEL
+    const config = parseJsonFile<Record<string, any>>(join(dirname(dirname(dirname(filePath))), 'config.json'))
+    return config?.model.trim() || KIMI_DEFAULT_MODEL
 }
 
 function isKimiWireFile(sessionsPath: string, filePath: string) {

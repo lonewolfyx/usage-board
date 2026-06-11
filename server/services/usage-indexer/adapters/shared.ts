@@ -23,6 +23,10 @@ export function applyTotalUsageFallback(usage: {
     totalTokens?: number
 }) {
     const { baseTokens, cacheCreationTokens, cacheReadTokens, inputTokens, outputTokens, totalTokens } = readUsageParts(usage)
+    const reasoningOutputTokens = Math.max(
+        usage.reasoningOutputTokens ?? 0,
+        totalTokens > baseTokens ? totalTokens - baseTokens : 0,
+    )
 
     if (baseTokens === 0 && totalTokens > 0) {
         return {
@@ -33,11 +37,6 @@ export function applyTotalUsageFallback(usage: {
             reasoningOutputTokens: 0,
         }
     }
-
-    const reasoningOutputTokens = Math.max(
-        normalizeUsageNumber(usage.reasoningOutputTokens),
-        totalTokens > baseTokens ? totalTokens - baseTokens : 0,
-    )
 
     return {
         cacheCreationTokens,
@@ -57,6 +56,10 @@ export function applyTotalUsageAsExtra(usage: {
     totalTokens?: number
 }) {
     const { baseTokens, cacheCreationTokens, cacheReadTokens, inputTokens, outputTokens, totalTokens } = readUsageParts(usage)
+    const extraTotalTokens = Math.max(
+        usage.extraTotalTokens ?? 0,
+        totalTokens > baseTokens ? totalTokens - baseTokens : 0,
+    )
 
     if (baseTokens === 0 && totalTokens > 0) {
         return {
@@ -67,11 +70,6 @@ export function applyTotalUsageAsExtra(usage: {
             extraTotalTokens: 0,
         }
     }
-
-    const extraTotalTokens = Math.max(
-        normalizeUsageNumber(usage.extraTotalTokens),
-        totalTokens > baseTokens ? totalTokens - baseTokens : 0,
-    )
 
     return {
         cacheCreationTokens,
@@ -93,13 +91,13 @@ export function toInteractionUsage(usage: {
     reasoningOutputTokens?: number
     toolTokens?: number
 }) {
-    const cacheCreationTokens = normalizeUsageNumber(usage.cacheCreationTokens)
-    const cacheReadTokens = normalizeUsageNumber(usage.cacheReadTokens)
-    const inputTokens = normalizeUsageNumber(usage.inputTokens)
-    const outputTokens = normalizeUsageNumber(usage.outputTokens)
-    const reasoningOutputTokens = normalizeUsageNumber(usage.reasoningOutputTokens)
-    const extraTotalTokens = normalizeUsageNumber(usage.extraTotalTokens)
-    const toolTokens = normalizeUsageNumber(usage.toolTokens)
+    const cacheCreationTokens = usage.cacheCreationTokens ?? 0
+    const cacheReadTokens = usage.cacheReadTokens ?? 0
+    const inputTokens = usage.inputTokens ?? 0
+    const outputTokens = usage.outputTokens ?? 0
+    const reasoningOutputTokens = usage.reasoningOutputTokens ?? 0
+    const extraTotalTokens = usage.extraTotalTokens ?? 0
+    const toolTokens = usage.toolTokens ?? 0
     const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens + reasoningOutputTokens + extraTotalTokens + toolTokens
 
     return {
@@ -149,10 +147,6 @@ export function getFileModifiedAtIso(filePath: string) {
     }
 }
 
-export function normalizeUsageNumber(value: number | undefined) {
-    return Number.isFinite(value) && value! > 0 ? Math.trunc(value!) : 0
-}
-
 function readUsageParts(usage: {
     cacheCreationTokens?: number
     cacheReadTokens?: number
@@ -160,11 +154,11 @@ function readUsageParts(usage: {
     outputTokens?: number
     totalTokens?: number
 }) {
-    const cacheCreationTokens = normalizeUsageNumber(usage.cacheCreationTokens)
-    const cacheReadTokens = normalizeUsageNumber(usage.cacheReadTokens)
-    const inputTokens = normalizeUsageNumber(usage.inputTokens)
-    const outputTokens = normalizeUsageNumber(usage.outputTokens)
-    const totalTokens = normalizeUsageNumber(usage.totalTokens)
+    const cacheCreationTokens = usage.cacheCreationTokens ?? 0
+    const cacheReadTokens = usage.cacheReadTokens ?? 0
+    const inputTokens = usage.inputTokens ?? 0
+    const outputTokens = usage.outputTokens ?? 0
+    const totalTokens = usage.totalTokens ?? 0
 
     return {
         baseTokens: inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens,

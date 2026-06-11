@@ -14,7 +14,7 @@ import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, Ranked
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
-import { formatDuration, todayDateKey, useDateFormat } from '#shared/utils/date'
+import { formatDuration, previousDateKey, todayDateKey, useDateFormat } from '#shared/utils/date'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -23,8 +23,6 @@ import {
     formatCompactNumber,
     formatCurrency,
     formatPercent,
-    getDateKeyFromLabel,
-    getPreviousDateKey,
     mergeDailyTokenUsage,
     mergeMonthlyModelUsage,
     roundCurrency,
@@ -146,9 +144,9 @@ export function buildHomeDashboardModules(
     })
     const homeTodayInsights = todayInsights ?? buildHomeTodayInsights(dashboardsByPlatform)
     const todayDateKeyVal = todayDateKey()
-    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
-    const todayUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === todayDateKeyVal)
-    const previousUsage = dailyTokenUsage.find(item => getDateKeyFromLabel(item.date) === previousDayDateKey)
+    const previousDayDateKey = previousDateKey(todayDateKeyVal)
+    const todayUsage = dailyTokenUsage.find(item => (useDateFormat(item.date) ?? item.date) === todayDateKeyVal)
+    const previousUsage = dailyTokenUsage.find(item => (useDateFormat(item.date) ?? item.date) === previousDayDateKey)
 
     return {
         dailyTokenUsage,
@@ -326,7 +324,7 @@ function buildHomeTodayInsights(
     dashboardsByPlatform: ProjectUsagePlatformRecord<LoadUsageResult>,
 ) {
     const todayDateKeyVal = todayDateKey()
-    const previousDayDateKey = getPreviousDateKey(todayDateKeyVal)
+    const previousDayDateKey = previousDateKey(todayDateKeyVal)
     const hourlyUsage = new Map<number, {
         agents: Map<ProjectUsagePlatform, {
             costUSD: number

@@ -3,12 +3,13 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
+import dayjs from 'dayjs'
 import { afterEach, describe, expect, it } from 'vitest'
 import { UsageCacheRepository } from '../server/repositories/sqlite/usage-cache.repository'
 import { createEmptyLoadUsageResult } from '../shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '../shared/types/ai'
 import { buildHomeDashboardModules } from '../shared/utils/analysis-dashboard'
-import { nowIsoString, previousDateKey, todayDateKey, useDateFormat } from '../shared/utils/date'
+import { previousDateKey, todayDateKey, useDateFormat } from '../shared/utils/date'
 import { formatDateLabelFromDateKey } from '../shared/utils/usage-dashboard'
 
 const createdRoots: string[] = []
@@ -30,7 +31,7 @@ describe('home dashboard today insights', () => {
         const todayDateKeyVal = todayDateKey()
         const previousDateKeyVal = previousDateKey(todayDateKeyVal)
         const todayHour = Number(useDateFormat(Date.now(), 'hour') ?? new Date().getHours())
-        const todayTimestamp = nowIsoString()
+        const todayTimestamp = dayjs().toISOString()
         const previousTimestamp = useDateFormat(Date.now() - 24 * 60 * 60 * 1000, 'iso') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()
 
         const bootstrap = {

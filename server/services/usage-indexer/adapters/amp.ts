@@ -1,19 +1,13 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { basename, join } from 'node:path'
 import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
-import { normalizeStringValue, normalizeUnknownRecord } from '#shared/utils/normalize'
 import { parseJsonFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
-import {
-    addFragmentInteraction,
-    createSessionFragment,
-    toDiscoveredUsageFile,
-} from '../session-fragment'
+import { addFragmentInteraction, createSessionFragment, toDiscoveredUsageFile } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
     calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
-    normalizeUsageNumber,
     toInteractionUsage,
 } from './shared'
 
@@ -31,17 +25,16 @@ export const ampUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'amp'))
     },
     parseFile(filePath, resolvePricing) {
-        const data = parseJsonFile(filePath)
-        const record = normalizeUnknownRecord(data)
-        const sessionId = normalizeStringValue(record?.id) || basename(filePath, '.json')
-        const events = record?.usageLedger && normalizeUnknownRecord(record.usageLedger)
+        const record = parseJsonFile<Record<string, any>>(filePath)
+        const sessionId = record?.id.trim() || basename(filePath, '.json')
+        const events = record?.usageLedger && record.usageLedger
             ? (record.usageLedger as Record<string, unknown>).events
             : null
         const eventList = Array.isArray(events) ? events : []
         const cacheTokensByMessageId = getAmpCacheTokens(record?.messages)
         const startedAt = eventList
-            .map(event => normalizeUnknownRecord(event))
-            .map(event => toIsoString(event?.timestamp))
+            .map(event => event)
+            .map(event => toIsoString((event as Record<string, any> | undefined)?.timestamp))
             .find(Boolean) ?? null
         const fragment = createSessionFragment({
             project: 'amp',
@@ -52,21 +45,21 @@ export const ampUsageAdapter = {
         })
 
         for (let index = 0; index < eventList.length; index += 1) {
-            const event = normalizeUnknownRecord(eventList[index])
+            const event = eventList[index]
 
             if (!event) {
                 continue
             }
 
-            const model = normalizeStringValue(event.model)
-            const timestamp = toIsoString(event.timestamp)
-            const tokens = normalizeUnknownRecord(event.tokens)
+            const model = (event as Record<string, any>).model.trim()
+            const timestamp = toIsoString((event as Record<string, any>).timestamp)
+            const tokens = (event as Record<string, any>).tokens
 
             if (!model || !timestamp || !tokens) {
                 continue
             }
 
-            const messageId = Number.isFinite(event.toMessageId) ? Number(event.toMessageId) : null
+            const messageId = Number.isFinite((event as Record<string, any>).toMessageId) ? Number((event as Record<string, any>).toMessageId) : null
             const [cacheCreationTokens = 0, cacheReadTokens = 0] = messageId != null
                 ? (cacheTokensByMessageId.get(messageId) ?? [0, 0])
                 : [0, 0]
@@ -74,9 +67,9 @@ export const ampUsageAdapter = {
                 ...applyTotalUsageAsExtra({
                     cacheCreationTokens,
                     cacheReadTokens,
-                    inputTokens: normalizeUsageNumber(tokens.input as number | undefined),
-                    outputTokens: normalizeUsageNumber(tokens.output as number | undefined),
-                    totalTokens: normalizeUsageNumber(tokens.total as number | undefined),
+                    inputTokens: (tokens as Record<string, any>).input as number | undefined,
+                    outputTokens: (tokens as Record<string, any>).output as number | undefined,
+                    totalTokens: (tokens as Record<string, any>).total as number | undefined,
                 }),
             })
 
@@ -119,17 +112,17 @@ function getAmpCacheTokens(messages: unknown) {
     }
 
     for (const message of messages) {
-        const record = normalizeUnknownRecord(message)
+        const record = message
 
-        if (!record || normalizeStringValue(record.role) !== 'assistant' || !Number.isFinite(record.messageId)) {
+        if (!record || (record as Record<string, any>).role !== 'assistant' || !Number.isFinite((record as Record<string, any>).messageId)) {
             continue
         }
 
-        const usage = normalizeUnknownRecord(record.usage)
+        const usage = (record as Record<string, any>).usage
 
-        cacheTokens.set(Number(record.messageId), [
-            normalizeUsageNumber(usage?.cacheCreationInputTokens as number | undefined),
-            normalizeUsageNumber(usage?.cacheReadInputTokens as number | undefined),
+        cacheTokens.set(Number((record as Record<string, any>).messageId), [
+            (usage as Record<string, any> | undefined)?.cacheCreationInputTokens as number | undefined ?? 0,
+            (usage as Record<string, any> | undefined)?.cacheReadInputTokens as number | undefined ?? 0,
         ])
     }
 

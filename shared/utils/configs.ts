@@ -1,4 +1,6 @@
 import type { IConfig, IRuntimeConfig } from '#shared/types/config'
+import { homedir } from 'node:os'
+import { resolve } from 'node:path'
 import {
     getAmpPaths,
     getClaudeCodePaths,
@@ -6,7 +8,6 @@ import {
     getCodexPath,
     getCopilotPaths,
     getDroidPaths,
-    getGeminiPath,
     getGoosePaths,
     getHermesPaths,
     getKiloPaths,
@@ -29,7 +30,7 @@ export function resolveConfig(rc: IRuntimeConfig): IConfig {
         copilotPaths: getCopilotPaths(),
         codexPath: getCodexPath(),
         droidPaths: getDroidPaths(),
-        geminiPath: getGeminiPath(),
+        geminiPath: resolve(homedir(), '.gemini'),
         goosePaths: getGoosePaths(),
         hermesPaths: getHermesPaths(),
         kiloPaths: getKiloPaths(),
