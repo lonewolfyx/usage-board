@@ -434,8 +434,11 @@ export async function getUsageCacheUpdateState(
         const discoveredFiles = await discoverUsageFiles(config)
 
         return {
+            cachedFiles: cachedFiles.length,
+            changedFiles: discoveredFiles.length,
             discoveredFiles,
             hasChanges: true,
+            removedFiles: 0,
             updatedPlatforms: getUpdatedPlatforms(discoveredFiles, []),
         }
     }
@@ -445,8 +448,11 @@ export async function getUsageCacheUpdateState(
     const staleFiles = discoveredFiles.filter(file => file.mtimeMs > cacheUpdatedAt)
 
     return {
+        cachedFiles: cachedFiles.length,
+        changedFiles: changedFiles.length,
         discoveredFiles,
         hasChanges: changedFiles.length > 0 || removedFiles.length > 0 || staleFiles.length > 0,
+        removedFiles: removedFiles.length,
         updatedPlatforms: getUpdatedPlatforms([...changedFiles, ...staleFiles], removedFiles),
     }
 }
