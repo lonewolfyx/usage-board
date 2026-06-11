@@ -53,7 +53,8 @@
                                 :tooltip="PROJECT_USAGE_PLATFORM_META[platform].label"
                             >
                                 <NuxtLink :to="`/${PROJECT_USAGE_PLATFORM_META[platform].slug}`">
-                                    <Icon :name="PROJECT_USAGE_PLATFORM_META[platform].aiIcon" class="size-5" />
+                                    <Icon :name="PROJECT_USAGE_PLATFORM_META[platform].aiIcon" class="dark:hidden size-5" />
+                                    <Icon :name="`${PROJECT_USAGE_PLATFORM_META[platform].aiIcon}-dark`" class="hidden dark:inline-block size-5" />
                                     <span>{{ PROJECT_USAGE_PLATFORM_META[platform].label }}</span>
                                 </NuxtLink>
                             </SidebarMenuButton>
