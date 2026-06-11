@@ -125,12 +125,19 @@
                                         mode="svg"
                                         name="lucide:layout-dashboard"
                                     />
-                                    <Icon
-                                        v-else
-                                        :name="tab.aiIcon!"
-                                        aria-hidden="true"
-                                        class="size-5 text-muted-foreground"
-                                    />
+                                    <template v-else>
+                                        <Icon
+                                            :name="tab.aiIcon!"
+                                            aria-hidden="true"
+                                            class="dark:hidden size-5 text-muted-foreground"
+                                        />
+
+                                        <Icon
+                                            :name="`${tab.aiIcon!}-dark`"
+                                            aria-hidden="true"
+                                            class="hidden dark:inline-block size-5 text-muted-foreground"
+                                        />
+                                    </template>
 
                                     <div class="min-w-0 flex-1">
                                         <div class="flex flex-col items-start gap-1.5">
