@@ -162,10 +162,10 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
         }
 
         if (stats.removedFiles > 0) {
-            log.info(`检测到 ${stats.removedFiles} 个已删除的历史会话文件，将同步更新 cache.sqlite`)
+            log.info(`检测到 ${stats.removedFiles} 个已删除的历史会话文件，将同步更新 DB`)
         }
         else if (stats.changedFiles === 0) {
-            log.info(`cache.sqlite 已命中 ${stats.cachedFiles} 个会话记录文件，无需重新解析源文件`)
+            log.info(`DB 已命中 ${stats.cachedFiles} 个会话记录文件，无需重新解析源文件`)
         }
     }
 
@@ -228,7 +228,7 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
         }
 
         const sessionSummary = formatUpdatedSessionSummary(stats.updatedSessions)
-        const message = `cache.sqlite 写入中：${stats.sessionCount} 条会话记录，${stats.projectCount} 个项目${sessionSummary}`
+        const message = `DB 写入中：${stats.sessionCount} 条会话记录，${stats.projectCount} 个项目${sessionSummary}`
 
         if (this.animated) {
             this.cacheProgress = progress({
@@ -259,7 +259,7 @@ export class UsageCleaningConsoleReporter implements UsageCleaningReporter {
     }
 
     finishCacheWrite(stats: UsageCleaningCacheWriteStats) {
-        const message = `cache.sqlite 写入完成：${stats.sessionCount} 条会话记录，${stats.agentCount} 个 agent${formatUpdatedSessionSummary(stats.updatedSessions)}`
+        const message = `DB 写入完成：${stats.sessionCount} 条会话记录，${stats.agentCount} 个 agent${formatUpdatedSessionSummary(stats.updatedSessions)}`
 
         if (this.animated) {
             this.cacheProgress?.stop(message)
