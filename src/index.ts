@@ -26,6 +26,7 @@ cli.command('', 'Start tokens usage analysis')
 
         const root = dirname(fileURLToPath(import.meta.url))
         const outputDir = resolve(root, './')
+        process.env.USAGE_BOARD_PRICING_DATA_DIR = resolve(outputDir, 'public', 'pricing-data')
 
         const app = await createRuntimeServer({
             path: outputDir,
