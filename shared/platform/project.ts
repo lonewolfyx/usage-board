@@ -74,13 +74,13 @@ export function buildProjectUsageDataModuleFromDetail(
 export function buildProjectUsageDetailFromPlatformSessions(
     projectName: string,
     platformSessions: ProjectUsagePlatformRecord<ProjectSessionUsageItem[]>,
-    precomputedEvents: UsageAggregateEvent[],
+    eventsByPlatform: ProjectUsagePlatformRecord<UsageAggregateEvent[]>,
 ): ProjectUsageDetail {
     const analyzing = Object.fromEntries(
         PROJECT_USAGE_PLATFORMS.map(platform => [
             platform,
             {
-                ...buildProjectLoadUsageResult(platformSessions[platform], platform, precomputedEvents),
+                ...buildProjectLoadUsageResult(platformSessions[platform], platform, eventsByPlatform[platform]),
                 sessions: platformSessions[platform],
             },
         ]),

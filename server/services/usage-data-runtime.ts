@@ -244,11 +244,14 @@ class UsageDataRuntime {
             return null
         }
 
-        const events = PROJECT_USAGE_PLATFORMS.flatMap(platform =>
-            (this.state.eventsByPlatform?.[platform] ?? []).filter(event => event.project === projectName),
-        )
+        const eventsByPlatform = Object.fromEntries(
+            PROJECT_USAGE_PLATFORMS.map(platform => [
+                platform,
+                (this.state.eventsByPlatform?.[platform] ?? []).filter(event => event.project === projectName),
+            ]),
+        ) as ProjectUsagePlatformRecord<UsageAggregateEvent[]>
 
-        return buildProjectUsageDetailFromPlatformSessions(projectName, platformSessions, events)
+        return buildProjectUsageDetailFromPlatformSessions(projectName, platformSessions, eventsByPlatform)
     }
 
     private refreshLiveBootstrapInBackground() {
