@@ -9,17 +9,19 @@ import type {
     TokenCostUsage,
 } from '#shared/types/platform'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { dirname, resolve } from 'node:path'
 import { roundCurrency, uniqueItems } from '#shared/utils/usage-dashboard'
 
 const MILLION = 1_000_000
 const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 1500
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 const DEFAULT_MODELS_DEV_PRICING_URL = 'https://models.dev/api.json'
-const LITELLM_PRICING_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/litellm-pricing.json', import.meta.url))
-const MODELS_DEV_PRICING_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/models-dev-pricing.json', import.meta.url))
-const FAST_MULTIPLIER_OVERRIDES_SNAPSHOT_PATH = fileURLToPath(new URL('./pricing-data/fast-multiplier-overrides.json', import.meta.url))
+const PRICING_DATA_DIR = process.env.USAGE_BOARD_PRICING_DATA_DIR?.trim()
+    ? resolve(process.env.USAGE_BOARD_PRICING_DATA_DIR)
+    : resolve(process.cwd(), 'public', 'pricing-data')
+const LITELLM_PRICING_SNAPSHOT_PATH = resolve(PRICING_DATA_DIR, 'litellm-pricing.json')
+const MODELS_DEV_PRICING_SNAPSHOT_PATH = resolve(PRICING_DATA_DIR, 'models-dev-pricing.json')
+const FAST_MULTIPLIER_OVERRIDES_SNAPSHOT_PATH = resolve(PRICING_DATA_DIR, 'fast-multiplier-overrides.json')
 const MODEL_DATE_SUFFIX_DIGITS = 8
 
 const DEFAULT_FAST_MULTIPLIER_EXACT_OVERRIDES: Record<string, number> = {
