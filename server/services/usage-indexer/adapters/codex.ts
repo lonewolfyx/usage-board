@@ -16,7 +16,6 @@ import {
     normalizeRawUsage,
     normalizeRepositoryUrl,
     parseJsonlFile,
-    subtractRawUsage,
     toIsoString,
 } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -66,7 +65,6 @@ interface CodexPayload extends CodexUsageContainer {
     }
     id?: string
     info?: {
-        last_token_usage?: RawUsage | null
         total_token_usage?: RawUsage | null
     } | null
     type?: string
@@ -112,9 +110,15 @@ export const codexUsageAdapter = {
             threadName: `Session for ${project}`,
         })
         const speed = file.cacheSignature === `${CODEX_SPEED_CACHE_PREFIX}fast` ? 'fast' : 'standard'
-        let previousTotals: RawUsage | null = null
         let currentModel: string | undefined
         let currentModelIsFallback = false
+        let latestInteractiveSnapshot: {
+            index: number
+            isFallbackModel: boolean
+            model: string
+            timestamp: string
+            usage: NonNullable<ReturnType<typeof getCodexInteractionUsage>>
+        } | null = null
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
@@ -139,11 +143,14 @@ export const codexUsageAdapter = {
                 currentModelIsFallback = false
             }
 
-            const rawUsage = getCodexRawUsage(line, previousTotals)
-            const totalUsage = normalizeRawUsage(payload?.info?.total_token_usage as RawUsage | null | undefined)
+            const effectiveType = payloadType || lineType || 'event'
+            const isInteractiveTokenCount = lineType === 'event_msg' && payloadType === 'token_count'
+            const rawUsage = isInteractiveTokenCount
+                ? normalizeRawUsage(payload?.info?.total_token_usage)
+                : getHeadlessCodexRawUsage(line)
 
-            if (totalUsage) {
-                previousTotals = totalUsage
+            if (!timestamp) {
+                continue
             }
 
             let model = extractedModel ?? currentModel
@@ -159,35 +166,70 @@ export const codexUsageAdapter = {
                 isFallbackModel = true
             }
 
-            const effectiveType = payloadType || lineType || 'event'
-
-            if (effectiveType !== 'token_count') {
+            if (!rawUsage) {
                 continue
             }
 
-            const usage = rawUsage
-                ? getCodexInteractionUsage(rawUsage)
-                : null
-            const modelLookupCandidates = model ? [model] : [CODEX_FALLBACK_MODEL]
+            const usage = getCodexInteractionUsage(rawUsage)
+
+            if (!usage) {
+                continue
+            }
+
+            const resolvedModel = model ?? CODEX_FALLBACK_MODEL
+
+            if (!model) {
+                isFallbackModel = true
+                currentModel = resolvedModel
+                currentModelIsFallback = true
+            }
+
+            if (isInteractiveTokenCount) {
+                latestInteractiveSnapshot = {
+                    index,
+                    isFallbackModel,
+                    model: resolvedModel,
+                    timestamp,
+                    usage,
+                }
+                continue
+            }
 
             addFragmentInteraction(fragment, {
-                costUSD: usage?.costUSD ?? 0,
-                dedupeKey: usage && timestamp
-                    ? getCodexDedupeKey(sessionId, timestamp, model ?? CODEX_FALLBACK_MODEL, usage)
-                    : null,
+                costUSD: usage.costUSD,
+                dedupeKey: getCodexDedupeKey(sessionId, timestamp, resolvedModel, usage),
                 index,
-                model: model ?? null,
-                modelLookupCandidates,
+                model: resolvedModel,
+                modelLookupCandidates: [resolvedModel],
                 rawCostUSD: null,
-                role: getCodexRole(line, rawUsage !== null),
+                role: getCodexRole(line, true),
                 speed,
                 timestamp,
                 type: effectiveType,
-                usage: usage ? { ...usage, isFallbackModel } : null,
+                usage: { ...usage, isFallbackModel },
             })
         }
 
-        return [fragment]
+        if (latestInteractiveSnapshot) {
+            addFragmentInteraction(fragment, {
+                costUSD: latestInteractiveSnapshot.usage.costUSD,
+                dedupeKey: `codex:${sessionId}:token-count-snapshot`,
+                index: latestInteractiveSnapshot.index,
+                model: latestInteractiveSnapshot.model,
+                modelLookupCandidates: [latestInteractiveSnapshot.model],
+                rawCostUSD: null,
+                role: 'usage',
+                speed,
+                timestamp: latestInteractiveSnapshot.timestamp,
+                type: 'token_count_snapshot',
+                usage: {
+                    ...latestInteractiveSnapshot.usage,
+                    isFallbackModel: latestInteractiveSnapshot.isFallbackModel,
+                },
+            })
+        }
+
+        return fragment.interactions.length > 0 ? [fragment] : []
     },
     watchPatterns(config) {
         return [
@@ -196,29 +238,6 @@ export const codexUsageAdapter = {
         ]
     },
 } satisfies UsagePlatformAdapter
-
-function getCodexRawUsage(line: CodexLogLine, previousTotals: RawUsage | null) {
-    const payload = line.payload
-    const lineType = typeof line.type === 'string' ? line.type.trim() : ''
-    const payloadType = typeof payload?.type === 'string' ? payload.type.trim() : ''
-
-    if (lineType === 'event_msg' && payloadType === 'token_count') {
-        const info = payload?.info
-        const lastUsage = normalizeRawUsage(info?.last_token_usage)
-        const totalUsage = normalizeRawUsage(info?.total_token_usage)
-        const sessionUsage = lastUsage ?? (totalUsage ? subtractRawUsage(totalUsage, previousTotals) : null)
-
-        return sessionUsage
-            && sessionUsage.input_tokens === 0
-            && sessionUsage.cached_input_tokens === 0
-            && sessionUsage.output_tokens === 0
-            && sessionUsage.reasoning_output_tokens === 0
-            ? null
-            : sessionUsage
-    }
-
-    return getHeadlessCodexRawUsage(line)
-}
 
 function getCodexInteractionUsage(
     rawUsage: RawUsage,
@@ -365,14 +384,14 @@ function readHeadlessCodexUsage(usage: CodexHeadlessUsage): RawUsage | null {
         || usage.total_tokens != null
 
     if (hasStandardUsageField) {
-        const normalized = normalizeRawUsage(usage as unknown as RawUsage)
+        const normalized = normalizeRawUsage(usage)
 
         if (normalized) {
             return normalized
         }
     }
 
-    const nfn = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? v : null
+    const nfn = (v: number | undefined) => typeof v === 'number' && Number.isFinite(v) ? v : null
     const inputTokens = Math.max(
         0,
         Math.trunc(nfn(usage.input_tokens) ?? nfn(usage.prompt_tokens) ?? 0),

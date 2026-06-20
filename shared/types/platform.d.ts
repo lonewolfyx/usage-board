@@ -13,7 +13,6 @@ export interface SessionLogLine {
     payload?: {
         id?: string
         info?: {
-            last_token_usage?: TokenUsageSnapshot
             total_token_usage?: TokenUsageSnapshot
         } | null
         message?: string
