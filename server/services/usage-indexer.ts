@@ -191,39 +191,6 @@ export async function buildIncrementalUsageIndex(
             .map(file => parsedByPath.get(file.path) ?? (hydratedCachedFiles ? cachedFilesByPath.get(file.path) : undefined) ?? null)
             .filter((file): file is IndexedUsageSourceFile => file !== null)
         const dedupedInteractions = selectDedupedInteractions(platformIndexedFiles, platform)
-
-        repository.deleteSessionsBySourceFiles(platformIndexedFiles.map(file => file.path))
-        repository.upsertInteractions(dedupedInteractions.map(({ fragment, interaction }, index) => ({
-            sessionId: fragment.sessionId,
-            interactionIndex: interaction.index ?? index,
-            platform,
-            projectName: fragment.project,
-            repository: fragment.repository,
-            threadName: fragment.threadName,
-            sessionStartedAt: fragment.startedAt,
-            timestamp: interaction.timestamp,
-            role: interaction.role,
-            type: interaction.type,
-            model: interaction.model,
-            inputToken: interaction.usage?.inputTokens ?? 0,
-            outputToken: interaction.usage?.outputTokens ?? 0,
-            cachedInputToken: interaction.usage?.cachedInputTokens ?? 0,
-            cacheCreation: interaction.usage?.cacheCreationTokens ?? 0,
-            cacheRead: interaction.usage?.cacheReadTokens ?? 0,
-            reasoningToken: interaction.usage?.reasoningOutputTokens ?? 0,
-            totalToken: interaction.usage?.totalTokens ?? 0,
-            provider: interaction.provider ?? null,
-            rawCostUsd: interaction.rawCostUSD ?? (interaction.costUSD > 0 ? interaction.costUSD : null),
-            speed: interaction.speed ?? null,
-            isFallbackModel: interaction.usage?.isFallbackModel ?? false,
-            toolTokens: interaction.usage?.toolTokens ?? 0,
-            extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
-            dedupeKey: interaction.dedupeKey ?? null,
-            fallbackDedupeKey: interaction.fallbackDedupeKey ?? null,
-            sourceFile: platformIndexedFiles.find(f => f.payload.includes(fragment))?.path ?? null,
-            isSidechain: interaction.isSidechain ?? false,
-        })))
-
         const platformSessions = buildPlatformSessionsFromFiles(platformIndexedFiles, platform)
         const platformEvents = buildPlatformEvents(platformIndexedFiles, platform)
 
@@ -295,6 +262,13 @@ export async function buildIncrementalUsageIndex(
     for (const platform of updatedPlatforms) {
         const platformFiles = indexedFiles.filter(file => file.platform === platform)
         const dedupedInteractions = selectDedupedInteractions(platformFiles, platform)
+        const sourceFileByFragment = new Map<IndexedUsageSessionFragment, string>()
+
+        for (const file of platformFiles) {
+            for (const fragment of file.payload) {
+                sourceFileByFragment.set(fragment, file.path)
+            }
+        }
 
         repository.deleteSessionsBySourceFiles(platformFiles.map(file => file.path))
         repository.upsertInteractions(dedupedInteractions.map(({ fragment, interaction }, index) => ({
@@ -324,7 +298,7 @@ export async function buildIncrementalUsageIndex(
             extraTotalTokens: interaction.usage?.extraTotalTokens ?? 0,
             dedupeKey: interaction.dedupeKey ?? null,
             fallbackDedupeKey: interaction.fallbackDedupeKey ?? null,
-            sourceFile: platformFiles.find(f => f.payload.includes(fragment))?.path ?? null,
+            sourceFile: sourceFileByFragment.get(fragment) ?? null,
             isSidechain: interaction.isSidechain ?? false,
         })))
     }
