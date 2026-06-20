@@ -13,14 +13,11 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { openSqliteDatabase } from '#server/utils/sqlite'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
+import { getLocalDayQueryBoundaries, previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
 import { getMonthKey } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
 import { createUsageInteractionIdentity, createUsageSessionIdentity } from '#shared/utils/usage-identity'
 import dayjs from 'dayjs'
-import utc from 'dayjs/plugin/utc.js'
-
-dayjs.extend(utc)
 
 const SCHEMA_VERSION = 5
 
@@ -725,7 +722,7 @@ export class UsageCacheRepository {
         const todayDate = todayStartOfDay()
         const todayDateKeyVal = todayDateKey()
         const previousDateKeyVal = previousDateKey(todayDateKeyVal)
-        const { previousDayEnd, previousDayStart, todayEnd, todayStart } = getUtcDayBoundaries(todayDate)
+        const { previousDayEnd, previousDayStart, todayEnd, todayStart } = getLocalDayQueryBoundaries(todayDate)
 
         // Today/previous session counts (by session_started_at)
         const sessionCounts = this.database.prepare<{
@@ -977,18 +974,6 @@ export class UsageCacheRepository {
                 package_version = excluded.package_version
         `).run(version, packageVersion)
     }
-}
-
-function getUtcDayBoundaries(localDate: Date) {
-    const year = localDate.getFullYear()
-    const month = localDate.getMonth()
-    const day = localDate.getDate()
-    const todayStart = dayjs.utc(Date.UTC(year, month, day)).toDate().toISOString()
-    const todayEnd = dayjs.utc(Date.UTC(year, month, day + 1)).toDate().toISOString()
-    const previousDayStart = dayjs.utc(Date.UTC(year, month, day - 1)).toDate().toISOString()
-    const previousDayEnd = todayStart
-
-    return { previousDayEnd, previousDayStart, todayEnd, todayStart }
 }
 
 function mkdirParentDirectory(filePath: string) {

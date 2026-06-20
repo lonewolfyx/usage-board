@@ -64,6 +64,22 @@ export function previousDateKey(dateKey: string): string {
 }
 
 /**
+ * Returns ISO query boundaries for the local natural day containing the input.
+ */
+export function getLocalDayQueryBoundaries(value: DateInput) {
+    const todayStart = dayjs(value as dayjs.ConfigType).startOf('day')
+    const todayEnd = todayStart.add(1, 'day')
+    const previousDayStart = todayStart.subtract(1, 'day')
+
+    return {
+        previousDayEnd: todayStart.toISOString(),
+        previousDayStart: previousDayStart.toISOString(),
+        todayEnd: todayEnd.toISOString(),
+        todayStart: todayStart.toISOString(),
+    }
+}
+
+/**
  * Safely converts any value to an ISO string.
  * Returns null for invalid or empty input.
  */
