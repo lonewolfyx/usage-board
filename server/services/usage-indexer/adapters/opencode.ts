@@ -13,7 +13,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -43,7 +42,7 @@ export const openCodeUsageAdapter = {
         return Array.from(new Set(discovered))
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'opencode'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         if (filePath.endsWith('.db')) {
             const database = openSqliteDatabase(filePath, { readOnly: true })
 
@@ -58,7 +57,7 @@ export const openCodeUsageAdapter = {
                 for (const row of rows) {
                     const record = parse(row.data) as Record<string, any> | null
                     const entry = record
-                        ? getOpenCodeMessageEntry(record, resolvePricing, {
+                        ? getOpenCodeMessageEntry(record, {
                                 interactionId: row.id,
                                 sessionId: row.session_id,
                             })
@@ -108,7 +107,7 @@ export const openCodeUsageAdapter = {
         }
 
         const entry = record
-            ? getOpenCodeMessageEntry(record, resolvePricing, {
+            ? getOpenCodeMessageEntry(record, {
                     interactionId,
                     sessionId: record.sessionID.trim(),
                 })
@@ -165,7 +164,6 @@ async function getOpenCodeDatabaseFile(root: string) {
 
 function getOpenCodeMessageEntry(
     value: Record<string, any>,
-    resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1],
     options: {
         interactionId?: string | null
         sessionId?: string | null
@@ -202,24 +200,19 @@ function getOpenCodeMessageEntry(
     const sessionId = options.sessionId || 'unknown'
     const rawCost = value.cost
     const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
-    const costUSD = directCost && directCost > 0
-        ? directCost
-        : calculateUsageCostFromCandidates(usage, getOpenCodeModelCandidates(model, provider), resolvePricing, {
-                includeExtraTotalAsOutput: true,
-                includeReasoningAsOutput: false,
-            })
+    const modelLookupCandidates = getOpenCodeModelCandidates(model, provider)
 
     return {
         interactionId: options.interactionId || value.id.trim() || `${sessionId}:${timestamp}:${model}`,
         model,
-        modelLookupCandidates: getOpenCodeModelCandidates(model, provider),
+        modelLookupCandidates,
         provider,
         rawCostUSD: directCost && directCost > 0 ? directCost : null,
         sessionId,
         timestamp,
         usage: toInteractionUsage({
             ...usage,
-            costUSD,
+            costUSD: directCost && directCost > 0 ? directCost : 0,
         }),
     }
 }

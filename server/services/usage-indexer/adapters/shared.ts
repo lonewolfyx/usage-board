@@ -1,18 +1,6 @@
-import type { ModelPricing, ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { statSync } from 'node:fs'
 import { useDateFormat } from '#shared/utils/date'
-
-const ZERO_PRICING: ModelPricing = {
-    cachedInputCostPerMTokens: 0,
-    cacheCreationInputCostPerMTokens: 0,
-    inputCostPerMTokens: 0,
-    outputCostPerMTokens: 0,
-}
-
-export async function createZeroPricingResolver(): Promise<ModelPricingResolver> {
-    return () => ZERO_PRICING
-}
 
 export function applyTotalUsageFallback(usage: {
     cacheCreationTokens?: number
@@ -123,19 +111,6 @@ export function isZeroInteractionUsage(usage: Pick<ProjectInteractionUsage, 'cac
         && usage.reasoningOutputTokens <= 0
         && (usage.extraTotalTokens ?? 0) <= 0
         && (usage.toolTokens ?? 0) <= 0
-}
-
-export function calculateUsageCostFromCandidates(
-    usage: Pick<ProjectInteractionUsage, 'cacheCreationTokens' | 'cachedInputTokens' | 'extraTotalTokens' | 'inputTokens' | 'outputTokens' | 'reasoningOutputTokens' | 'toolTokens'>,
-    candidates: string[],
-    resolvePricing: ModelPricingResolver,
-    options: { includeExtraTotalAsOutput?: boolean, includeReasoningAsOutput?: boolean } = {},
-) {
-    void usage
-    void candidates
-    void resolvePricing
-    void options
-    return 0
 }
 
 export function getFileModifiedAtIso(filePath: string) {

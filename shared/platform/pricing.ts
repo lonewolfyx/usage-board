@@ -141,10 +141,113 @@ interface PricingSnapshotState {
     }
 }
 
+interface PricingRemoteFetchResult<TDataset> {
+    dataset: TDataset
+    error: string | null
+    ok: boolean
+}
+
+export interface PricingSnapshotRefreshResult {
+    fastMultiplierOverrideCount: number
+    liteLLM: {
+        changed: boolean
+        modelCount: number
+        path: string
+        remoteError: string | null
+        remoteOk: boolean
+    }
+    modelsDev: {
+        changed: boolean
+        modelCount: number
+        path: string
+        remoteError: string | null
+        remoteOk: boolean
+    }
+    source: 'local' | 'remote'
+    state: PricingSnapshotState
+}
+
 let pricingSnapshotPromise: Promise<PricingSnapshotState> | null = null
 
 export function resetRemotePricingCache() {
     pricingSnapshotPromise = null
+}
+
+export async function refreshPricingDataSnapshots(options: FetchLiteLLMPricingDatasetOptions = {}): Promise<PricingSnapshotRefreshResult> {
+    resetRemotePricingCache()
+
+    const liteLLMLocal = await readPricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, createFallbackLiteLLMPricingDataset())
+    const modelsDevLocal = await readObjectSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, {})
+    const fastMultiplierOverrides = await readFastMultiplierOverridesSnapshot()
+    const fetcher = options.fetcher ?? globalThis.fetch
+
+    if (typeof fetcher !== 'function') {
+        const state = {
+            fastMultiplierOverrides,
+            liteLLM: liteLLMLocal,
+            modelsDev: createModelsDevPricingDataset(modelsDevLocal),
+        }
+        pricingSnapshotPromise = Promise.resolve(state)
+
+        return {
+            fastMultiplierOverrideCount: Object.keys(fastMultiplierOverrides.exact).length + Object.keys(fastMultiplierOverrides.normalizedPrefix).length,
+            liteLLM: {
+                changed: false,
+                modelCount: Object.keys(state.liteLLM).length,
+                path: LITELLM_PRICING_SNAPSHOT_PATH,
+                remoteError: 'fetch unavailable',
+                remoteOk: false,
+            },
+            modelsDev: {
+                changed: false,
+                modelCount: Object.keys(state.modelsDev).length,
+                path: MODELS_DEV_PRICING_SNAPSHOT_PATH,
+                remoteError: 'fetch unavailable',
+                remoteOk: false,
+            },
+            source: 'local',
+            state,
+        }
+    }
+
+    const [liteLLMRemote, modelsDevRemote] = await Promise.all([
+        fetchLiteLLMPricingDataset(fetcher),
+        fetchModelsDevPricingSnapshot(fetcher),
+    ])
+    const liteLLM = mergeMissingPricing(liteLLMLocal, liteLLMRemote.dataset)
+    const modelsDev = mergeMissingModelsDevSnapshots(modelsDevLocal, modelsDevRemote.dataset)
+
+    await Promise.all([
+        liteLLM.changed ? writePricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, liteLLM.dataset) : Promise.resolve(),
+        modelsDev.changed ? writePricingSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, modelsDev.dataset) : Promise.resolve(),
+    ])
+
+    const state = {
+        fastMultiplierOverrides,
+        liteLLM: liteLLM.dataset,
+        modelsDev: createModelsDevPricingDataset(modelsDev.dataset),
+    }
+    pricingSnapshotPromise = Promise.resolve(state)
+
+    return {
+        fastMultiplierOverrideCount: Object.keys(fastMultiplierOverrides.exact).length + Object.keys(fastMultiplierOverrides.normalizedPrefix).length,
+        liteLLM: {
+            changed: liteLLM.changed,
+            modelCount: Object.keys(state.liteLLM).length,
+            path: LITELLM_PRICING_SNAPSHOT_PATH,
+            remoteError: liteLLMRemote.error,
+            remoteOk: liteLLMRemote.ok,
+        },
+        modelsDev: {
+            changed: modelsDev.changed,
+            modelCount: Object.keys(state.modelsDev).length,
+            path: MODELS_DEV_PRICING_SNAPSHOT_PATH,
+            remoteError: modelsDevRemote.error,
+            remoteOk: modelsDevRemote.ok,
+        },
+        source: liteLLMRemote.ok || modelsDevRemote.ok ? 'remote' : 'local',
+        state,
+    }
 }
 
 export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricingResolverOptions = {}): Promise<ModelPricingResolver> {
@@ -295,38 +398,7 @@ async function loadPricingSnapshots(options: FetchLiteLLMPricingDatasetOptions =
         return pricingSnapshotPromise
     }
 
-    pricingSnapshotPromise = (async () => {
-        const liteLLMLocal = await readPricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, createFallbackLiteLLMPricingDataset())
-        const modelsDevLocal = await readObjectSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, {})
-        const fastMultiplierOverrides = await readFastMultiplierOverridesSnapshot()
-        const fetcher = options.fetcher ?? globalThis.fetch
-
-        if (typeof fetcher !== 'function') {
-            return {
-                liteLLM: liteLLMLocal,
-                modelsDev: createModelsDevPricingDataset(modelsDevLocal),
-                fastMultiplierOverrides,
-            }
-        }
-
-        const [liteLLMRemote, modelsDevRemote] = await Promise.all([
-            fetchLiteLLMPricingDataset(fetcher),
-            fetchModelsDevPricingSnapshot(fetcher),
-        ])
-        const liteLLM = mergeMissingPricing(liteLLMLocal, liteLLMRemote)
-        const modelsDev = mergeMissingModelsDevSnapshots(modelsDevLocal, modelsDevRemote)
-
-        await Promise.all([
-            liteLLM.changed ? writePricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, liteLLM.dataset) : Promise.resolve(),
-            modelsDev.changed ? writePricingSnapshot(MODELS_DEV_PRICING_SNAPSHOT_PATH, modelsDev.dataset) : Promise.resolve(),
-        ])
-
-        return {
-            liteLLM: liteLLM.dataset,
-            modelsDev: createModelsDevPricingDataset(modelsDev.dataset),
-            fastMultiplierOverrides,
-        }
-    })()
+    pricingSnapshotPromise = refreshPricingDataSnapshots(options).then(result => result.state)
 
     return pricingSnapshotPromise
 }
@@ -382,37 +454,65 @@ async function writePricingSnapshot(path: string, dataset: Record<string, unknow
     await writeFile(path, `${JSON.stringify(dataset, null, 2)}\n`, 'utf8')
 }
 
-async function fetchLiteLLMPricingDataset(fetcher: typeof fetch): Promise<LiteLLMPricingDataset> {
+async function fetchLiteLLMPricingDataset(fetcher: typeof fetch): Promise<PricingRemoteFetchResult<LiteLLMPricingDataset>> {
     try {
         const response = await fetchPricingDatasetResponse(fetcher, DEFAULT_LITELLM_PRICING_URL)
 
         if (!response.ok) {
-            return {}
+            return {
+                dataset: {},
+                error: `${response.status} ${response.statusText}`.trim(),
+                ok: false,
+            }
         }
 
         const data = await response.json()
-        return isLiteLLMPricingDataset(data) ? data : {}
+        const dataset = isLiteLLMPricingDataset(data) ? data : {}
+
+        return {
+            dataset,
+            error: Object.keys(dataset).length > 0 ? null : 'invalid LiteLLM pricing payload',
+            ok: Object.keys(dataset).length > 0,
+        }
     }
-    catch {
-        return {}
+    catch (error) {
+        return {
+            dataset: {},
+            error: error instanceof Error ? error.message : String(error),
+            ok: false,
+        }
     }
 }
 
-async function fetchModelsDevPricingSnapshot(fetcher: typeof fetch): Promise<Record<string, unknown>> {
+async function fetchModelsDevPricingSnapshot(fetcher: typeof fetch): Promise<PricingRemoteFetchResult<Record<string, unknown>>> {
     try {
         const response = await fetchPricingDatasetResponse(fetcher, DEFAULT_MODELS_DEV_PRICING_URL)
 
         if (!response.ok) {
-            return {}
+            return {
+                dataset: {},
+                error: `${response.status} ${response.statusText}`.trim(),
+                ok: false,
+            }
         }
 
         const data = await response.json()
-        return data && typeof data === 'object' && !Array.isArray(data)
+        const dataset = data && typeof data === 'object' && !Array.isArray(data)
             ? data as Record<string, unknown>
             : {}
+
+        return {
+            dataset,
+            error: Object.keys(dataset).length > 0 ? null : 'invalid models.dev pricing payload',
+            ok: Object.keys(dataset).length > 0,
+        }
     }
-    catch {
-        return {}
+    catch (error) {
+        return {
+            dataset: {},
+            error: error instanceof Error ? error.message : String(error),
+            ok: false,
+        }
     }
 }
 

@@ -11,7 +11,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageFallback,
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -28,7 +27,7 @@ export const kiloUsageAdapter = {
             .map(path => join(path, KILO_DB_FILE_NAME))
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'kilo'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
@@ -41,7 +40,7 @@ export const kiloUsageAdapter = {
 
             for (const row of rows) {
                 const record = parse(row.data) as Record<string, any> | null
-                const parsed = record ? parseKiloMessage(record, row, filePath, resolvePricing) : null
+                const parsed = record ? parseKiloMessage(record, row, filePath) : null
 
                 if (!parsed) {
                     continue
@@ -86,7 +85,6 @@ function parseKiloMessage(
     value: Record<string, any>,
     row: { data: string, id: string, session_id: string },
     filePath: string,
-    resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1],
 ) {
     if (value.role.trim() !== 'assistant') {
         return null
@@ -123,19 +121,19 @@ function parseKiloMessage(
     const rawCost = value.cost
     const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
     const provider = value.providerID.trim() ?? null
-    const costUSD = directCost ?? calculateUsageCostFromCandidates(usage, provider ? [model, `${provider}/${model}`] : [model], resolvePricing)
+    const modelLookupCandidates = provider ? [model, `${provider}/${model}`] : [model]
 
     return {
         interactionId,
         model,
-        modelLookupCandidates: provider ? [model, `${provider}/${model}`] : [model],
+        modelLookupCandidates,
         provider,
         rawCostUSD: directCost,
         sessionId,
         timestamp,
         usage: toInteractionUsage({
             ...usage,
-            costUSD,
+            costUSD: directCost ?? 0,
         }),
     }
 }

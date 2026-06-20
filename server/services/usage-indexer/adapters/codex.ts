@@ -1,5 +1,5 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
-import type { ModelPricingResolver, RawUsage } from '#shared/types/platform'
+import type { RawUsage } from '#shared/types/platform'
 import { existsSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import {
@@ -53,7 +53,7 @@ export const codexUsageAdapter = {
 
         return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'codex', cacheSignature))
     },
-    parseFile(filePath, resolvePricing, file) {
+    parseFile(filePath, _resolvePricing, file) {
         const lines = parseJsonlFile<Record<string, any>>(filePath)
         const sessionMeta = lines.find(line => typeof line.type === 'string' && line.type.trim() === 'session_meta')?.payload
         const sessionId = typeof sessionMeta?.id === 'string' && sessionMeta.id.trim()
@@ -124,8 +124,9 @@ export const codexUsageAdapter = {
             }
 
             const usage = rawUsage
-                ? getCodexInteractionUsage(rawUsage, model ?? CODEX_FALLBACK_MODEL, resolvePricing, speed)
+                ? getCodexInteractionUsage(rawUsage)
                 : null
+            const modelLookupCandidates = model ? [model] : [CODEX_FALLBACK_MODEL]
 
             addFragmentInteraction(fragment, {
                 costUSD: usage?.costUSD ?? 0,
@@ -134,6 +135,7 @@ export const codexUsageAdapter = {
                     : null,
                 index,
                 model: model ?? null,
+                modelLookupCandidates,
                 rawCostUSD: null,
                 role: getCodexRole(line, rawUsage !== null),
                 speed,
@@ -178,13 +180,7 @@ function getCodexRawUsage(line: Record<string, any>, previousTotals: RawUsage | 
 
 function getCodexInteractionUsage(
     rawUsage: RawUsage,
-    model: string,
-    resolvePricing: ModelPricingResolver,
-    speed: 'fast' | 'standard',
 ) {
-    void model
-    void resolvePricing
-    void speed
     const usage = convertCodexRawUsage(rawUsage)
 
     if (isZeroUsage(usage)) {

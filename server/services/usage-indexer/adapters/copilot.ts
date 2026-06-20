@@ -12,7 +12,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -63,7 +62,7 @@ export const copilotUsageAdapter = {
         return Array.from(new Set(files))
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'copilot'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const lines = readFileSync(filePath, 'utf8')
             .split('\n')
             .map(line => line.trim())
@@ -80,10 +79,6 @@ export const copilotUsageAdapter = {
         const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
         for (const candidate of selectedCandidates) {
-            const costUSD = calculateUsageCostFromCandidates(candidate.usage, [candidate.model], resolvePricing, {
-                includeExtraTotalAsOutput: true,
-                includeReasoningAsOutput: false,
-            })
             const fragment = fragments.get(candidate.sessionId) ?? createSessionFragment({
                 project: 'copilot',
                 repository: 'local/copilot',
@@ -93,7 +88,7 @@ export const copilotUsageAdapter = {
             })
 
             addFragmentInteraction(fragment, {
-                costUSD,
+                costUSD: 0,
                 dedupeKey: candidate.dedupeKey,
                 index: fragment.interactions.length,
                 model: candidate.model,
@@ -104,7 +99,7 @@ export const copilotUsageAdapter = {
                 type: candidate.source,
                 usage: toInteractionUsage({
                     ...candidate.usage,
-                    costUSD,
+                    costUSD: 0,
                 }),
             })
             fragments.set(candidate.sessionId, fragment)

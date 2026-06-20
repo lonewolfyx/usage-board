@@ -12,7 +12,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -36,7 +35,7 @@ export const kimiUsageAdapter = {
             .filter(filePath => isKimiWireFile(join(dirname(dirname(dirname(filePath))), 'sessions'), filePath))
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'kimi'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const sessionId = dirname(filePath).split('/').filter(Boolean).pop() || 'unknown'
         const model = getKimiModel(filePath)
         const fallbackTimestamp = getFileModifiedAtIso(filePath)
@@ -76,11 +75,11 @@ export const kimiUsageAdapter = {
                 continue
             }
 
-            const costUSD = calculateUsageCostFromCandidates(usage, [model, `moonshot/${model}`, `kimi/${model}`], resolvePricing)
+            const modelLookupCandidates = [model, `moonshot/${model}`, `kimi/${model}`]
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                costUSD,
+                costUSD: 0,
                 dedupeKey: [
                     sessionId,
                     payload.message_id.trim() || '',
@@ -94,14 +93,14 @@ export const kimiUsageAdapter = {
                 ].join(':'),
                 index,
                 model,
-                modelLookupCandidates: [model, `moonshot/${model}`, `kimi/${model}`],
+                modelLookupCandidates,
                 rawCostUSD: null,
                 role: 'usage',
                 timestamp,
                 type: 'StatusUpdate',
                 usage: toInteractionUsage({
                     ...usage,
-                    costUSD,
+                    costUSD: 0,
                 }),
             })
         }

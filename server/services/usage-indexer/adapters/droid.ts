@@ -11,7 +11,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageFallback,
-    calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -29,7 +28,7 @@ export const droidUsageAdapter = {
         return selectLatestDroidSettingsFiles(groups.flat())
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'droid'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const data = parseJsonFile<Record<string, any>>(filePath)
         const settings = data
         const tokenUsage = settings?.tokenUsage
@@ -61,7 +60,7 @@ export const droidUsageAdapter = {
         const normalizedProvider = provider === 'unknown' ? inferDroidProviderFromModel(model) : provider
         const timestamp = toIsoString(settings.providerLockTimestamp) ?? getFileModifiedAtIso(filePath)
         const sessionId = basename(filePath, '.settings.json')
-        const costUSD = calculateUsageCostFromCandidates(usage, getDroidModelCandidates(model, normalizedProvider), resolvePricing)
+        const modelLookupCandidates = getDroidModelCandidates(model, normalizedProvider)
         const fragment = createSessionFragment({
             project: 'droid',
             repository: 'local/droid',
@@ -71,11 +70,11 @@ export const droidUsageAdapter = {
         })
 
         addFragmentInteraction(fragment, {
-            costUSD,
+            costUSD: 0,
             dedupeKey: `droid:${sessionId}`,
             index: 0,
             model,
-            modelLookupCandidates: getDroidModelCandidates(model, normalizedProvider),
+            modelLookupCandidates,
             provider: normalizedProvider,
             rawCostUSD: null,
             role: 'usage',
@@ -83,7 +82,7 @@ export const droidUsageAdapter = {
             type: 'settings',
             usage: toInteractionUsage({
                 ...usage,
-                costUSD,
+                costUSD: 0,
             }),
         })
 

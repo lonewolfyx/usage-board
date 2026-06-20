@@ -8,7 +8,6 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -37,13 +36,13 @@ export const gooseUsageAdapter = {
     async discoverFiles(config) {
         return config.goosePaths.flatMap(filePath => toDiscoveredUsageFile(filePath, 'goose'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
             const rows = database.prepare<Record<string, unknown>>(GOOSE_SESSION_QUERY).all()
             const fragments = rows
-                .map(row => parseGooseRow(row, resolvePricing))
+                .map(row => parseGooseRow(row))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
                 .map((entry) => {
                     const fragment = createSessionFragment({
@@ -82,7 +81,7 @@ export const gooseUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseGooseRow(row: any, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
+function parseGooseRow(row: any) {
     const sessionId = row.id.trim()
     const modelConfig = JSON.parse(row.model_config_json.trim())
     const model = modelConfig?.model_name.trim()
@@ -107,17 +106,17 @@ function parseGooseRow(row: any, resolvePricing: Parameters<UsagePlatformAdapter
     }
 
     const provider = normalizeGooseProvider(row.provider_name.trim() ?? null, model)
-    const costUSD = calculateUsageCostFromCandidates(usage, [model, `${provider}/${model}`], resolvePricing)
+    const modelLookupCandidates = [model, `${provider}/${model}`]
 
     return {
         model,
-        modelLookupCandidates: [model, `${provider}/${model}`],
+        modelLookupCandidates,
         provider,
         sessionId,
         timestamp,
         usage: toInteractionUsage({
             ...usage,
-            costUSD,
+            costUSD: 0,
         }),
     }
 }

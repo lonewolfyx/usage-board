@@ -12,7 +12,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -32,7 +31,7 @@ export const codebuffUsageAdapter = {
             .flat()
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'codebuff'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const data = parseJsonFile(filePath)
 
         if (!Array.isArray(data)) {
@@ -83,17 +82,11 @@ export const codebuffUsageAdapter = {
 
             const provider = inferCodebuffProvider(model)
             const candidates = provider !== 'unknown' && !model.startsWith(`${provider}/`) ? [model, `${provider}/${model}`] : [model]
-            const costUSD = calculateUsageCostFromCandidates(
-                usage,
-                candidates,
-                resolvePricing,
-                { includeExtraTotalAsOutput: true, includeReasoningAsOutput: false },
-            )
 
             const timestamp = getCodebuffMessageTimestamp(message) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                costUSD,
+                costUSD: 0,
                 dedupeKey: getCodebuffDedupeKey(message, sessionId, timestamp ?? '', model, usage, index),
                 index,
                 model,
@@ -104,7 +97,7 @@ export const codebuffUsageAdapter = {
                 type: message.variant.trim() || message.role.trim() || 'assistant',
                 usage: toInteractionUsage({
                     ...usage,
-                    costUSD,
+                    costUSD: 0,
                 }),
             })
         }

@@ -1,5 +1,4 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
-import type { ModelPricingResolver } from '#shared/types/platform'
 import type { ProjectInteractionUsage } from '#shared/types/usage-dashboard'
 import { existsSync } from 'node:fs'
 import { basename, join } from 'node:path'
@@ -50,7 +49,7 @@ export const claudeCodeUsageAdapter = {
             .flat()
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'claudeCode', CLAUDE_CODE_CACHE_SIGNATURE))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const projectPath = extractClaudeProjectFromPath(filePath)
         const fallbackSessionId = basename(filePath, '.jsonl')
         const lines = parseJsonlFile<Record<string, any>>(filePath)
@@ -70,7 +69,7 @@ export const claudeCodeUsageAdapter = {
             const usageRecord = line.usage
             const model = getClaudeDisplayModel(line)
             const usage = usageRecord
-                ? getClaudeInteractionUsage(usageRecord, model, resolvePricing, line.costUSD)
+                ? getClaudeInteractionUsage(usageRecord, line.costUSD)
                 : null
             const messageId = line.message.id
             const messageRole = typeof line.message.role === 'string' ? line.message.role : ''
@@ -91,6 +90,7 @@ export const claudeCodeUsageAdapter = {
                 index,
                 isSidechain: line.isSidechain === true,
                 model: model ?? null,
+                modelLookupCandidates: model ? getClaudeLookupCandidates(model) : undefined,
                 rawCostUSD: line.costUSD,
                 role: normalizeRole(messageRole || line.type || messageType || ''),
                 speed: line.usage.speed === 'fast' ? 'fast' : 'standard',
@@ -110,12 +110,8 @@ export const claudeCodeUsageAdapter = {
 
 function getClaudeInteractionUsage(
     usage: Record<string, any>,
-    model: string | undefined,
-    resolvePricing: ModelPricingResolver,
     costUSD: number | null,
 ): ProjectInteractionUsage {
-    void model
-    void resolvePricing
     const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' && Number.isFinite(usage.cache_creation_input_tokens)
         ? Math.max(0, Math.trunc(usage.cache_creation_input_tokens))
         : 0

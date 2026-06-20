@@ -8,7 +8,6 @@ import {
     toDiscoveredUsageFile,
 } from '../session-fragment'
 import {
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -39,13 +38,13 @@ export const hermesUsageAdapter = {
     async discoverFiles(config) {
         return config.hermesPaths.flatMap(filePath => toDiscoveredUsageFile(filePath, 'hermes'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
             const rows = database.prepare<Record<string, unknown>>(HERMES_SESSION_QUERY).all()
             return rows
-                .map(row => parseHermesRow(row, resolvePricing))
+                .map(row => parseHermesRow(row))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
                 .map((entry) => {
                     const fragment = createSessionFragment({
@@ -82,7 +81,7 @@ export const hermesUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseHermesRow(row: Record<string, unknown>, resolvePricing: Parameters<UsagePlatformAdapter['parseFile']>[1]) {
+function parseHermesRow(row: Record<string, unknown>) {
     const sessionId = typeof row.id === 'string' ? row.id.trim() : ''
     const model = typeof row.model === 'string' ? row.model.trim() : ''
     const rawTs = row.started_at
@@ -110,18 +109,18 @@ function parseHermesRow(row: Record<string, unknown>, resolvePricing: Parameters
 
     const provider = normalizeHermesProvider(typeof row.billing_provider === 'string' ? row.billing_provider : null, model)
     const directCost = on(row.actual_cost_usd) ?? on(row.estimated_cost_usd)
-    const costUSD = directCost ?? calculateUsageCostFromCandidates(usage, [model, `${provider}/${model}`], resolvePricing)
+    const modelLookupCandidates = [model, `${provider}/${model}`]
 
     return {
         model,
-        modelLookupCandidates: [model, `${provider}/${model}`],
+        modelLookupCandidates,
         provider,
         rawCostUSD: directCost,
         sessionId,
         timestamp,
         usage: toInteractionUsage({
             ...usage,
-            costUSD,
+            costUSD: directCost ?? 0,
         }),
     }
 }

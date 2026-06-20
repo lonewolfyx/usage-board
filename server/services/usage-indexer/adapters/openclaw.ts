@@ -1,6 +1,7 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { parse } from '#shared/utils/parse'
 import { toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
@@ -11,14 +12,15 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    createZeroPricingResolver,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
 
 export const openClawUsageAdapter = {
-    createPricingResolver: createZeroPricingResolver,
+    async createPricingResolver() {
+        return createLiteLLMPricingResolver()
+    },
     async discoverFiles(config) {
         const groups = await Promise.all(config.openClawPaths.map(path => glob(join(path, '**', '*.jsonl*'), {
             absolute: true,
@@ -72,6 +74,8 @@ export const openClawUsageAdapter = {
                 continue
             }
 
+            const rawCost = usageRecord.cost?.total
+            const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
                     cacheCreationTokens: usageRecord.cacheWrite as number | undefined,
@@ -80,7 +84,7 @@ export const openClawUsageAdapter = {
                     outputTokens: usageRecord.output as number | undefined,
                     totalTokens: usageRecord.totalTokens as number | undefined,
                 }),
-                costUSD: usageRecord.cost?.total ?? 0,
+                costUSD: directCost ?? 0,
             })
 
             if (isZeroInteractionUsage(usage)) {
@@ -92,6 +96,7 @@ export const openClawUsageAdapter = {
                 || currentModel
                 || 'unknown'
             const provider = message.provider.trim() || currentProvider
+            const modelLookupCandidates = provider ? [rawModel, `${provider}/${rawModel}`] : [rawModel]
             const timestamp = toIsoString(message.timestamp) ?? toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
@@ -106,12 +111,13 @@ export const openClawUsageAdapter = {
                     String(usage.cacheCreationTokens ?? 0),
                     String(usage.cacheReadTokens ?? 0),
                     String(usage.extraTotalTokens ?? 0),
-                    String(usage.costUSD),
+                    String(directCost ?? 0),
                 ].join(':'),
                 index,
                 model: `[openclaw] ${rawModel}`,
+                modelLookupCandidates,
                 provider,
-                rawCostUSD: usage.costUSD,
+                rawCostUSD: directCost,
                 role: 'assistant',
                 timestamp,
                 type: provider ? `message:${provider}` : 'message',

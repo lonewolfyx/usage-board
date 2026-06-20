@@ -1,5 +1,6 @@
 import type { UsagePlatformAdapter } from '#server/services/usage-indexer/platform-adapter'
 import { basename, join } from 'node:path'
+import { createLiteLLMPricingResolver } from '#shared/platform/pricing'
 import { parseJsonlFile, toIsoString } from '#shared/utils/platform'
 import { glob } from 'glob'
 import {
@@ -9,13 +10,14 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    createZeroPricingResolver,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
 
 export const piUsageAdapter = {
-    createPricingResolver: createZeroPricingResolver,
+    async createPricingResolver() {
+        return createLiteLLMPricingResolver()
+    },
     async discoverFiles(config) {
         const groups = await Promise.all(config.piPaths.map(path => glob(join(path, '**', '*.jsonl'), {
             absolute: true,
@@ -52,6 +54,8 @@ export const piUsageAdapter = {
                 continue
             }
 
+            const rawCost = (usageRecord as Record<string, any>).cost?.total
+            const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
                     cacheCreationTokens: (usageRecord as Record<string, any>).cacheWrite as number | undefined,
@@ -60,7 +64,7 @@ export const piUsageAdapter = {
                     outputTokens: (usageRecord as Record<string, any>).output as number | undefined,
                     totalTokens: (usageRecord as Record<string, any>).totalTokens as number | undefined,
                 }),
-                costUSD: (usageRecord as Record<string, any>).cost?.total ?? 0,
+                costUSD: directCost ?? 0,
             })
 
             if (isZeroInteractionUsage(usage)) {
@@ -82,11 +86,12 @@ export const piUsageAdapter = {
                     String(usage.cacheCreationTokens ?? 0),
                     String(usage.cacheReadTokens ?? 0),
                     String(usage.extraTotalTokens ?? 0),
-                    String(usage.costUSD),
+                    String(directCost ?? 0),
                 ].join(':'),
                 index,
                 model: rawModel ? `[pi] ${rawModel}` : null,
-                rawCostUSD: usage.costUSD,
+                modelLookupCandidates: rawModel ? [rawModel] : undefined,
+                rawCostUSD: directCost,
                 role: 'assistant',
                 timestamp,
                 type: line.type.trim() || 'message',

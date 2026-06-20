@@ -6,7 +6,6 @@ import { glob } from 'glob'
 import { addFragmentInteraction, createSessionFragment, toDiscoveredUsageFile } from '../session-fragment'
 import {
     applyTotalUsageAsExtra,
-    calculateUsageCostFromCandidates,
     isZeroInteractionUsage,
     toInteractionUsage,
 } from './shared'
@@ -24,7 +23,7 @@ export const ampUsageAdapter = {
             .flat()
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'amp'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const record = parseJsonFile<Record<string, any>>(filePath)
         const sessionId = record?.id.trim() || basename(filePath, '.json')
         const events = record?.usageLedger && record.usageLedger
@@ -77,12 +76,8 @@ export const ampUsageAdapter = {
                 continue
             }
 
-            const costUSD = calculateUsageCostFromCandidates(usage, [model], resolvePricing, {
-                includeExtraTotalAsOutput: true,
-            })
-
             addFragmentInteraction(fragment, {
-                costUSD,
+                costUSD: 0,
                 index,
                 model,
                 modelLookupCandidates: [model],
@@ -92,7 +87,7 @@ export const ampUsageAdapter = {
                 type: 'usage_ledger',
                 usage: toInteractionUsage({
                     ...usage,
-                    costUSD,
+                    costUSD: 0,
                 }),
             })
         }

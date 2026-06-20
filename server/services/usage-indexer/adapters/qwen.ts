@@ -11,7 +11,6 @@ import {
 } from '../session-fragment'
 import {
     applyTotalUsageFallback,
-    calculateUsageCostFromCandidates,
     getFileModifiedAtIso,
     isZeroInteractionUsage,
     toInteractionUsage,
@@ -32,7 +31,7 @@ export const qwenUsageAdapter = {
             .flat()
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'qwen'))
     },
-    parseFile(filePath, resolvePricing) {
+    parseFile(filePath) {
         const project = getQwenProject(filePath)
         const sessionId = basename(filePath, '.jsonl') ? `${project}-${basename(filePath, '.jsonl')}` : project
         const fragment = createSessionFragment({
@@ -72,11 +71,11 @@ export const qwenUsageAdapter = {
             }
 
             const model = record.model.trim() || 'unknown'
-            const costUSD = calculateUsageCostFromCandidates(usage, [model, `qwen/${model}`, `alibaba/${model}`], resolvePricing)
+            const modelLookupCandidates = [model, `qwen/${model}`, `alibaba/${model}`]
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 
             addFragmentInteraction(fragment, {
-                costUSD,
+                costUSD: 0,
                 dedupeKey: [
                     sessionId,
                     timestamp || '',
@@ -85,14 +84,14 @@ export const qwenUsageAdapter = {
                 ].join(':'),
                 index,
                 model,
-                modelLookupCandidates: [model, `qwen/${model}`, `alibaba/${model}`],
+                modelLookupCandidates,
                 rawCostUSD: null,
                 role: 'assistant',
                 timestamp,
                 type: 'assistant',
                 usage: toInteractionUsage({
                     ...usage,
-                    costUSD,
+                    costUSD: 0,
                 }),
             })
         }
