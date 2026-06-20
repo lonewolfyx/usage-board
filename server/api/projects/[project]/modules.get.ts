@@ -1,6 +1,7 @@
 import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
 import type { ProjectUsageDataModule } from '#shared/types/ws'
 import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
+import { getPaginationQuery } from '#server/utils/pagination'
 import { resolveConfig } from '#shared/utils/configs'
 import { normalizeStringList } from '#shared/utils/normalize'
 
@@ -20,6 +21,7 @@ export default defineEventHandler(async (event) => {
     return getUsageDataRuntime(config).getProjectDataModules({
         module,
         modules,
+        ...getPaginationQuery(event),
         platform,
         project,
     })

@@ -42,7 +42,6 @@ import {
 import {
     formatCompactNumber,
     formatCurrency,
-    mergeDailyTokenUsage,
 } from '#shared/utils/usage-dashboard'
 import { inferUsageSessionIdentityPlatform } from '#shared/utils/usage-identity'
 import {
@@ -177,17 +176,11 @@ export function useProjectDashboard() {
         { label: 'All', value: 'all' as const },
         ...platformTabs.value,
     ])
-    const visiblePlatformSessions = computed(() => platformTabs.value
-        .flatMap(tab => getPlatformModulePayload('session_list', tab.value).sessions)
-        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt)))
-    const visiblePlatformModelUsage = computed(() => mergeDailyTokenUsage(
-        platformTabs.value.flatMap(tab => getPlatformModulePayload('model_usage', tab.value).dailyTokenUsage),
-    ))
     const tabSummaries = computed<Record<ProjectDashboardScope, ProjectTabSummary>>(() => Object.fromEntries(
         tabs.value.map((tab) => {
             const summary = summarizeProjectSessions(
                 tab.value === 'all'
-                    ? visiblePlatformSessions.value
+                    ? getPlatformModulePayload('session_list', 'all').sessions
                     : getPlatformModulePayload('session_list', tab.value).sessions,
             )
 
@@ -217,7 +210,7 @@ export function useProjectDashboard() {
     const recentDayLabels = computed(() => buildRecentDateLabels(recentProjectDays))
     const yearlyDayLabels = computed(() => buildRecentDateLabels(yearlyProjectDays))
     const yearlyTickIndexes = computed(() => buildMonthlyTickIndexes(yearlyDayLabels.value))
-    const allOverviewCards = computed(() => buildProjectOverviewCards(visiblePlatformSessions.value))
+    const allOverviewCards = computed(() => buildProjectOverviewCards(getPlatformModulePayload('session_list', 'all').sessions))
     const allSessionRowsPage = computed<PaginatedResponse<ProjectSessionTableRow>>(() => {
         const sessionListPayload = getPlatformModulePayload('session_list', 'all')
 
@@ -237,7 +230,7 @@ export function useProjectDashboard() {
         points: getDailySeriesPoints(tab.value, dailyTrendLabels.value),
     })))
     const allModelChart = computed(() => buildProjectDailyModelUsageChart(
-        visiblePlatformModelUsage.value,
+        getPlatformModulePayload('model_usage', 'all').dailyTokenUsage,
         recentDayLabels.value,
     ))
     const platformViews = computed<Record<ProjectUsagePlatform, ProjectPlatformView>>(() => Object.fromEntries(

@@ -1,75 +1,27 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type {
-    AgentDashboardCoreModules,
-    AgentDashboardInsightsModules,
-    AgentDashboardSessionModules,
+    AgentDashboardModulesResponse,
     AnalysisAgentSessionPageResponse,
     AnalysisAgentTokenPageResponse,
     AnalysisAgentTokenType,
-    AnalysisCacheResponse,
     AnalysisDailyTokenPageResponse,
     AnalysisLiveStateResponse,
-    AnalysisSessionResponse,
-    HomeDashboardCoreModules,
-    HomeDashboardUsageModules,
+    HomeDashboardModulesResponse,
 } from '#shared/types/analysis'
-import type { DailyTokenUsage, HourlyUsagePoint, MonthlyModelUsage, ProjectUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
-import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 
 const analysisRouteMap = {
     agentSession: '/api/analysis/agent/session.json',
+    agentModules: '/api/analysis/agent/modules.json',
     agentToken: '/api/analysis/agent/token.json',
-    cache: '/api/analysis/cache.json',
     dailyTokenUsage: '/api/analysis/token/daily.json',
-    hotProject: '/api/analysis/hot-project.json',
+    homeModules: '/api/analysis/modules.json',
     liveState: '/api/analysis/live-state.json',
-    model: '/api/analysis/model.json',
-    overviewCards: '/api/analysis/overview-cards.json',
-    session: '/api/analysis/session.json',
-    token: '/api/analysis/token.json',
-    todayHourlyUsage: '/api/analysis/token/today-hourly.json',
 } as const
 
-export async function fetchHomeDashboardCoreModules(): Promise<HomeDashboardCoreModules> {
-    const [
-        overviewCards,
-        monthlyModelUsage,
-        projectUsage,
-    ] = await Promise.all([
-        requestAnalysis<UsageOverviewCard[]>('overviewCards'),
-        requestAnalysis<MonthlyModelUsage[]>('model'),
-        requestAnalysis<ProjectUsageItem[]>('hotProject'),
-    ])
-
-    return {
-        hotProjects: projectUsage,
-        modelUsage: monthlyModelUsage,
-        overviewCards,
-    }
-}
-
-export async function fetchHomeDashboardUsageModules(): Promise<HomeDashboardUsageModules> {
-    const [
-        cache,
-        dailyTokenUsage,
-        todayHourlyUsage,
-    ] = await Promise.all([
-        requestAnalysis<AnalysisCacheResponse>('cache'),
-        requestAnalysis<DailyTokenUsage[]>('token'),
-        requestAnalysis<HourlyUsagePoint[]>('todayHourlyUsage'),
-    ])
-
-    return {
-        dailyTokenUsage,
-        efficiencyMetrics: cache.items,
-        todayHourlyUsage,
-    }
-}
-
-export function fetchHomeDashboardSessionAnalysis() {
-    return requestAnalysis<AnalysisSessionResponse>('session')
+export function fetchHomeDashboardModules() {
+    return requestAnalysis<HomeDashboardModulesResponse>('homeModules')
 }
 
 export function fetchAnalysisLiveState() {
@@ -83,75 +35,12 @@ export function fetchHomeDashboardDailyTokenPage(page = 1) {
     })
 }
 
-export async function fetchAgentDashboardCoreModules(agent: ProjectUsagePlatform): Promise<AgentDashboardCoreModules> {
-    const [
-        overviewCards,
-        monthlyModelUsage,
-        dailyTokenUsage,
-        dailyRows,
-    ] = await Promise.all([
-        requestAnalysis<UsageOverviewCard[]>('overviewCards', { agent }),
-        requestAnalysis<MonthlyModelUsage[]>('model', { agent }),
-        requestAnalysis<DailyTokenUsage[]>('token', { agent }),
-        requestAnalysis<AnalysisAgentTokenPageResponse>('agentToken', {
-            agent,
-            page: 1,
-            pageSize: DEFAULT_PAGE_SIZE,
-            type: 'day',
-        }),
-    ])
-
-    return {
-        dailyRows: dailyRows.items,
-        dailyRowsPagination: dailyRows.pagination,
-        dailyTokenUsage,
-        monthlyModelUsage,
-        overviewCards,
-    }
-}
-
-export async function fetchAgentDashboardInsightsModules(agent: ProjectUsagePlatform): Promise<AgentDashboardInsightsModules> {
-    const [
-        projectUsage,
-        tokenRows,
-    ] = await Promise.all([
-        requestAnalysis<ProjectUsageItem[]>('hotProject', { agent }),
-        Promise.all(ANALYSIS_AGENT_TOKEN_TYPES
-            .filter(type => type !== 'day')
-            .map(async (type) => {
-                return [type, await requestAnalysis<AnalysisAgentTokenPageResponse>('agentToken', {
-                    agent,
-                    page: 1,
-                    pageSize: DEFAULT_PAGE_SIZE,
-                    type,
-                })] as const
-            })),
-    ])
-    const rowsByType = Object.fromEntries(tokenRows) as Record<
-        Exclude<AnalysisAgentTokenType, 'day'>,
-        AnalysisAgentTokenPageResponse
-    >
-
-    return {
-        monthlyRows: rowsByType.month.items,
-        monthlyRowsPagination: rowsByType.month.pagination,
-        projectUsage,
-        sessionRows: rowsByType.session.items,
-        sessionRowsPagination: rowsByType.session.pagination,
-        weeklyRows: rowsByType.week.items,
-        weeklyRowsPagination: rowsByType.week.pagination,
-    }
-}
-
-export function fetchAgentDashboardSessionModules(agent: ProjectUsagePlatform): Promise<AgentDashboardSessionModules> {
-    return requestAnalysis<AnalysisAgentSessionPageResponse>('agentSession', {
+export function fetchAgentDashboardModules(agent: ProjectUsagePlatform) {
+    return requestAnalysis<AgentDashboardModulesResponse>('agentModules', {
         agent,
         page: 1,
         pageSize: DEFAULT_PAGE_SIZE,
-    }).then(sessionUsage => ({
-        sessionUsage: sessionUsage.items,
-        sessionUsagePagination: sessionUsage.pagination,
-    }))
+    })
 }
 
 export function fetchAgentTokenPage(agent: ProjectUsagePlatform, type: AnalysisAgentTokenType, page: number) {

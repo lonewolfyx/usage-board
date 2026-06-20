@@ -2,7 +2,9 @@ import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/t
 import type {
     AgentDashboardCoreModules,
     AgentDashboardInsightsModules,
+    AgentDashboardModules,
     AgentDashboardSessionModules,
+    AnalysisAgentSessionRow,
     HomeDashboardCoreModules,
     HomeDashboardModules,
     HomeDashboardSessionModules,
@@ -11,10 +13,12 @@ import type {
 } from '#shared/types/analysis'
 import type { PaginationMeta } from '#shared/types/pagination'
 import type { HourlyUsagePoint, LoadUsageResult, ProjectSessionUsageItem, RankedUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
+import type { PaginationInput } from '#shared/utils/pagination'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 import { formatDuration, previousDateKey, todayDateKey, useDateFormat } from '#shared/utils/date'
+import { paginateItems } from '#shared/utils/pagination'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -173,6 +177,49 @@ export function buildHomeDashboardModules(
             totalSessions,
         },
         todayHourlyUsage: homeTodayInsights.todayHourlyUsage,
+    }
+}
+
+export function buildAgentDashboardModules(
+    dashboard: LoadUsageResult,
+    pagination: PaginationInput = {
+        page: 1,
+        pageSize: DEFAULT_PAGE_SIZE,
+    },
+): AgentDashboardModules {
+    const dailyRows = paginateItems(dashboard.dailyRows, pagination)
+    const monthlyRows = paginateItems(dashboard.monthlyRows, pagination)
+    const sessionRows = paginateItems(dashboard.sessionRows, pagination)
+    const weeklyRows = paginateItems(dashboard.weeklyRows, pagination)
+    const sessionUsage = paginateItems(dashboard.sessionUsage.map(session => ({
+        costUSD: session.costUSD,
+        duration: session.duration,
+        id: session.id,
+        inputTokens: session.inputTokens,
+        model: session.model,
+        outputTokens: session.outputTokens,
+        project: session.project,
+        sessionId: session.sessionId,
+        startedAt: session.startedAt,
+        threadName: session.threadName,
+        tokenTotal: session.tokenTotal,
+    } satisfies AnalysisAgentSessionRow)), pagination)
+
+    return {
+        dailyRows: dailyRows.items,
+        dailyRowsPagination: dailyRows.pagination,
+        dailyTokenUsage: dashboard.dailyTokenUsage,
+        monthlyModelUsage: dashboard.monthlyModelUsage,
+        monthlyRows: monthlyRows.items,
+        monthlyRowsPagination: monthlyRows.pagination,
+        overviewCards: dashboard.overviewCards,
+        projectUsage: dashboard.projectUsage,
+        sessionRows: sessionRows.items,
+        sessionRowsPagination: sessionRows.pagination,
+        sessionUsage: sessionUsage.items,
+        sessionUsagePagination: sessionUsage.pagination,
+        weeklyRows: weeklyRows.items,
+        weeklyRowsPagination: weeklyRows.pagination,
     }
 }
 

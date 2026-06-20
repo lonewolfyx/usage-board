@@ -55,6 +55,7 @@ export function normalizeProjectUsageDetail(detail: ProjectUsageDetail): Project
 
     return {
         ...detail,
+        all: normalizeProjectPlatformUsage(detail.all),
         analyzing,
         models: Array.isArray(detail.models) ? detail.models : [],
     }

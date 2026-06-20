@@ -1,7 +1,7 @@
 import type { DiscoveredUsageFile } from '#server/services/usage-indexer/platform-adapter'
 import type { IndexedUsageSourceFile, IndexedUsageSourceFileMeta, UpdatedUsageSession } from '#server/types/usage-indexer'
 import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
-import type { HomeDashboardModules } from '#shared/types/analysis'
+import type { AgentDashboardModules, AgentDashboardModulesResponse, HomeDashboardModules, HomeDashboardModulesResponse } from '#shared/types/analysis'
 import type { IConfig } from '#shared/types/config'
 import type { UsageAggregateEvent } from '#shared/types/platform'
 import type { ProjectSessionUsageItem, ProjectUsageDetail, TokensConsumptionResult } from '#shared/types/usage-dashboard'
@@ -11,6 +11,7 @@ import type {
     ProjectUsageDataModulesResponse,
     ProjectWebSocketRequest,
 } from '#shared/types/ws'
+import type { PaginationInput } from '#shared/utils/pagination'
 import type { FSWatcher } from 'chokidar'
 import { accessSync, constants, promises as fsPromises } from 'node:fs'
 import { join } from 'node:path'
@@ -32,7 +33,7 @@ import {
     buildProjectUsageDetailFromPlatformSessions,
 } from '#shared/platform/project'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
-import { buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
+import { buildAgentDashboardModules, buildHomeDashboardModules } from '#shared/utils/analysis-dashboard'
 import { useDateFormat } from '#shared/utils/date'
 import { log } from '@clack/prompts'
 import chokidar from 'chokidar'
@@ -207,8 +208,34 @@ export class UsageDataRuntime {
         return bootstrap[platform] ?? createEmptyLoadUsageResult()
     }
 
+    async getAgentDashboardModules(platform: ProjectUsagePlatform, pagination?: PaginationInput): Promise<AgentDashboardModules> {
+        return buildAgentDashboardModules(await this.getAgentDashboard(platform), pagination)
+    }
+
+    async getAgentDashboardModuleSnapshot(platform: ProjectUsagePlatform, pagination?: PaginationInput): Promise<AgentDashboardModulesResponse> {
+        const modules = await this.getAgentDashboardModules(platform, pagination)
+
+        return {
+            ...modules,
+            updatedAt: this.state.hydratedAt > 0
+                ? (useDateFormat(this.state.hydratedAt, 'iso') ?? new Date(this.state.hydratedAt).toISOString())
+                : '',
+        }
+    }
+
     async getHomeDashboardModules(): Promise<HomeDashboardModules> {
         return buildHomeDashboardModules(await this.getBootstrap())
+    }
+
+    async getHomeDashboardModuleSnapshot(): Promise<HomeDashboardModulesResponse> {
+        const modules = await this.getHomeDashboardModules()
+
+        return {
+            ...modules,
+            updatedAt: this.state.hydratedAt > 0
+                ? (useDateFormat(this.state.hydratedAt, 'iso') ?? new Date(this.state.hydratedAt).toISOString())
+                : '',
+        }
     }
 
     async getLiveState() {

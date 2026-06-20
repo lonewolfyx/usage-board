@@ -170,6 +170,7 @@ export interface ProjectPlatformUsage extends LoadUsageResult {
 }
 
 export interface ProjectUsageDetail {
+    all: ProjectPlatformUsage
     label: string
     models: string[]
     createTime: string | null

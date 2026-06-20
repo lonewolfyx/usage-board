@@ -1,39 +1,28 @@
-import type { HomeDashboardCoreModules } from '#shared/types/analysis'
+import type { HomeDashboardModulesResponse } from '#shared/types/analysis'
 import {
     createEmptyHomeDashboardCoreModules,
     createEmptyHomeDashboardSessionModules,
     createEmptyHomeDashboardUsageModules,
 } from '#shared/utils/analysis-dashboard'
 import {
-    fetchHomeDashboardCoreModules,
     fetchHomeDashboardDailyTokenPage,
-    fetchHomeDashboardSessionAnalysis,
-    fetchHomeDashboardUsageModules,
+    fetchHomeDashboardModules,
 } from '~/lib/analysis-repository'
 
 export function useHomeDashboard() {
-    const defaultCoreModules = createEmptyHomeDashboardCoreModules()
-    const defaultUsageModules = createEmptyHomeDashboardUsageModules()
-    const defaultSessionAnalysis = createEmptyHomeDashboardSessionModules().sessionAnalysis
+    const defaultDashboardModules = {
+        ...createEmptyHomeDashboardCoreModules(),
+        ...createEmptyHomeDashboardUsageModules(),
+        ...createEmptyHomeDashboardSessionModules(),
+        updatedAt: '',
+    }
     const {
-        data: coreData,
-        error: coreError,
-        refresh: refreshCore,
-        status: coreStatus,
-    } = useAsyncData<HomeDashboardCoreModules>('analysis:home:core', fetchHomeDashboardCoreModules, {
-        default: createEmptyHomeDashboardCoreModules,
-    })
-    const {
-        clear: clearUsage,
-        data: usageData,
-        error: usageError,
-        execute: executeUsage,
-        refresh: refreshUsage,
-        status: usageStatus,
-    } = useAsyncData('analysis:home:usage', fetchHomeDashboardUsageModules, {
-        default: createEmptyHomeDashboardUsageModules,
-        immediate: false,
-        server: false,
+        data: dashboardData,
+        error: dashboardError,
+        refresh,
+        status: dashboardStatus,
+    } = useAsyncData<HomeDashboardModulesResponse>('analysis:home:modules', fetchHomeDashboardModules, {
+        default: () => defaultDashboardModules,
     })
     const {
         data: dailyTokenUsagePageData,
@@ -44,39 +33,10 @@ export function useHomeDashboard() {
         immediate: false,
         server: false,
     })
-    const {
-        clear: clearSessionAnalysis,
-        data: sessionAnalysisData,
-        error: sessionAnalysisError,
-        execute: executeSessionAnalysis,
-        refresh: refreshSessionAnalysis,
-        status: sessionAnalysisStatus,
-    } = useAsyncData('analysis:home:session', fetchHomeDashboardSessionAnalysis, {
-        default: () => createEmptyHomeDashboardSessionModules().sessionAnalysis,
-        immediate: false,
-        server: false,
-    })
-
-    const { refresh } = useDeferredDashboardLoader({
-        clearDeferred: () => {
-            clearUsage()
-            clearSessionAnalysis()
-        },
-        coreStatus,
-        executeDeferred: () => Promise.all([
-            executeUsage(),
-            executeSessionAnalysis(),
-        ]),
-        refreshCore,
-        refreshDeferred: () => Promise.all([
-            refreshUsage(),
-            refreshSessionAnalysis(),
-        ]),
-    })
 
     useUsageLiveUpdate(() => refresh())
 
-    watch(usageStatus, (status) => {
+    watch(dashboardStatus, (status) => {
         if (status === 'success' && dailyTokenUsagePageStatus.value === 'idle') {
             void executeDailyTokenUsagePage()
         }
@@ -85,24 +45,24 @@ export function useHomeDashboard() {
     })
 
     return {
-        dailyTokenUsage: computed(() => usageData.value?.dailyTokenUsage ?? defaultUsageModules.dailyTokenUsage),
+        dailyTokenUsage: computed(() => dashboardData.value?.dailyTokenUsage ?? defaultDashboardModules.dailyTokenUsage),
         dailyTokenUsagePage: computed(() => dailyTokenUsagePageData.value),
         dailyTokenUsagePageError,
         dailyTokenUsagePageStatus,
         fetchDailyTokenUsagePage: fetchHomeDashboardDailyTokenPage,
-        efficiencyMetrics: computed(() => usageData.value?.efficiencyMetrics ?? defaultUsageModules.efficiencyMetrics),
-        error: coreError,
-        monthlyModelUsage: computed(() => coreData.value?.modelUsage ?? defaultCoreModules.modelUsage),
-        overviewCards: computed(() => coreData.value?.overviewCards ?? defaultCoreModules.overviewCards),
-        projectUsage: computed(() => coreData.value?.hotProjects ?? defaultCoreModules.hotProjects),
+        efficiencyMetrics: computed(() => dashboardData.value?.efficiencyMetrics ?? defaultDashboardModules.efficiencyMetrics),
+        error: dashboardError,
+        monthlyModelUsage: computed(() => dashboardData.value?.modelUsage ?? defaultDashboardModules.modelUsage),
+        overviewCards: computed(() => dashboardData.value?.overviewCards ?? defaultDashboardModules.overviewCards),
+        projectUsage: computed(() => dashboardData.value?.hotProjects ?? defaultDashboardModules.hotProjects),
         refresh,
-        sessionAnalysisError,
-        sessionAnalysisStatus,
-        sessionUsage: computed(() => sessionAnalysisData.value?.items ?? defaultSessionAnalysis.items),
-        status: coreStatus,
-        todayHourlyUsage: computed(() => usageData.value?.todayHourlyUsage ?? defaultUsageModules.todayHourlyUsage),
-        totalSessions: computed(() => sessionAnalysisData.value?.totalSessions ?? defaultSessionAnalysis.totalSessions),
-        usageError,
-        usageStatus,
+        sessionAnalysisError: dashboardError,
+        sessionAnalysisStatus: dashboardStatus,
+        sessionUsage: computed(() => dashboardData.value?.sessionAnalysis.items ?? defaultDashboardModules.sessionAnalysis.items),
+        status: dashboardStatus,
+        todayHourlyUsage: computed(() => dashboardData.value?.todayHourlyUsage ?? defaultDashboardModules.todayHourlyUsage),
+        totalSessions: computed(() => dashboardData.value?.sessionAnalysis.totalSessions ?? defaultDashboardModules.sessionAnalysis.totalSessions),
+        usageError: dashboardError,
+        usageStatus: dashboardStatus,
     }
 }

@@ -24,7 +24,7 @@ import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { paginateItems } from '#shared/utils/pagination'
 import { buildLoadUsageResult } from '#shared/utils/platform'
-import { mergeDailyTokenUsage, mergeMonthlyModelUsage, uniqueItems } from '#shared/utils/usage-dashboard'
+import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 const DEFAULT_PROJECT_USAGE_DATA_MODULE = 'session_list' satisfies ProjectUsageDataModule
 
@@ -85,9 +85,19 @@ export function buildProjectUsageDetailFromPlatformSessions(
             },
         ]),
     ) as ProjectUsagePlatformRecord<ProjectPlatformUsage>
-    const sessions = PROJECT_USAGE_PLATFORMS.flatMap(platform => platformSessions[platform])
+    const sessions = PROJECT_USAGE_PLATFORMS
+        .flatMap(platform => platformSessions[platform])
+        .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
+    const events = PROJECT_USAGE_PLATFORMS.flatMap(platform => eventsByPlatform[platform].map(event => ({
+        ...event,
+        platform,
+    })))
 
     return {
+        all: {
+            ...buildProjectLoadUsageResult(sessions, 'all', events),
+            sessions,
+        },
         analyzing,
         createTime: getEarliestStartedAt(sessions),
         label: projectName,
@@ -106,38 +116,21 @@ function buildProjectPlatformModule(
         return buildPlatformModulePayload(detail.analyzing[platform] ?? createEmptyProjectPlatformUsage(), module, pagination)
     }
 
-    const platformUsages = PROJECT_USAGE_PLATFORMS.map(platform => detail.analyzing[platform] ?? createEmptyProjectPlatformUsage())
+    const allUsage = detail.all ?? createEmptyProjectPlatformUsage()
 
     if (module === 'session_list') {
-        const sessions = platformUsages.flatMap(usage => usage.sessions)
-        const sessionRows = platformUsages.flatMap(usage => usage.sessionRows)
         const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
         return {
-            all: buildSessionListModulePayload(sessionRows, sessions, pagination),
+            all: buildSessionListModulePayload(allUsage.sessionRows, allUsage.sessions, pagination),
             ...platformPayloads,
         }
     }
 
-    const mergedUsage: LoadUsageResult = {
-        dailyRows: platformUsages.flatMap(usage => usage.dailyRows).sort((a, b) => a.id.localeCompare(b.id)),
-        dailyTokenUsage: mergeDailyTokenUsage(platformUsages.flatMap(usage => usage.dailyTokenUsage)),
-        monthlyModelUsage: mergeMonthlyModelUsage(platformUsages.flatMap(usage => usage.monthlyModelUsage)),
-        monthlyRows: platformUsages.flatMap(usage => usage.monthlyRows).sort((a, b) => a.id.localeCompare(b.id)),
-        overviewCards: [],
-        projectUsage: [],
-        sessionRows: platformUsages.flatMap(usage => usage.sessionRows),
-        sessionUsage: platformUsages.flatMap(usage => usage.sessionUsage),
-        todayTopModel: null,
-        todayTopProject: null,
-        todayTotalCost: 0,
-        todayTotalTokens: 0,
-        weeklyRows: platformUsages.flatMap(usage => usage.weeklyRows).sort((a, b) => a.id.localeCompare(b.id)),
-    }
     const platformPayloads = buildProjectPlatformPayloadMap(detail, module, pagination)
 
     return {
-        all: buildLoadUsageModulePayload(mergedUsage, module, pagination),
+        all: buildLoadUsageModulePayload(allUsage, module, pagination),
         ...platformPayloads,
     }
 }
@@ -221,11 +214,11 @@ function buildProjectPlatformPayloadMap(
 export function buildProjectLoadUsageResult(
     sessions: ProjectSessionUsageItem[],
     platform: ProjectUsagePlatform | 'all' = 'all',
-    precomputedEvents: UsageAggregateEvent[] = [],
+    precomputedEvents: Array<UsageAggregateEvent & { platform?: ProjectUsagePlatform }> = [],
 ): Omit<LoadUsageResult, 'sessionUsage'> & { sessionUsage: ProjectSessionUsageItem[] } {
     const usage = buildLoadUsageResult(precomputedEvents, sessions, {
         aggregateOptions: {
-            includeModel: event => platform !== 'claudeCode' || event.model !== '<synthetic>',
+            includeModel: event => (event.platform ?? platform) !== 'claudeCode' || event.model !== '<synthetic>',
         },
     })
 

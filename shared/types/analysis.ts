@@ -82,6 +82,10 @@ export interface HomeDashboardTodayInsights {
 
 export type HomeDashboardModules = HomeDashboardCoreModules & HomeDashboardUsageModules & HomeDashboardSessionModules
 
+export type HomeDashboardModulesResponse = HomeDashboardModules & {
+    updatedAt: string
+}
+
 export type AgentDashboardCoreModules = Pick<
     LoadUsageResult,
     'dailyRows'
@@ -110,3 +114,7 @@ export interface AgentDashboardSessionModules {
 }
 
 export type AgentDashboardModules = AgentDashboardCoreModules & AgentDashboardInsightsModules & AgentDashboardSessionModules
+
+export type AgentDashboardModulesResponse = AgentDashboardModules & {
+    updatedAt: string
+}
