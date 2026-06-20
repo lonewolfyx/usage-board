@@ -44,6 +44,7 @@ import {
     formatCurrency,
     mergeDailyTokenUsage,
 } from '#shared/utils/usage-dashboard'
+import { inferUsageSessionIdentityPlatform } from '#shared/utils/usage-identity'
 import {
     isProjectWebSocketResponse,
     isUsageUpdateMessage,
@@ -546,7 +547,7 @@ export function useProjectDashboard() {
     }
 
     function inferSessionPlatform(sessionId: string) {
-        return PROJECT_USAGE_PLATFORMS.find(platform => sessionId.startsWith(`${platform}:`)) ?? PROJECT_USAGE_PLATFORMS[0]!
+        return inferUsageSessionIdentityPlatform(sessionId) ?? PROJECT_USAGE_PLATFORMS[0]!
     }
 
     async function fetchProjectTokenUsagePage(platform: ProjectDashboardScope, page: number) {

@@ -320,7 +320,7 @@ function formatUpdatedSessionSummary(updatedSessions: UpdatedUsageSession[]) {
     const limit = 5
     const labels = updatedSessions
         .slice(0, limit)
-        .map(({ platform, sessionId }) => `${PROJECT_USAGE_PLATFORM_META[platform].label}:${sessionId}`)
+        .map(({ platform, repository, sessionId }) => `${PROJECT_USAGE_PLATFORM_META[platform].label}:${repository ? `${repository}:` : ''}${sessionId}`)
     const remainingCount = updatedSessions.length - labels.length
 
     return remainingCount > 0

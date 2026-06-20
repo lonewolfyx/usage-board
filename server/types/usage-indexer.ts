@@ -49,6 +49,7 @@ export type IndexedUsageSourceFileMeta = Pick<
 
 export interface UpdatedUsageSession {
     platform: ProjectUsagePlatform
+    repository: string
     sessionId: string
 }
 
