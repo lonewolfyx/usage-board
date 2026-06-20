@@ -24,6 +24,47 @@ import {
 
 const CLAUDE_CODE_CACHE_SIGNATURE = 'claude-code-dedupe:assistant-message-v3'
 
+interface ClaudeUsagePayload {
+    cache_creation_input_tokens?: number | null
+    cache_read_input_tokens?: number | null
+    input_tokens?: number
+    output_tokens?: number
+    speed?: 'fast' | 'standard' | null
+}
+
+interface ClaudeMessagePayload {
+    id?: string | null
+    model?: string | null
+    role?: string
+    type?: string
+    usage?: ClaudeUsagePayload
+}
+
+interface ClaudeProgressMessage {
+    costUSD?: number | null
+    isSidechain?: boolean
+    message?: ClaudeMessagePayload
+    requestId?: string | null
+    timestamp?: string | number
+    type?: string
+}
+
+interface ClaudeLogLine {
+    costUSD?: number | null
+    cwd?: string | null
+    data?: {
+        message?: ClaudeProgressMessage
+    }
+    isApiErrorMessage?: boolean | null
+    isSidechain?: boolean | null
+    message?: ClaudeMessagePayload
+    requestId?: string | null
+    sessionId?: string | null
+    timestamp?: string | number
+    type?: string
+    version?: string | null
+}
+
 export const claudeCodeUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -52,7 +93,7 @@ export const claudeCodeUsageAdapter = {
     parseFile(filePath) {
         const projectPath = extractClaudeProjectFromPath(filePath)
         const fallbackSessionId = basename(filePath, '.jsonl')
-        const lines = parseJsonlFile<Record<string, any>>(filePath)
+        const lines = parseJsonlFile<ClaudeLogLine>(filePath)
         const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
         for (let index = 0; index < lines.length; index += 1) {
@@ -109,7 +150,7 @@ export const claudeCodeUsageAdapter = {
 } satisfies UsagePlatformAdapter
 
 function getClaudeInteractionUsage(
-    usage: Record<string, any>,
+    usage: ClaudeUsagePayload,
     costUSD: number | null,
 ): ProjectInteractionUsage {
     const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' && Number.isFinite(usage.cache_creation_input_tokens)
@@ -158,15 +199,17 @@ interface ClaudeUsageLine {
     costUSD: number | null
     cwd: string | undefined
     isSidechain: boolean | undefined
-    message: Record<string, any>
+    message: Required<Pick<ClaudeMessagePayload, 'id' | 'model' | 'role' | 'type'>> & {
+        usage: ClaudeUsagePayload
+    }
     requestId: string | undefined
     sessionId: string | undefined
     timestamp: string | null
     type: string | undefined
-    usage: Record<string, any>
+    usage: ClaudeUsagePayload
 }
 
-function getClaudeUsageLine(line: Record<string, any>): ClaudeUsageLine | null {
+function getClaudeUsageLine(line: ClaudeLogLine): ClaudeUsageLine | null {
     const progressData = line.data
     const progressMessage = progressData?.message
     const message = progressMessage?.message ?? line.message
@@ -211,6 +254,7 @@ function getClaudeUsageLine(line: Record<string, any>): ClaudeUsageLine | null {
             model,
             role: messageRole,
             type: messageType,
+            usage,
         },
         requestId,
         sessionId,
@@ -225,10 +269,10 @@ function getClaudeUsageLine(line: Record<string, any>): ClaudeUsageLine | null {
 }
 
 function hasUnsupportedClaudeNullField(
-    line: Record<string, any>,
-    progressMessage: Record<string, any> | null,
-    message: Record<string, any>,
-    usage: Record<string, any>,
+    line: ClaudeLogLine,
+    progressMessage: ClaudeProgressMessage | undefined,
+    message: ClaudeMessagePayload,
+    usage: ClaudeUsagePayload,
 ) {
     return line.cwd === null
         || (progressMessage?.costUSD ?? line.costUSD) === null

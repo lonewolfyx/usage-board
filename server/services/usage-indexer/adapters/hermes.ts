@@ -31,6 +31,20 @@ WHERE model IS NOT NULL
     AND TRIM(model) != ''
 `
 
+interface HermesSessionRow {
+    actual_cost_usd: number | null
+    billing_provider: string | null
+    cache_read_tokens: number | null
+    cache_write_tokens: number | null
+    estimated_cost_usd: number | null
+    id: string | null
+    input_tokens: number | null
+    model: string | null
+    output_tokens: number | null
+    reasoning_tokens: number | null
+    started_at: number | null
+}
+
 export const hermesUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -42,7 +56,7 @@ export const hermesUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows = database.prepare<Record<string, unknown>>(HERMES_SESSION_QUERY).all()
+            const rows = database.prepare<HermesSessionRow>(HERMES_SESSION_QUERY).all()
             return rows
                 .map(row => parseHermesRow(row))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
@@ -81,9 +95,9 @@ export const hermesUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseHermesRow(row: Record<string, unknown>) {
-    const sessionId = typeof row.id === 'string' ? row.id.trim() : ''
-    const model = typeof row.model === 'string' ? row.model.trim() : ''
+function parseHermesRow(row: HermesSessionRow) {
+    const sessionId = row.id?.trim() ?? ''
+    const model = row.model?.trim() ?? ''
     const rawTs = row.started_at
     const timestamp = typeof rawTs === 'number' && Number.isFinite(rawTs) && rawTs > 0
         ? fromDateTimestamp(rawTs)?.toISOString() ?? null
@@ -93,22 +107,23 @@ function parseHermesRow(row: Record<string, unknown>) {
         return null
     }
 
-    const n = (v: unknown) => typeof v === 'number' && Number.isFinite(v) ? Math.max(0, Math.trunc(v)) : 0
-    const on = (v: unknown) => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null
     const usage = toInteractionUsage({
-        cacheCreationTokens: n(row.cache_write_tokens),
-        cacheReadTokens: n(row.cache_read_tokens),
-        extraTotalTokens: n(row.reasoning_tokens),
-        inputTokens: n(row.input_tokens),
-        outputTokens: n(row.output_tokens),
+        cacheCreationTokens: typeof row.cache_write_tokens === 'number' && Number.isFinite(row.cache_write_tokens) ? Math.max(0, Math.trunc(row.cache_write_tokens)) : 0,
+        cacheReadTokens: typeof row.cache_read_tokens === 'number' && Number.isFinite(row.cache_read_tokens) ? Math.max(0, Math.trunc(row.cache_read_tokens)) : 0,
+        extraTotalTokens: typeof row.reasoning_tokens === 'number' && Number.isFinite(row.reasoning_tokens) ? Math.max(0, Math.trunc(row.reasoning_tokens)) : 0,
+        inputTokens: typeof row.input_tokens === 'number' && Number.isFinite(row.input_tokens) ? Math.max(0, Math.trunc(row.input_tokens)) : 0,
+        outputTokens: typeof row.output_tokens === 'number' && Number.isFinite(row.output_tokens) ? Math.max(0, Math.trunc(row.output_tokens)) : 0,
     })
 
-    if (isZeroInteractionUsage(usage) && !on(row.actual_cost_usd) && !on(row.estimated_cost_usd)) {
+    const actualCostUsd = typeof row.actual_cost_usd === 'number' && Number.isFinite(row.actual_cost_usd) && row.actual_cost_usd >= 0 ? row.actual_cost_usd : null
+    const estimatedCostUsd = typeof row.estimated_cost_usd === 'number' && Number.isFinite(row.estimated_cost_usd) && row.estimated_cost_usd >= 0 ? row.estimated_cost_usd : null
+
+    if (isZeroInteractionUsage(usage) && actualCostUsd == null && estimatedCostUsd == null) {
         return null
     }
 
-    const provider = normalizeHermesProvider(typeof row.billing_provider === 'string' ? row.billing_provider : null, model)
-    const directCost = on(row.actual_cost_usd) ?? on(row.estimated_cost_usd)
+    const provider = normalizeHermesProvider(row.billing_provider, model)
+    const directCost = actualCostUsd ?? estimatedCostUsd
     const modelLookupCandidates = [model, `${provider}/${model}`]
 
     return {

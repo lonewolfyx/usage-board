@@ -10,6 +10,36 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface AmpLedgerTokens {
+    input?: number
+    output?: number
+    total?: number
+}
+
+interface AmpLedgerEvent {
+    model?: string
+    timestamp?: string | number
+    tokens?: AmpLedgerTokens
+    toMessageId?: number
+}
+
+interface AmpThreadRecord {
+    id?: string
+    messages?: AmpMessageRecord[]
+    usageLedger?: {
+        events?: AmpLedgerEvent[]
+    }
+}
+
+interface AmpMessageRecord {
+    messageId?: number
+    role?: string
+    usage?: {
+        cacheCreationInputTokens?: number
+        cacheReadInputTokens?: number
+    }
+}
+
 export const ampUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -24,16 +54,13 @@ export const ampUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'amp'))
     },
     parseFile(filePath) {
-        const record = parseJsonFile<Record<string, any>>(filePath)
-        const sessionId = record?.id.trim() || basename(filePath, '.json')
-        const events = record?.usageLedger && record.usageLedger
-            ? (record.usageLedger as Record<string, unknown>).events
-            : null
+        const record = parseJsonFile<AmpThreadRecord>(filePath)
+        const sessionId = record?.id?.trim() || basename(filePath, '.json')
+        const events = record?.usageLedger?.events
         const eventList = Array.isArray(events) ? events : []
         const cacheTokensByMessageId = getAmpCacheTokens(record?.messages)
         const startedAt = eventList
-            .map(event => event)
-            .map(event => toIsoString((event as Record<string, any> | undefined)?.timestamp))
+            .map(event => toIsoString(event.timestamp))
             .find(Boolean) ?? null
         const fragment = createSessionFragment({
             project: 'amp',
@@ -50,15 +77,15 @@ export const ampUsageAdapter = {
                 continue
             }
 
-            const model = (event as Record<string, any>).model.trim()
-            const timestamp = toIsoString((event as Record<string, any>).timestamp)
-            const tokens = (event as Record<string, any>).tokens
+            const model = event.model?.trim()
+            const timestamp = toIsoString(event.timestamp)
+            const tokens = event.tokens
 
             if (!model || !timestamp || !tokens) {
                 continue
             }
 
-            const messageId = Number.isFinite((event as Record<string, any>).toMessageId) ? Number((event as Record<string, any>).toMessageId) : null
+            const messageId = typeof event.toMessageId === 'number' && Number.isFinite(event.toMessageId) ? event.toMessageId : null
             const [cacheCreationTokens = 0, cacheReadTokens = 0] = messageId != null
                 ? (cacheTokensByMessageId.get(messageId) ?? [0, 0])
                 : [0, 0]
@@ -66,9 +93,9 @@ export const ampUsageAdapter = {
                 ...applyTotalUsageAsExtra({
                     cacheCreationTokens,
                     cacheReadTokens,
-                    inputTokens: (tokens as Record<string, any>).input as number | undefined,
-                    outputTokens: (tokens as Record<string, any>).output as number | undefined,
-                    totalTokens: (tokens as Record<string, any>).total as number | undefined,
+                    inputTokens: typeof tokens.input === 'number' && Number.isFinite(tokens.input) ? tokens.input : undefined,
+                    outputTokens: typeof tokens.output === 'number' && Number.isFinite(tokens.output) ? tokens.output : undefined,
+                    totalTokens: typeof tokens.total === 'number' && Number.isFinite(tokens.total) ? tokens.total : undefined,
                 }),
             })
 
@@ -99,25 +126,23 @@ export const ampUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function getAmpCacheTokens(messages: unknown) {
+function getAmpCacheTokens(messages: AmpMessageRecord[] | undefined) {
     const cacheTokens = new Map<number, [number, number]>()
 
-    if (!Array.isArray(messages)) {
+    if (!messages) {
         return cacheTokens
     }
 
-    for (const message of messages) {
-        const record = message
-
-        if (!record || (record as Record<string, any>).role !== 'assistant' || !Number.isFinite((record as Record<string, any>).messageId)) {
+    for (const record of messages) {
+        if (record.role !== 'assistant' || typeof record.messageId !== 'number' || !Number.isFinite(record.messageId)) {
             continue
         }
 
-        const usage = (record as Record<string, any>).usage
+        const usage = record.usage
 
-        cacheTokens.set(Number((record as Record<string, any>).messageId), [
-            (usage as Record<string, any> | undefined)?.cacheCreationInputTokens as number | undefined ?? 0,
-            (usage as Record<string, any> | undefined)?.cacheReadInputTokens as number | undefined ?? 0,
+        cacheTokens.set(record.messageId, [
+            typeof usage?.cacheCreationInputTokens === 'number' && Number.isFinite(usage.cacheCreationInputTokens) ? usage.cacheCreationInputTokens : 0,
+            typeof usage?.cacheReadInputTokens === 'number' && Number.isFinite(usage.cacheReadInputTokens) ? usage.cacheReadInputTokens : 0,
         ])
     }
 

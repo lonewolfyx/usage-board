@@ -18,6 +18,34 @@ import {
 const KILO_DB_FILE_NAME = 'kilo.db'
 const KILO_MESSAGE_QUERY = 'SELECT id, session_id, data FROM message'
 
+interface KiloMessageRow {
+    data: string
+    id: string
+    session_id: string
+}
+
+interface KiloMessagePayload {
+    cost?: number
+    id?: string
+    modelID?: string
+    providerID?: string
+    role?: string
+    session_id?: string
+    time?: {
+        created?: string | number
+    }
+    tokens?: {
+        cache?: {
+            read?: number
+            write?: number
+        }
+        input?: number
+        output?: number
+        reasoning?: number
+        total?: number
+    }
+}
+
 export const kiloUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -31,15 +59,11 @@ export const kiloUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows = database.prepare<{
-                data: string
-                id: string
-                session_id: string
-            }>(KILO_MESSAGE_QUERY).all()
+            const rows = database.prepare<KiloMessageRow>(KILO_MESSAGE_QUERY).all()
             const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
             for (const row of rows) {
-                const record = parse(row.data) as Record<string, any> | null
+                const record = parse(row.data) as KiloMessagePayload | null
                 const parsed = record ? parseKiloMessage(record, row, filePath) : null
 
                 if (!parsed) {
@@ -82,16 +106,16 @@ export const kiloUsageAdapter = {
 } satisfies UsagePlatformAdapter
 
 function parseKiloMessage(
-    value: Record<string, any>,
-    row: { data: string, id: string, session_id: string },
+    value: KiloMessagePayload,
+    row: KiloMessageRow,
     filePath: string,
 ) {
-    if (value.role.trim() !== 'assistant') {
+    if (value.role?.trim() !== 'assistant') {
         return null
     }
 
     const tokens = value.tokens
-    const model = value.modelID.trim()
+    const model = value.modelID?.trim()
     const timestamp = toIsoString(value.time?.created)
 
     if (!tokens || !model || !timestamp) {
@@ -103,10 +127,10 @@ function parseKiloMessage(
         : 0
     const usage = toInteractionUsage({
         ...applyTotalUsageFallback({
-            cacheCreationTokens: tokens.cache?.write as number | undefined,
-            cacheReadTokens: tokens.cache?.read as number | undefined,
-            inputTokens: tokens.input as number | undefined,
-            outputTokens: tokens.output as number | undefined,
+            cacheCreationTokens: typeof tokens.cache?.write === 'number' && Number.isFinite(tokens.cache.write) ? tokens.cache.write : undefined,
+            cacheReadTokens: typeof tokens.cache?.read === 'number' && Number.isFinite(tokens.cache.read) ? tokens.cache.read : undefined,
+            inputTokens: typeof tokens.input === 'number' && Number.isFinite(tokens.input) ? tokens.input : undefined,
+            outputTokens: typeof tokens.output === 'number' && Number.isFinite(tokens.output) ? tokens.output : undefined,
             totalTokens: Math.max((typeof tokens.total === 'number' && Number.isFinite(tokens.total) ? tokens.total : 0) - extraTotalTokens, 0),
         }),
         extraTotalTokens,
@@ -116,11 +140,11 @@ function parseKiloMessage(
         return null
     }
 
-    const sessionId = value.session_id.trim() || row.session_id
-    const interactionId = value.id.trim() || `${filePath}:${row.id}`
+    const sessionId = value.session_id?.trim() || row.session_id
+    const interactionId = value.id?.trim() || `${filePath}:${row.id}`
     const rawCost = value.cost
     const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
-    const provider = value.providerID.trim() ?? null
+    const provider = value.providerID?.trim() || null
     const modelLookupCandidates = provider ? [model, `${provider}/${model}`] : [model]
 
     return {

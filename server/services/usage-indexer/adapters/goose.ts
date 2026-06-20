@@ -29,6 +29,23 @@ WHERE model_config_json IS NOT NULL
     AND TRIM(model_config_json) != ''
 `
 
+interface GooseSessionRow {
+    accumulated_input_tokens: number | null
+    accumulated_output_tokens: number | null
+    accumulated_total_tokens: number | null
+    created_at: string | number | null
+    id: string
+    input_tokens: number | null
+    model_config_json: string
+    output_tokens: number | null
+    provider_name: string | null
+    total_tokens: number | null
+}
+
+interface GooseModelConfig {
+    model_name?: string
+}
+
 export const gooseUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -40,7 +57,7 @@ export const gooseUsageAdapter = {
         const database = openSqliteDatabase(filePath, { readOnly: true })
 
         try {
-            const rows = database.prepare<Record<string, unknown>>(GOOSE_SESSION_QUERY).all()
+            const rows = database.prepare<GooseSessionRow>(GOOSE_SESSION_QUERY).all()
             const fragments = rows
                 .map(row => parseGooseRow(row))
                 .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
@@ -81,19 +98,23 @@ export const gooseUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function parseGooseRow(row: any) {
+function parseGooseRow(row: GooseSessionRow) {
     const sessionId = row.id.trim()
-    const modelConfig = JSON.parse(row.model_config_json.trim())
-    const model = modelConfig?.model_name.trim()
+    const modelConfig = JSON.parse(row.model_config_json.trim()) as GooseModelConfig
+    const model = modelConfig.model_name?.trim()
     const timestamp = toIsoString(row.created_at)
 
     if (!sessionId || !model || !timestamp) {
         return null
     }
 
-    const inputTokens = row.accumulated_input_tokens || row.input_tokens
-    const outputTokens = row.accumulated_output_tokens || row.output_tokens
-    const totalTokens = row.accumulated_total_tokens || row.total_tokens || (inputTokens + outputTokens)
+    const inputTokens = (row.accumulated_input_tokens && Number.isFinite(row.accumulated_input_tokens) ? row.accumulated_input_tokens : null)
+        ?? (row.input_tokens && Number.isFinite(row.input_tokens) ? row.input_tokens : 0)
+    const outputTokens = (row.accumulated_output_tokens && Number.isFinite(row.accumulated_output_tokens) ? row.accumulated_output_tokens : null)
+        ?? (row.output_tokens && Number.isFinite(row.output_tokens) ? row.output_tokens : 0)
+    const totalTokens = (row.accumulated_total_tokens && Number.isFinite(row.accumulated_total_tokens) ? row.accumulated_total_tokens : null)
+        ?? (row.total_tokens && Number.isFinite(row.total_tokens) ? row.total_tokens : null)
+        ?? (inputTokens + outputTokens)
     const extraTotalTokens = Math.max(0, totalTokens - inputTokens - outputTokens)
     const usage = toInteractionUsage({
         extraTotalTokens,
@@ -105,7 +126,7 @@ function parseGooseRow(row: any) {
         return null
     }
 
-    const provider = normalizeGooseProvider(row.provider_name.trim() ?? null, model)
+    const provider = normalizeGooseProvider(row.provider_name?.trim() ?? null, model)
     const modelLookupCandidates = [model, `${provider}/${model}`]
 
     return {

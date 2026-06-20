@@ -17,6 +17,32 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface OpenCodeMessageRow {
+    data: string
+    id: string
+    session_id: string
+}
+
+interface OpenCodeMessagePayload {
+    cost?: number
+    id?: string
+    modelID?: string
+    providerID?: string
+    sessionID?: string
+    time?: {
+        created?: string | number
+    }
+    tokens?: {
+        cache?: {
+            read?: number
+            write?: number
+        }
+        input?: number
+        output?: number
+        total?: number
+    }
+}
+
 export const openCodeUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -47,15 +73,11 @@ export const openCodeUsageAdapter = {
             const database = openSqliteDatabase(filePath, { readOnly: true })
 
             try {
-                const rows = database.prepare<{
-                    data: string
-                    id: string
-                    session_id: string
-                }>('SELECT id, session_id, data FROM message').all()
+                const rows = database.prepare<OpenCodeMessageRow>('SELECT id, session_id, data FROM message').all()
                 const fragments = new Map<string, ReturnType<typeof createSessionFragment>>()
 
                 for (const row of rows) {
-                    const record = parse(row.data) as Record<string, any> | null
+                    const record = parse(row.data) as OpenCodeMessagePayload | null
                     const entry = record
                         ? getOpenCodeMessageEntry(record, {
                                 interactionId: row.id,
@@ -98,9 +120,9 @@ export const openCodeUsageAdapter = {
             }
         }
 
-        const value = parseJsonFile<Record<string, any>>(filePath)
+        const value = parseJsonFile<OpenCodeMessagePayload>(filePath)
         const record = value
-        const interactionId = record?.id.trim()
+        const interactionId = record?.id?.trim()
 
         if (interactionId && isDuplicatedByOpenCodeDatabase(filePath, interactionId)) {
             return []
@@ -109,7 +131,7 @@ export const openCodeUsageAdapter = {
         const entry = record
             ? getOpenCodeMessageEntry(record, {
                     interactionId,
-                    sessionId: record.sessionID.trim(),
+                    sessionId: record.sessionID?.trim(),
                 })
             : null
 
@@ -163,15 +185,15 @@ async function getOpenCodeDatabaseFile(root: string) {
 }
 
 function getOpenCodeMessageEntry(
-    value: Record<string, any>,
+    value: OpenCodeMessagePayload,
     options: {
         interactionId?: string | null
         sessionId?: string | null
     } = {},
 ) {
     const tokens = value.tokens
-    const model = value.modelID.trim()
-    const provider = value.providerID.trim() ?? null
+    const model = value.modelID?.trim()
+    const provider = value.providerID?.trim()
 
     if (!tokens || !model || !provider) {
         return null
@@ -179,11 +201,11 @@ function getOpenCodeMessageEntry(
 
     const usage = toInteractionUsage({
         ...applyTotalUsageAsExtra({
-            cacheCreationTokens: tokens.cache?.write as number | undefined,
-            cacheReadTokens: tokens.cache?.read as number | undefined,
-            inputTokens: tokens.input as number | undefined,
-            outputTokens: tokens.output as number | undefined,
-            totalTokens: tokens.total as number | undefined,
+            cacheCreationTokens: typeof tokens.cache?.write === 'number' && Number.isFinite(tokens.cache.write) ? tokens.cache.write : undefined,
+            cacheReadTokens: typeof tokens.cache?.read === 'number' && Number.isFinite(tokens.cache.read) ? tokens.cache.read : undefined,
+            inputTokens: typeof tokens.input === 'number' && Number.isFinite(tokens.input) ? tokens.input : undefined,
+            outputTokens: typeof tokens.output === 'number' && Number.isFinite(tokens.output) ? tokens.output : undefined,
+            totalTokens: typeof tokens.total === 'number' && Number.isFinite(tokens.total) ? tokens.total : undefined,
         }),
     })
 
@@ -203,7 +225,7 @@ function getOpenCodeMessageEntry(
     const modelLookupCandidates = getOpenCodeModelCandidates(model, provider)
 
     return {
-        interactionId: options.interactionId || value.id.trim() || `${sessionId}:${timestamp}:${model}`,
+        interactionId: options.interactionId || value.id?.trim() || `${sessionId}:${timestamp}:${model}`,
         model,
         modelLookupCandidates,
         provider,

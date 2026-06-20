@@ -17,7 +17,7 @@ import {
     toInteractionUsage,
 } from './shared'
 
-const COPILOT_MODEL_ATTRS = ['gen_ai.response.model', 'gen_ai.request.model'] as const
+const COPILOT_MODEL_ATTRS = ['gen_ai.response.model', 'gen_ai.request.model'] as const satisfies ReadonlyArray<keyof CopilotAttributes>
 const COPILOT_SESSION_ATTRS = [
     ['gen_ai.conversation.id', 3],
     ['copilot_chat.session_id', 3],
@@ -25,7 +25,7 @@ const COPILOT_SESSION_ATTRS = [
     ['session.id', 3],
     ['github.copilot.interaction_id', 2],
     ['gen_ai.response.id', 1],
-] as const
+] as const satisfies ReadonlyArray<readonly [keyof CopilotAttributes, number]>
 
 type CopilotSource = 'agentSummarySpan' | 'agentTurnLog' | 'chatSpan' | 'inferenceLog'
 
@@ -40,6 +40,55 @@ interface CopilotCandidate {
     timestamp: string
     traceId: string | undefined
     usage: ReturnType<typeof toInteractionUsage>
+}
+
+interface CopilotAttributes {
+    'copilot_chat.agent.turn'?: string
+    'copilot_chat.chat_session_id'?: string
+    'copilot_chat.session_id'?: string
+    'copilot_chat.turn.index'?: number | string
+    'event.name'?: string
+    'gen_ai.conversation.id'?: string
+    'gen_ai.operation.name'?: string
+    'gen_ai.request.model'?: string
+    'gen_ai.response.id'?: string
+    'gen_ai.response.model'?: string
+    'gen_ai.usage.cache_creation.input_tokens'?: number | string
+    'gen_ai.usage.cache_read.input_tokens'?: number | string
+    'gen_ai.usage.cache_write.input_tokens'?: number | string
+    'gen_ai.usage.input_tokens'?: number | string
+    'gen_ai.usage.output_tokens'?: number | string
+    'gen_ai.usage.reasoning.output_tokens'?: number | string
+    'gen_ai.usage.reasoning_tokens'?: number | string
+    'gen_ai.usage.total.token_count'?: number | string
+    'gen_ai.usage.total_tokens'?: number | string
+    'github.copilot.interaction_id'?: string
+    'session.id'?: string
+    'turn.index'?: number | string
+}
+
+interface CopilotRecord {
+    _body?: string
+    _hrTime?: string | number
+    attributes?: CopilotAttributes
+    body?: string
+    duration?: number
+    endTime?: string | number
+    hrTime?: string | number
+    kind?: string
+    name?: string
+    observedTimestamp?: string | number
+    spanContext?: {
+        spanId?: string
+        traceId?: string
+    }
+    spanId?: string
+    startTime?: string | number
+    time?: string | number
+    timestamp?: string | number
+    timeUnixNano?: string | number
+    traceId?: string
+    type?: string
 }
 
 export const copilotUsageAdapter = {
@@ -68,8 +117,8 @@ export const copilotUsageAdapter = {
             .map(line => line.trim())
             .filter(line => line.includes('"attributes"'))
         const records = lines
-            .map(line => parse(line) as Record<string, any> | null)
-            .filter((record): record is Record<string, any> => record !== null)
+            .map(line => parse(line) as CopilotRecord | null)
+            .filter((record): record is CopilotRecord => record !== null)
         const traceContexts = collectCopilotTraceContexts(records)
         const fallbackTimestamp = getFileModifiedAtIso(filePath)
         const candidates = records
@@ -112,7 +161,7 @@ export const copilotUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function collectCopilotTraceContexts(records: Record<string, any>[]) {
+function collectCopilotTraceContexts(records: CopilotRecord[]) {
     const contexts = new Map<string, { model: string | null, priority: number, sessionId: string | null }>()
 
     for (const record of records) {
@@ -139,7 +188,7 @@ function collectCopilotTraceContexts(records: Record<string, any>[]) {
 }
 
 function getCopilotCandidate(
-    record: Record<string, any>,
+    record: CopilotRecord,
     index: number,
     fallbackTimestamp: string | null,
     traceContexts: Map<string, { model: string | null, priority: number, sessionId: string | null }>,
@@ -185,7 +234,7 @@ function getCopilotCandidate(
         || traceContext?.sessionId
         || traceId
         || 'unknown-session'
-    const responseId = attributes['gen_ai.response.id'].trim() ?? undefined
+    const responseId = attributes['gen_ai.response.id']?.trim() || undefined
     const timestamp = getCopilotTimestamp(record) || fallbackTimestamp
 
     if (!timestamp) {
@@ -241,12 +290,12 @@ function filterCopilotCandidates(candidates: CopilotCandidate[]) {
     })
 }
 
-function getCopilotSource(record: Record<string, any>, attributes: Record<string, any>): CopilotSource | null {
+function getCopilotSource(record: CopilotRecord, attributes: CopilotAttributes): CopilotSource | null {
     const isSpan = isCopilotSpanRecord(record)
-    const eventName = attributes['event.name'].trim()
-    const operation = attributes['gen_ai.operation.name'].trim()
-    const body = record.body.trim() || record._body.trim()
-    const name = record.name.trim()
+    const eventName = attributes['event.name']?.trim()
+    const operation = attributes['gen_ai.operation.name']?.trim()
+    const body = record.body?.trim() || record._body?.trim()
+    const name = record.name?.trim()
 
     if (isSpan && (operation === 'chat' || name?.startsWith('chat '))) {
         return 'chatSpan'
@@ -267,14 +316,14 @@ function getCopilotSource(record: Record<string, any>, attributes: Record<string
     return null
 }
 
-function isCopilotSpanRecord(record: Record<string, any>) {
-    const type = record.type.trim()
+function isCopilotSpanRecord(record: CopilotRecord) {
+    const type = record.type?.trim()
 
     return type === 'span'
-        || (!!record.name.trim()
+        || (!!record.name?.trim()
             && (
-                !!record.spanId.trim()
-                || !!record.traceId.trim()
+                !!record.spanId?.trim()
+                || !!record.traceId?.trim()
                 || record.startTime != null
                 || record.endTime != null
                 || record.duration != null
@@ -284,14 +333,14 @@ function isCopilotSpanRecord(record: Record<string, any>) {
 
 function getCopilotDedupeKey(
     source: CopilotSource,
-    record: Record<string, any>,
-    attributes: Record<string, any>,
+    record: CopilotRecord,
+    attributes: CopilotAttributes,
     traceId: string | null,
     sessionId: string,
     timestamp: string,
     index: number,
 ) {
-    const spanId = record.spanId.trim() || (record.spanContext as Record<string, unknown> | undefined)?.spanId
+    const spanId = record.spanId?.trim() || record.spanContext?.spanId
 
     if (source === 'chatSpan' || source === 'agentSummarySpan') {
         return traceId && spanId ? `${traceId}:${spanId}` : `span:${sessionId}:${timestamp}:${index}`
@@ -305,11 +354,11 @@ function getCopilotDedupeKey(
     return traceId ? `agent-turn:${traceId}:${turnIndex || index}` : `agent-turn:${sessionId}:${turnIndex || index}:${index}`
 }
 
-function getCopilotTraceId(record: Record<string, any>) {
-    return record.traceId.trim() || (record.spanContext as Record<string, unknown> | undefined)?.traceId || null
+function getCopilotTraceId(record: CopilotRecord) {
+    return record.traceId?.trim() || record.spanContext?.traceId || null
 }
 
-function getCopilotAttributeNumber(attributes: Record<string, any>, key: string) {
+function getCopilotAttributeNumber(attributes: CopilotAttributes, key: keyof CopilotAttributes) {
     const value = attributes[key]
 
     if (typeof value === 'number' && Number.isFinite(value)) {
@@ -324,7 +373,7 @@ function getCopilotAttributeNumber(attributes: Record<string, any>, key: string)
     return 0
 }
 
-function getCopilotAttributeNumberFirst(attributes: Record<string, any>, keys: readonly string[]) {
+function getCopilotAttributeNumberFirst(attributes: CopilotAttributes, keys: ReadonlyArray<keyof CopilotAttributes>) {
     for (const key of keys) {
         const value = getCopilotAttributeNumber(attributes, key)
 
@@ -336,9 +385,9 @@ function getCopilotAttributeNumberFirst(attributes: Record<string, any>, keys: r
     return 0
 }
 
-function getFirstCopilotAttribute(attributes: Record<string, any>, keys: readonly string[]) {
+function getFirstCopilotAttribute(attributes: CopilotAttributes, keys: ReadonlyArray<keyof CopilotAttributes>) {
     for (const key of keys) {
-        const value = attributes[key].trim()
+        const value = typeof attributes[key] === 'string' ? attributes[key].trim() : ''
 
         if (value) {
             return value
@@ -348,11 +397,11 @@ function getFirstCopilotAttribute(attributes: Record<string, any>, keys: readonl
     return null
 }
 
-function getBestCopilotSessionAttribute(attributes: Record<string, any>) {
+function getBestCopilotSessionAttribute(attributes: CopilotAttributes) {
     let best: { priority: number, value: string } | null = null
 
     for (const [key, priority] of COPILOT_SESSION_ATTRS) {
-        const value = attributes[key].trim()
+        const value = typeof attributes[key] === 'string' ? attributes[key].trim() : ''
 
         if (value && (!best || priority > best.priority)) {
             best = { priority, value }
@@ -362,7 +411,7 @@ function getBestCopilotSessionAttribute(attributes: Record<string, any>) {
     return best
 }
 
-function getCopilotTimestamp(record: Record<string, any>) {
+function getCopilotTimestamp(record: CopilotRecord) {
     return toIsoString(record.endTime)
         || toIsoString(record.startTime)
         || toIsoString(record.hrTime)

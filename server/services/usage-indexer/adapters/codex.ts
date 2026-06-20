@@ -30,6 +30,48 @@ import { getFileModifiedAtIso } from './shared'
 
 const CODEX_SPEED_CACHE_PREFIX = 'codex-speed:'
 
+interface CodexUsageContainer {
+    created_at?: string | number
+    createdAt?: string | number
+    model?: string
+    model_name?: string
+    timestamp?: string | number
+    usage?: CodexHeadlessUsage
+}
+
+interface CodexHeadlessUsage {
+    cached_input_tokens?: number
+    cached_tokens?: number
+    cache_read_input_tokens?: number
+    completion_tokens?: number
+    input_tokens?: number
+    output_tokens?: number
+    prompt_tokens?: number
+    reasoning_output_tokens?: number
+    total_tokens?: number
+}
+
+interface CodexLogLine extends CodexUsageContainer {
+    data?: CodexUsageContainer
+    payload?: CodexPayload
+    response?: CodexUsageContainer
+    result?: CodexUsageContainer
+    type?: string
+}
+
+interface CodexPayload extends CodexUsageContainer {
+    cwd?: string
+    git?: {
+        repository_url?: string
+    }
+    id?: string
+    info?: {
+        last_token_usage?: RawUsage | null
+        total_token_usage?: RawUsage | null
+    } | null
+    type?: string
+}
+
 export const codexUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -54,7 +96,7 @@ export const codexUsageAdapter = {
         return files.flatMap(filePath => toDiscoveredUsageFile(filePath, 'codex', cacheSignature))
     },
     parseFile(filePath, _resolvePricing, file) {
-        const lines = parseJsonlFile<Record<string, any>>(filePath)
+        const lines = parseJsonlFile<CodexLogLine>(filePath)
         const sessionMeta = lines.find(line => typeof line.type === 'string' && line.type.trim() === 'session_meta')?.payload
         const sessionId = typeof sessionMeta?.id === 'string' && sessionMeta.id.trim()
             ? sessionMeta.id.trim()
@@ -155,15 +197,15 @@ export const codexUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function getCodexRawUsage(line: Record<string, any>, previousTotals: RawUsage | null) {
+function getCodexRawUsage(line: CodexLogLine, previousTotals: RawUsage | null) {
     const payload = line.payload
     const lineType = typeof line.type === 'string' ? line.type.trim() : ''
     const payloadType = typeof payload?.type === 'string' ? payload.type.trim() : ''
 
     if (lineType === 'event_msg' && payloadType === 'token_count') {
         const info = payload?.info
-        const lastUsage = normalizeRawUsage(info?.last_token_usage as RawUsage | null | undefined)
-        const totalUsage = normalizeRawUsage(info?.total_token_usage as RawUsage | null | undefined)
+        const lastUsage = normalizeRawUsage(info?.last_token_usage)
+        const totalUsage = normalizeRawUsage(info?.total_token_usage)
         const sessionUsage = lastUsage ?? (totalUsage ? subtractRawUsage(totalUsage, previousTotals) : null)
 
         return sessionUsage
@@ -273,7 +315,7 @@ function stripTomlQuotes(value: string) {
         : value
 }
 
-function getCodexRole(line: Record<string, any>, hasUsage: boolean) {
+function getCodexRole(line: CodexLogLine, hasUsage: boolean) {
     const type = typeof line.payload?.type === 'string'
         ? line.payload.type.trim()
         : typeof line.type === 'string'
@@ -287,7 +329,7 @@ function getCodexRole(line: Record<string, any>, hasUsage: boolean) {
     return normalizeRole(type)
 }
 
-function getHeadlessCodexRawUsage(line: Record<string, any>) {
+function getHeadlessCodexRawUsage(line: CodexLogLine) {
     const usage = getHeadlessUsageRecord(line)
 
     if (!usage) {
@@ -303,7 +345,7 @@ function getHeadlessCodexRawUsage(line: Record<string, any>) {
             : null
 }
 
-function getHeadlessUsageRecord(line: Record<string, any>) {
+function getHeadlessUsageRecord(line: CodexLogLine) {
     const candidates = [
         line.usage,
         line.data?.usage,
@@ -314,15 +356,13 @@ function getHeadlessUsageRecord(line: Record<string, any>) {
     return candidates.find(Boolean) ?? null
 }
 
-function readHeadlessCodexUsage(usage: Record<string, any>): RawUsage | null {
-    const hasStandardUsageField = [
-        'input_tokens',
-        'cached_input_tokens',
-        'cache_read_input_tokens',
-        'output_tokens',
-        'reasoning_output_tokens',
-        'total_tokens',
-    ].some(key => usage[key] !== undefined && usage[key] !== null)
+function readHeadlessCodexUsage(usage: CodexHeadlessUsage): RawUsage | null {
+    const hasStandardUsageField = usage.input_tokens != null
+        || usage.cached_input_tokens != null
+        || usage.cache_read_input_tokens != null
+        || usage.output_tokens != null
+        || usage.reasoning_output_tokens != null
+        || usage.total_tokens != null
 
     if (hasStandardUsageField) {
         const normalized = normalizeRawUsage(usage as unknown as RawUsage)
@@ -357,7 +397,7 @@ function readHeadlessCodexUsage(usage: Record<string, any>): RawUsage | null {
     }
 }
 
-function extractCodexModel(line: Record<string, any>) {
+function extractCodexModel(line: CodexLogLine) {
     const payload = line.payload
     const candidates = [
         payload,
@@ -378,15 +418,15 @@ function extractCodexModel(line: Record<string, any>) {
     return undefined
 }
 
-function getCodexTimestamp(line: Record<string, any> | null | undefined) {
+function getCodexTimestamp(line: CodexLogLine | CodexPayload | null | undefined) {
     if (!line) {
         return null
     }
 
-    const data = line.data
-    const result = line.result
-    const response = line.response
-    const payload = line.payload
+    const data = 'data' in line ? line.data : undefined
+    const result = 'result' in line ? line.result : undefined
+    const response = 'response' in line ? line.response : undefined
+    const payload = 'payload' in line ? line.payload : undefined
 
     return toIsoString(line.timestamp)
         || toIsoString(line.created_at)

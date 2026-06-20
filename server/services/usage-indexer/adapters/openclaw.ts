@@ -17,6 +17,42 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface OpenClawUsageCost {
+    total?: number
+}
+
+interface OpenClawUsageRecord {
+    cacheRead?: number
+    cacheWrite?: number
+    cost?: OpenClawUsageCost
+    input?: number
+    output?: number
+    totalTokens?: number
+}
+
+interface OpenClawMessageRecord {
+    model?: string
+    modelId?: string
+    provider?: string
+    role?: string
+    timestamp?: string | number
+    usage?: OpenClawUsageRecord
+}
+
+interface OpenClawModelChangeSource {
+    customType?: string
+    model?: string
+    modelId?: string
+    provider?: string
+    type?: string
+}
+
+interface OpenClawLine extends OpenClawModelChangeSource {
+    data?: OpenClawModelChangeSource
+    message?: OpenClawMessageRecord
+    timestamp?: string | number
+}
+
 export const openClawUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -50,7 +86,7 @@ export const openClawUsageAdapter = {
 
         for (let index = 0; index < lines.length; index += 1) {
             const line = lines[index]!
-            const record = parse(line) as Record<string, any> | null
+            const record = parse(line) as OpenClawLine | null
 
             if (!record) {
                 continue
@@ -58,19 +94,19 @@ export const openClawUsageAdapter = {
 
             if (isOpenClawModelChange(record)) {
                 const source = record.data ?? record
-                currentModel = source.modelId.trim() || source.model.trim() || currentModel
-                currentProvider = source.provider.trim() || currentProvider
+                currentModel = source.modelId?.trim() || source.model?.trim() || currentModel
+                currentProvider = source.provider?.trim() || currentProvider
                 continue
             }
 
-            if (record.type.trim() !== 'message') {
+            if (record.type?.trim() !== 'message') {
                 continue
             }
 
             const message = record.message
             const usageRecord = message?.usage
 
-            if (!message || message.role.trim() !== 'assistant' || !usageRecord) {
+            if (!message || message.role?.trim() !== 'assistant' || !usageRecord) {
                 continue
             }
 
@@ -78,11 +114,11 @@ export const openClawUsageAdapter = {
             const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: usageRecord.cacheWrite as number | undefined,
-                    cacheReadTokens: usageRecord.cacheRead as number | undefined,
-                    inputTokens: usageRecord.input as number | undefined,
-                    outputTokens: usageRecord.output as number | undefined,
-                    totalTokens: usageRecord.totalTokens as number | undefined,
+                    cacheCreationTokens: typeof usageRecord.cacheWrite === 'number' && Number.isFinite(usageRecord.cacheWrite) ? usageRecord.cacheWrite : undefined,
+                    cacheReadTokens: typeof usageRecord.cacheRead === 'number' && Number.isFinite(usageRecord.cacheRead) ? usageRecord.cacheRead : undefined,
+                    inputTokens: typeof usageRecord.input === 'number' && Number.isFinite(usageRecord.input) ? usageRecord.input : undefined,
+                    outputTokens: typeof usageRecord.output === 'number' && Number.isFinite(usageRecord.output) ? usageRecord.output : undefined,
+                    totalTokens: typeof usageRecord.totalTokens === 'number' && Number.isFinite(usageRecord.totalTokens) ? usageRecord.totalTokens : undefined,
                 }),
                 costUSD: directCost ?? 0,
             })
@@ -91,11 +127,11 @@ export const openClawUsageAdapter = {
                 continue
             }
 
-            const rawModel = message.modelId.trim()
-                || message.model.trim()
+            const rawModel = message.modelId?.trim()
+                || message.model?.trim()
                 || currentModel
                 || 'unknown'
-            const provider = message.provider.trim() || currentProvider
+            const provider = message.provider?.trim() || currentProvider
             const modelLookupCandidates = provider ? [rawModel, `${provider}/${rawModel}`] : [rawModel]
             const timestamp = toIsoString(message.timestamp) ?? toIsoString(record.timestamp) ?? fallbackTimestamp
 
@@ -132,11 +168,11 @@ export const openClawUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function isOpenClawModelChange(record: Record<string, any>) {
-    const type = record.type.trim()
+function isOpenClawModelChange(record: OpenClawLine) {
+    const type = record.type?.trim()
 
     return type === 'model_change'
-        || (type === 'custom' && record.customType.trim() === 'model-snapshot')
+        || (type === 'custom' && record.customType?.trim() === 'model-snapshot')
 }
 
 function isOpenClawSessionFile(name: string) {

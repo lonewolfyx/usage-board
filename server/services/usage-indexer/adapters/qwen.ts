@@ -16,6 +16,21 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface QwenUsageMetadata {
+    cachedContentTokenCount?: number
+    candidatesTokenCount?: number
+    promptTokenCount?: number
+    thoughtsTokenCount?: number
+    totalTokenCount?: number
+}
+
+interface QwenAssistantLine {
+    model?: string
+    timestamp?: string | number
+    type?: string
+    usageMetadata?: QwenUsageMetadata
+}
+
 export const qwenUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -48,20 +63,25 @@ export const qwenUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = JSON.parse(lines[index]!)
+            const record = JSON.parse(lines[index]!) as QwenAssistantLine
             const usageRecord = record?.usageMetadata
 
-            if (!record || record.type.trim() !== 'assistant' || !usageRecord) {
+            if (!record || record.type?.trim() !== 'assistant' || !usageRecord) {
                 continue
             }
 
-            const extraTotalTokens = usageRecord.thoughtsTokenCount ?? 0
+            const extraTotalTokens = typeof usageRecord.thoughtsTokenCount === 'number' && Number.isFinite(usageRecord.thoughtsTokenCount)
+                ? usageRecord.thoughtsTokenCount
+                : 0
+            const totalTokenCount = typeof usageRecord.totalTokenCount === 'number' && Number.isFinite(usageRecord.totalTokenCount)
+                ? usageRecord.totalTokenCount
+                : 0
             const usage = toInteractionUsage({
                 ...applyTotalUsageFallback({
-                    cacheReadTokens: usageRecord.cachedContentTokenCount as number | undefined,
-                    inputTokens: usageRecord.promptTokenCount as number | undefined,
-                    outputTokens: usageRecord.candidatesTokenCount as number | undefined,
-                    totalTokens: Math.max((typeof usageRecord.totalTokenCount === 'number' && Number.isFinite(usageRecord.totalTokenCount) ? usageRecord.totalTokenCount : 0) - extraTotalTokens, 0),
+                    cacheReadTokens: typeof usageRecord.cachedContentTokenCount === 'number' && Number.isFinite(usageRecord.cachedContentTokenCount) ? usageRecord.cachedContentTokenCount : undefined,
+                    inputTokens: typeof usageRecord.promptTokenCount === 'number' && Number.isFinite(usageRecord.promptTokenCount) ? usageRecord.promptTokenCount : undefined,
+                    outputTokens: typeof usageRecord.candidatesTokenCount === 'number' && Number.isFinite(usageRecord.candidatesTokenCount) ? usageRecord.candidatesTokenCount : undefined,
+                    totalTokens: Math.max(totalTokenCount - extraTotalTokens, 0),
                 }),
                 extraTotalTokens,
             })
@@ -70,7 +90,7 @@ export const qwenUsageAdapter = {
                 continue
             }
 
-            const model = record.model.trim() || 'unknown'
+            const model = record.model?.trim() || 'unknown'
             const modelLookupCandidates = [model, `qwen/${model}`, `alibaba/${model}`]
             const timestamp = toIsoString(record.timestamp) ?? fallbackTimestamp
 

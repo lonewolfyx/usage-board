@@ -19,6 +19,29 @@ import {
 
 const KIMI_DEFAULT_MODEL = 'kimi-for-coding'
 
+interface KimiConfig {
+    model?: string
+}
+
+interface KimiStatusPayload {
+    message_id?: string
+    token_usage?: {
+        input_cache_creation?: number
+        input_cache_read?: number
+        input_other?: number
+        output?: number
+        total?: number
+    }
+}
+
+interface KimiWireLine {
+    message?: {
+        payload?: KimiStatusPayload
+        type?: string
+    }
+    timestamp?: string | number
+}
+
 export const kimiUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver({
@@ -52,22 +75,22 @@ export const kimiUsageAdapter = {
             .filter(Boolean)
 
         for (let index = 0; index < lines.length; index += 1) {
-            const record = parse(lines[index]!) as Record<string, any> | null
+            const record = parse(lines[index]!) as KimiWireLine | null
             const message = record?.message
             const payload = message?.payload
             const tokenUsage = payload?.token_usage
 
-            if (!record || !message || message.type.trim() !== 'StatusUpdate' || !payload || !tokenUsage) {
+            if (!record || !message || message.type?.trim() !== 'StatusUpdate' || !payload || !tokenUsage) {
                 continue
             }
 
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: tokenUsage.input_cache_creation as number | undefined,
-                    cacheReadTokens: tokenUsage.input_cache_read as number | undefined,
-                    inputTokens: tokenUsage.input_other as number | undefined,
-                    outputTokens: tokenUsage.output as number | undefined,
-                    totalTokens: tokenUsage.total as number | undefined,
+                    cacheCreationTokens: typeof tokenUsage.input_cache_creation === 'number' && Number.isFinite(tokenUsage.input_cache_creation) ? tokenUsage.input_cache_creation : undefined,
+                    cacheReadTokens: typeof tokenUsage.input_cache_read === 'number' && Number.isFinite(tokenUsage.input_cache_read) ? tokenUsage.input_cache_read : undefined,
+                    inputTokens: typeof tokenUsage.input_other === 'number' && Number.isFinite(tokenUsage.input_other) ? tokenUsage.input_other : undefined,
+                    outputTokens: typeof tokenUsage.output === 'number' && Number.isFinite(tokenUsage.output) ? tokenUsage.output : undefined,
+                    totalTokens: typeof tokenUsage.total === 'number' && Number.isFinite(tokenUsage.total) ? tokenUsage.total : undefined,
                 }),
             })
 
@@ -82,7 +105,7 @@ export const kimiUsageAdapter = {
                 costUSD: 0,
                 dedupeKey: [
                     sessionId,
-                    payload.message_id.trim() || '',
+                    payload.message_id?.trim() || '',
                     timestamp || '',
                     model,
                     String(usage.inputTokens),
@@ -113,8 +136,8 @@ export const kimiUsageAdapter = {
 } satisfies UsagePlatformAdapter
 
 function getKimiModel(filePath: string) {
-    const config = parseJsonFile<Record<string, any>>(join(dirname(dirname(dirname(filePath))), 'config.json'))
-    return config?.model.trim() || KIMI_DEFAULT_MODEL
+    const config = parseJsonFile<KimiConfig>(join(dirname(dirname(dirname(filePath))), 'config.json'))
+    return config?.model?.trim() || KIMI_DEFAULT_MODEL
 }
 
 function isKimiWireFile(sessionsPath: string, filePath: string) {

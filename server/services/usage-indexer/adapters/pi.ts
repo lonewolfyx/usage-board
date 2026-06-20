@@ -14,6 +14,31 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface PiUsageCost {
+    total?: number
+}
+
+interface PiUsageRecord {
+    cacheRead?: number
+    cacheWrite?: number
+    cost?: PiUsageCost
+    input?: number
+    output?: number
+    totalTokens?: number
+}
+
+interface PiMessage {
+    model?: string
+    role?: string
+    usage?: PiUsageRecord
+}
+
+interface PiSessionLine {
+    message?: PiMessage
+    timestamp?: string | number
+    type?: string
+}
+
 export const piUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -28,7 +53,7 @@ export const piUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'pi'))
     },
     parseFile(filePath) {
-        const lines = parseJsonlFile<Record<string, any>>(filePath)
+        const lines = parseJsonlFile<PiSessionLine>(filePath)
         const sessionId = getPiSessionId(filePath)
         const project = getPiProject(filePath)
         const fragment = createSessionFragment({
@@ -43,26 +68,26 @@ export const piUsageAdapter = {
             const line = lines[index]
             const message = line?.message
 
-            if (!line || !message || (message as Record<string, unknown>).role !== 'assistant' || !(message as Record<string, unknown>).usage) {
+            if (!line || !message || message.role !== 'assistant' || !message.usage) {
                 continue
             }
 
-            const usageRecord = (message as Record<string, unknown>).usage
+            const usageRecord = message.usage
             const timestamp = toIsoString(line.timestamp)
 
             if (!usageRecord || !timestamp) {
                 continue
             }
 
-            const rawCost = (usageRecord as Record<string, any>).cost?.total
+            const rawCost = usageRecord.cost?.total
             const directCost = typeof rawCost === 'number' && Number.isFinite(rawCost) ? rawCost : null
             const usage = toInteractionUsage({
                 ...applyTotalUsageAsExtra({
-                    cacheCreationTokens: (usageRecord as Record<string, any>).cacheWrite as number | undefined,
-                    cacheReadTokens: (usageRecord as Record<string, any>).cacheRead as number | undefined,
-                    inputTokens: (usageRecord as Record<string, any>).input as number | undefined,
-                    outputTokens: (usageRecord as Record<string, any>).output as number | undefined,
-                    totalTokens: (usageRecord as Record<string, any>).totalTokens as number | undefined,
+                    cacheCreationTokens: typeof usageRecord.cacheWrite === 'number' && Number.isFinite(usageRecord.cacheWrite) ? usageRecord.cacheWrite : undefined,
+                    cacheReadTokens: typeof usageRecord.cacheRead === 'number' && Number.isFinite(usageRecord.cacheRead) ? usageRecord.cacheRead : undefined,
+                    inputTokens: typeof usageRecord.input === 'number' && Number.isFinite(usageRecord.input) ? usageRecord.input : undefined,
+                    outputTokens: typeof usageRecord.output === 'number' && Number.isFinite(usageRecord.output) ? usageRecord.output : undefined,
+                    totalTokens: typeof usageRecord.totalTokens === 'number' && Number.isFinite(usageRecord.totalTokens) ? usageRecord.totalTokens : undefined,
                 }),
                 costUSD: directCost ?? 0,
             })
@@ -71,7 +96,7 @@ export const piUsageAdapter = {
                 continue
             }
 
-            const rawModel = (message as Record<string, any>).model.trim()
+            const rawModel = message.model?.trim() ?? ''
 
             addFragmentInteraction(fragment, {
                 costUSD: usage.costUSD,
@@ -94,7 +119,7 @@ export const piUsageAdapter = {
                 rawCostUSD: directCost,
                 role: 'assistant',
                 timestamp,
-                type: line.type.trim() || 'message',
+                type: line.type?.trim() || 'message',
                 usage,
             })
         }

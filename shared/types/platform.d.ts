@@ -11,10 +11,8 @@ export interface SessionLogLine {
     timestamp?: string
     type?: string
     payload?: {
-        [key: string]: unknown
         id?: string
         info?: {
-            [key: string]: unknown
             last_token_usage?: TokenUsageSnapshot
             total_token_usage?: TokenUsageSnapshot
         } | null

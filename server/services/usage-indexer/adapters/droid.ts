@@ -16,6 +16,22 @@ import {
     toInteractionUsage,
 } from './shared'
 
+interface DroidTokenUsage {
+    cacheCreationTokens?: number
+    cacheReadTokens?: number
+    inputTokens?: number
+    outputTokens?: number
+    thinkingTokens?: number
+    totalTokens?: number
+}
+
+interface DroidSettings {
+    model?: string
+    providerLock?: string
+    providerLockTimestamp?: string | number
+    tokenUsage?: DroidTokenUsage
+}
+
 export const droidUsageAdapter = {
     async createPricingResolver() {
         return createLiteLLMPricingResolver()
@@ -29,7 +45,7 @@ export const droidUsageAdapter = {
             .flatMap(filePath => toDiscoveredUsageFile(filePath, 'droid'))
     },
     parseFile(filePath) {
-        const data = parseJsonFile<Record<string, any>>(filePath)
+        const data = parseJsonFile<DroidSettings>(filePath)
         const settings = data
         const tokenUsage = settings?.tokenUsage
 
@@ -42,10 +58,10 @@ export const droidUsageAdapter = {
             : 0
         const usage = toInteractionUsage({
             ...applyTotalUsageFallback({
-                cacheCreationTokens: tokenUsage.cacheCreationTokens as number | undefined,
-                cacheReadTokens: tokenUsage.cacheReadTokens as number | undefined,
-                inputTokens: tokenUsage.inputTokens as number | undefined,
-                outputTokens: tokenUsage.outputTokens as number | undefined,
+                cacheCreationTokens: typeof tokenUsage.cacheCreationTokens === 'number' && Number.isFinite(tokenUsage.cacheCreationTokens) ? tokenUsage.cacheCreationTokens : undefined,
+                cacheReadTokens: typeof tokenUsage.cacheReadTokens === 'number' && Number.isFinite(tokenUsage.cacheReadTokens) ? tokenUsage.cacheReadTokens : undefined,
+                inputTokens: typeof tokenUsage.inputTokens === 'number' && Number.isFinite(tokenUsage.inputTokens) ? tokenUsage.inputTokens : undefined,
+                outputTokens: typeof tokenUsage.outputTokens === 'number' && Number.isFinite(tokenUsage.outputTokens) ? tokenUsage.outputTokens : undefined,
                 totalTokens: Math.max((typeof tokenUsage.totalTokens === 'number' && Number.isFinite(tokenUsage.totalTokens) ? tokenUsage.totalTokens : 0) - extraTotalTokens, 0),
             }),
             extraTotalTokens,
@@ -55,7 +71,7 @@ export const droidUsageAdapter = {
             return []
         }
 
-        const provider = normalizeDroidProvider(settings.providerLock.trim() ?? null)
+        const provider = normalizeDroidProvider(settings.providerLock?.trim() ?? null)
         const model = getDroidModel(settings, filePath, provider)
         const normalizedProvider = provider === 'unknown' ? inferDroidProviderFromModel(model) : provider
         const timestamp = toIsoString(settings.providerLockTimestamp) ?? getFileModifiedAtIso(filePath)
@@ -93,8 +109,8 @@ export const droidUsageAdapter = {
     },
 } satisfies UsagePlatformAdapter
 
-function getDroidModel(settings: Record<string, any>, settingsPath: string, provider: string) {
-    const explicitModel = settings.model.trim()
+function getDroidModel(settings: DroidSettings, settingsPath: string, provider: string) {
+    const explicitModel = settings.model?.trim()
 
     if (explicitModel) {
         return normalizeDroidModelName(explicitModel)
@@ -262,7 +278,7 @@ function selectLatestDroidSettingsFiles(filePaths: string[]) {
 }
 
 function getDroidSnapshotTimestamp(filePath: string) {
-    const settings = parseJsonFile<Record<string, any>>(filePath)
+    const settings = parseJsonFile<DroidSettings>(filePath)
     const timestamp = toIsoString(settings?.providerLockTimestamp)
 
     return timestamp ? Date.parse(timestamp) : Date.parse(getFileModifiedAtIso(filePath) ?? '') || 0
