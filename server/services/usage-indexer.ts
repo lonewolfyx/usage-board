@@ -22,6 +22,7 @@ import {
     getMonthKey,
 } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey, getDateKey, roundCurrency, sumCurrency } from '#shared/utils/usage-dashboard'
+import { createUsageSessionIdentity } from '#shared/utils/usage-identity'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 
@@ -511,7 +512,14 @@ function parseUsageFile(
         throw new Error(`Missing pricing resolver for platform ${file.platform}.`)
     }
 
-    const payload = adapter.parseFile(file.path, resolvePricing, file)
+    const payload = adapter.parseFile(file.path, resolvePricing, file).map(fragment => ({
+        ...fragment,
+        key: createUsageSessionIdentity({
+            platform: file.platform,
+            repository: fragment.repository,
+            sessionId: fragment.sessionId,
+        }),
+    }))
 
     return {
         cacheSignature: file.cacheSignature,
@@ -660,11 +668,16 @@ function collectUpdatedSessions(
                 continue
             }
 
-            const key = `${file.platform}:${sessionId}`
+            const key = createUsageSessionIdentity({
+                platform: file.platform,
+                repository: fragment.repository,
+                sessionId,
+            })
 
             if (!sessions.has(key)) {
                 sessions.set(key, {
                     platform: file.platform,
+                    repository: fragment.repository,
                     sessionId,
                 })
             }
@@ -676,7 +689,7 @@ function collectUpdatedSessions(
             return a.platform.localeCompare(b.platform)
         }
 
-        return a.sessionId.localeCompare(b.sessionId)
+        return a.repository.localeCompare(b.repository) || a.sessionId.localeCompare(b.sessionId)
     })
 }
 
@@ -954,7 +967,11 @@ function buildPlatformEvents(
             rawCostUSD: interaction.rawCostUSD ?? null,
             reasoningOutputTokens: interaction.usage!.reasoningOutputTokens,
             repository: fragment.repository,
-            sessionId: fragment.sessionId,
+            sessionId: createUsageSessionIdentity({
+                platform,
+                repository: fragment.repository,
+                sessionId: fragment.sessionId,
+            }),
             speed: interaction.speed ?? null,
             timestamp: interaction.timestamp!,
             toolTokens: interaction.usage!.toolTokens,

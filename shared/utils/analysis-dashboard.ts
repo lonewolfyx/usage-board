@@ -27,6 +27,7 @@ import {
     mergeMonthlyModelUsage,
     roundCurrency,
 } from '#shared/utils/usage-dashboard'
+import { createUsageSessionIdentity } from '#shared/utils/usage-identity'
 import { formatNumber } from '@lonewolfyx/utils'
 
 const TOP_PROJECT_LIMIT = 10
@@ -205,8 +206,11 @@ function buildSessionUsage(dashboardsByPlatform: ProjectUsagePlatformRecord<Load
     return PROJECT_USAGE_PLATFORMS
         .flatMap(platform => dashboardsByPlatform[platform].sessionUsage.map(session => ({
             ...session,
-            id: `${platform}:${session.id}`,
-            sessionId: `${platform}:${session.sessionId}`,
+            id: session.id || createUsageSessionIdentity({
+                platform,
+                repository: session.repository,
+                sessionId: session.sessionId,
+            }),
         })))
         .sort((a, b) => Date.parse(b.startedAt) - Date.parse(a.startedAt))
 }

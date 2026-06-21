@@ -1,5 +1,5 @@
 export interface SessionRow {
-    id: string // ${session_id}:${interaction_index}
+    id: string
     session_id: string
     interaction_index: number
     platform: string

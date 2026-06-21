@@ -19,6 +19,7 @@ import {
     getDateKey,
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
+import { createUsageSessionIdentity } from '#shared/utils/usage-identity'
 import { formatNumber } from '@lonewolfyx/utils'
 
 const modelSeriesColors = ['#2563eb', '#f97316', '#0891b2', '#7c3aed', '#16a34a', '#dc2626', '#64748b']
@@ -146,7 +147,11 @@ export function buildProjectDailyModelUsageChart(items: DailyTokenUsage[], label
 export function toProjectSessionTableRow(
     session: ProjectSessionListItem,
     platform: ProjectUsagePlatform,
-    rowId = `${platform}:${session.id}`,
+    rowId = session.id || createUsageSessionIdentity({
+        platform,
+        repository: session.repository,
+        sessionId: session.sessionId,
+    }),
 ): ProjectSessionTableRow {
     return {
         cacheTokens: formatNumber(session.cachedInputTokens),

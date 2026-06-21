@@ -16,12 +16,13 @@ import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { previousDateKey, todayDateKey, todayStartOfDay, useDateFormat } from '#shared/utils/date'
 import { getMonthKey } from '#shared/utils/platform'
 import { formatDateLabelFromDateKey } from '#shared/utils/usage-dashboard'
+import { createUsageInteractionIdentity, createUsageSessionIdentity } from '#shared/utils/usage-identity'
 import dayjs from 'dayjs'
 import utc from 'dayjs/plugin/utc.js'
 
 dayjs.extend(utc)
 
-const SCHEMA_VERSION = 4
+const SCHEMA_VERSION = 5
 
 const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS sessions (
@@ -65,7 +66,7 @@ const SCHEMA_SQL = `
     CREATE INDEX IF NOT EXISTS idx_sessions_model ON sessions(model);
     CREATE INDEX IF NOT EXISTS idx_sessions_total_token ON sessions(total_token DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_platform_project ON sessions(platform, project_name);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_dedupe_key ON sessions(dedupe_key) WHERE dedupe_key IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_platform_repository_dedupe_key ON sessions(platform, repository, dedupe_key) WHERE dedupe_key IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS source_files (
         path            TEXT PRIMARY KEY,
@@ -171,7 +172,12 @@ export class UsageCacheRepository {
 
         try {
             for (const item of items) {
-                const id = `${item.sessionId}:${item.interactionIndex}`
+                const id = createUsageInteractionIdentity({
+                    interactionIndex: item.interactionIndex,
+                    platform: item.platform,
+                    repository: item.repository,
+                    sessionId: item.sessionId,
+                })
 
                 statement.run(
                     id,
@@ -286,9 +292,9 @@ export class UsageCacheRepository {
                 SELECT
                     session_id,
                     platform,
-                    project_name,
+                    MIN(project_name) AS project_name,
                     repository,
-                    thread_name,
+                    MAX(thread_name) AS thread_name,
                     MIN(session_started_at) AS session_started_at,
                     MIN(timestamp) AS started_at,
                     MAX(timestamp) AS last_activity,
@@ -301,7 +307,7 @@ export class UsageCacheRepository {
                     GROUP_CONCAT(DISTINCT model) AS models_csv
                 FROM sessions
                 WHERE platform = ?
-                GROUP BY session_id
+                GROUP BY platform, repository, session_id
                 HAVING SUM(total_token) > 0
                 ORDER BY MIN(COALESCE(session_started_at, timestamp)) DESC
             `).all(platform)
@@ -391,7 +397,11 @@ export class UsageCacheRepository {
             rawCostUSD: row.raw_cost_usd,
             reasoningOutputTokens: row.reasoning_token,
             repository: row.repository,
-            sessionId: row.session_id,
+            sessionId: createUsageSessionIdentity({
+                platform: row.platform,
+                repository: row.repository,
+                sessionId: row.session_id,
+            }),
             speed: row.speed === 'fast' || row.speed === 'standard' ? row.speed : null,
             timestamp: row.timestamp,
             toolTokens: row.tool_tokens,
@@ -489,7 +499,11 @@ export class UsageCacheRepository {
                 rawCostUSD: row.raw_cost_usd,
                 reasoningOutputTokens: row.reasoning_token,
                 repository: row.repository,
-                sessionId: row.session_id,
+                sessionId: createUsageSessionIdentity({
+                    platform: row.platform,
+                    repository: row.repository,
+                    sessionId: row.session_id,
+                }),
                 speed: row.speed === 'fast' || row.speed === 'standard' ? row.speed : null,
                 timestamp: row.timestamp,
                 toolTokens: row.tool_tokens,
@@ -648,9 +662,13 @@ export class UsageCacheRepository {
             total_token: number
         }>(`
             SELECT project_name,
-                   COUNT(DISTINCT session_id) AS session_count,
-                   SUM(total_token) AS total_token
-            FROM sessions
+                   COUNT(*) AS session_count,
+                   SUM(session_total_token) AS total_token
+            FROM (
+                SELECT project_name, platform, repository, session_id, SUM(total_token) AS session_total_token
+                FROM sessions
+                GROUP BY project_name, platform, repository, session_id
+            )
             GROUP BY project_name
             ORDER BY total_token DESC
             LIMIT ?
@@ -678,9 +696,15 @@ export class UsageCacheRepository {
         }
 
         const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : ''
-        const row = this.database.prepare<{ count: number }>(
-            `SELECT COUNT(DISTINCT session_id) AS count FROM sessions ${whereClause}`,
-        ).get(...params)
+        const row = this.database.prepare<{ count: number }>(`
+            SELECT COUNT(*) AS count
+            FROM (
+                SELECT platform, repository, session_id
+                FROM sessions
+                ${whereClause}
+                GROUP BY platform, repository, session_id
+            )
+        `).get(...params)
 
         return row?.count ?? 0
     }
@@ -708,15 +732,22 @@ export class UsageCacheRepository {
             date_key: string
             count: number
         }>(`
-            SELECT CASE
-                WHEN session_started_at >= ? AND session_started_at < ? THEN ?
-                WHEN session_started_at >= ? AND session_started_at < ? THEN ?
-            END AS date_key,
-            COUNT(DISTINCT session_id) AS count
-            FROM sessions
-            WHERE session_started_at IS NOT NULL
-              AND ((session_started_at >= ? AND session_started_at < ?)
-                OR (session_started_at >= ? AND session_started_at < ?))
+            SELECT date_key, COUNT(*) AS count
+            FROM (
+                SELECT CASE
+                    WHEN session_started_at >= ? AND session_started_at < ? THEN ?
+                    WHEN session_started_at >= ? AND session_started_at < ? THEN ?
+                END AS date_key,
+                platform,
+                repository,
+                session_id
+                FROM sessions
+                WHERE session_started_at IS NOT NULL
+                  AND ((session_started_at >= ? AND session_started_at < ?)
+                    OR (session_started_at >= ? AND session_started_at < ?))
+                GROUP BY date_key, platform, repository, session_id
+            )
+            WHERE date_key IS NOT NULL
             GROUP BY date_key
         `).all(todayStart, todayEnd, todayDateKeyVal, previousDayStart, previousDayEnd, previousDateKeyVal, todayStart, todayEnd, previousDayStart, previousDayEnd)
 
@@ -826,6 +857,11 @@ export class UsageCacheRepository {
 
     private rowToSessionSummary(row: SessionSummaryRow): ProjectSessionUsageItem {
         const sessionId = row.session_id
+        const sessionIdentity = createUsageSessionIdentity({
+            platform: row.platform,
+            repository: row.repository ?? '',
+            sessionId,
+        })
         const modelsStr = row.models_csv ?? ''
         const models = modelsStr.split(',').filter(Boolean).sort()
         const topModel = models[0] ?? 'unknown'
@@ -848,7 +884,7 @@ export class UsageCacheRepository {
             date: dateKey ? formatDateLabelFromDateKey(dateKey) : '',
             duration: '',
             durationMinutes: 0,
-            id: sessionId,
+            id: sessionIdentity,
             inputTokens: row.input_token ?? 0,
             interactions: [],
             lastActivity,
