@@ -5,7 +5,7 @@ import { log } from '@clack/prompts'
 
 export class UsageRuntimeConsoleReporter {
     start() {
-        log.step('正在读取 AI Coding 会话记录...')
+        log.step('Reading AI coding session records...')
     }
 
     foundSources(stats: {
@@ -15,19 +15,19 @@ export class UsageRuntimeConsoleReporter {
         removedFiles: number
         updatedPlatforms: readonly ProjectUsagePlatform[]
     }) {
-        log.info(`检测到更新的 agent：${formatPlatformLabels(stats.updatedPlatforms)}`)
+        log.info(`Updated agents detected: ${formatPlatformLabels(stats.updatedPlatforms)}`)
 
-        log.info(`查找到 ${stats.discoveredFiles} 个会话记录文件，${stats.cachedFiles} 个来自 DB`)
+        log.info(`Found ${stats.discoveredFiles} session record files, ${stats.cachedFiles} from DB`)
 
         if (stats.updatedPlatforms.length > 0) {
-            log.info(`正在处理更新的 agent：${formatPlatformLabels(stats.updatedPlatforms)}`)
+            log.info(`Processing updated agents: ${formatPlatformLabels(stats.updatedPlatforms)}`)
         }
 
         if (stats.removedFiles > 0) {
-            log.info(`检测到 ${stats.removedFiles} 个已删除的历史会话文件，将同步更新 DB`)
+            log.info(`Detected ${stats.removedFiles} deleted session files, syncing DB`)
         }
         else if (stats.changedFiles === 0) {
-            log.info(`DB 已命中 ${stats.cachedFiles} 个会话记录文件，无需重新解析源文件`)
+            log.info(`DB cache hit: ${stats.cachedFiles} session files, no source re-parse needed`)
         }
     }
 
@@ -37,7 +37,7 @@ export class UsageRuntimeConsoleReporter {
         parsedFiles: number
     }) {
         const sessions = new Set(stats.facts.map(fact => fact.sessionId))
-        log.success(`${PROJECT_USAGE_PLATFORM_META[platform].label} 数据清洗完成：解析 ${stats.parsedFiles} 个源文件，新增/更新 ${sessions.size} 个会话，${stats.facts.length} 条交互，用时 ${formatDurationMs(stats.durationMs)}`)
+        log.success(`${PROJECT_USAGE_PLATFORM_META[platform].label} indexing complete: parsed ${stats.parsedFiles} source files, upserted ${sessions.size} sessions, ${stats.facts.length} interactions, took ${formatDurationMs(stats.durationMs)}`)
     }
 
     finishCacheWrite(stats: {
@@ -47,7 +47,7 @@ export class UsageRuntimeConsoleReporter {
         sourceFileCount: number
         updatedSessions: Array<{ platform: ProjectUsagePlatform, repository: string, sessionId: string }>
     }) {
-        log.success(`DB 写入完成：${stats.sourceFileCount} 个源文件，${stats.factCount} 条交互，${stats.projectCount} 个项目${formatUpdatedSessionSummary(stats.updatedSessions)}，用时 ${formatDurationMs(stats.durationMs)}`)
+        log.success(`DB write complete: ${stats.sourceFileCount} source files, ${stats.factCount} interactions, ${stats.projectCount} projects${formatUpdatedSessionSummary(stats.updatedSessions)}, took ${formatDurationMs(stats.durationMs)}`)
     }
 
     complete(stats: {
@@ -56,11 +56,11 @@ export class UsageRuntimeConsoleReporter {
         sourceDiscoveryMs: number
         writeMs: number
     }) {
-        log.success(`数据清洗完成，用时 ${formatDurationMs(stats.durationMs)}（发现/对比 ${formatDurationMs(stats.sourceDiscoveryMs)}，解析 ${formatDurationMs(stats.parseMs)}，写库 ${formatDurationMs(stats.writeMs)}）`)
+        log.success(`Indexing complete, took ${formatDurationMs(stats.durationMs)} (discovery ${formatDurationMs(stats.sourceDiscoveryMs)}, parse ${formatDurationMs(stats.parseMs)}, write ${formatDurationMs(stats.writeMs)})`)
     }
 
     fail(error: unknown) {
-        log.error(`数据清洗失败：${error instanceof Error ? error.message : String(error)}`)
+        log.error(`Indexing failed: ${error instanceof Error ? error.message : String(error)}`)
     }
 }
 
@@ -88,6 +88,6 @@ function formatUpdatedSessionSummary(updatedSessions: Array<{ platform: ProjectU
     const remainingCount = updatedSessions.length - labels.length
 
     return remainingCount > 0
-        ? `，session ids ${labels.join(', ')} 等 ${updatedSessions.length} 个`
-        : `，session ids ${labels.join(', ')}`
+        ? `, session ids ${labels.join(', ')} and ${remainingCount} more`
+        : `, session ids ${labels.join(', ')}`
 }
