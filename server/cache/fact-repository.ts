@@ -5,7 +5,7 @@ import { dirname } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { createUsageInteractionIdentity } from '#shared/utils/usage-identity'
 
-const SCHEMA_VERSION = 3
+const SCHEMA_VERSION = 18
 
 const SCHEMA_SQL = `
     CREATE TABLE IF NOT EXISTS source_files (
