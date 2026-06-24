@@ -1,4 +1,4 @@
-export interface ClaudeUsageRaw {
+interface ClaudeUsageRaw {
     cache_creation?: {
         ephemeral_1h_input_tokens?: null | number
         ephemeral_5m_input_tokens?: null | number

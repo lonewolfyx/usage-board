@@ -108,5 +108,3 @@ export interface AgentDashboardSessionModules {
     sessionUsage: AnalysisAgentSessionRow[]
     sessionUsagePagination: PaginationMeta
 }
-
-export type AgentDashboardModules = AgentDashboardCoreModules & AgentDashboardInsightsModules & AgentDashboardSessionModules

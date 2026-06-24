@@ -13,7 +13,6 @@ SELECT
     model,
     billing_provider,
     started_at,
-    message_count,
     input_tokens,
     output_tokens,
     cache_read_tokens,

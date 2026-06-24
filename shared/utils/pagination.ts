@@ -6,7 +6,7 @@ export interface PaginationInput {
     pageSize?: number
 }
 
-export function normalizePagination(input: PaginationInput = {}): Pick<PaginationMeta, 'page' | 'pageSize'> {
+function normalizePagination(input: PaginationInput = {}): Pick<PaginationMeta, 'page' | 'pageSize'> {
     return {
         page: normalizePositiveInteger(input.page, 1),
         pageSize: Math.min(normalizePositiveInteger(input.pageSize, DEFAULT_PAGE_SIZE), MAX_PAGE_SIZE),

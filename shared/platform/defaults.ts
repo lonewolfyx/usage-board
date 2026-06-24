@@ -32,7 +32,7 @@ export function createEmptyProjectPlatformUsage(): ProjectPlatformUsage {
     }
 }
 
-export function normalizeProjectPlatformUsage(value: Partial<ProjectPlatformUsage> | null | undefined): ProjectPlatformUsage {
+function normalizeProjectPlatformUsage(value: Partial<ProjectPlatformUsage> | null | undefined): ProjectPlatformUsage {
     const empty = createEmptyProjectPlatformUsage()
 
     if (!value) {

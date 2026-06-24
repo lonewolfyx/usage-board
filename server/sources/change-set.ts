@@ -1,6 +1,6 @@
 import type { UsageSourceFile } from '#server/agents/shared/fact'
 
-export interface UsageSourceChangeSet {
+interface UsageSourceChangeSet {
     changedSources: UsageSourceFile[]
     hasChanges: boolean
     removedSources: UsageSourceFile[]

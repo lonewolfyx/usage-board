@@ -48,7 +48,7 @@ export function resolveUsageFactCost(
     }
 }
 
-export function calculateUsageCostUSD(
+function calculateUsageCostUSD(
     fact: UsageInteractionFact,
     pricing: ModelPricing,
     options: { defaultFastMultiplier?: number } = {},

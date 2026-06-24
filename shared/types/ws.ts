@@ -43,22 +43,12 @@ export interface ProjectUsageDataModulesResponse {
     modules: Partial<ProjectUsageDataModulePayloadMap>
 }
 
-export interface ProjectWebSocketResponse<T = unknown> {
-    data: T
-    requestId: string
-}
-
-export interface UsageUpdatedSession {
-    platform: ProjectUsagePlatform
-    sessionId: string
-}
-
 export interface UsageUpdateMessage {
     payload: {
         affectedProjects: string[]
         updatedAt: string
         updatedPlatforms: ProjectUsagePlatform[]
-        updatedSessions: UsageUpdatedSession[]
+        updatedSessions: { platform: ProjectUsagePlatform, sessionId: string }[]
     }
     type: 'usage_update'
 }

@@ -6,7 +6,6 @@ export interface HermesSessionRow {
     estimated_cost_usd?: number
     id: string
     input_tokens: number
-    message_count?: number
     model: string
     output_tokens: number
     reasoning_tokens: number

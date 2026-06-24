@@ -22,7 +22,7 @@ import chokidar from 'chokidar'
 
 const WATCHER_DEBOUNCE_MS = 350
 
-export interface UsageRuntimeUpdate {
+interface UsageRuntimeUpdate {
     affectedProjects: string[]
     updatedAt: string
     updatedPlatforms: readonly ProjectUsagePlatform[]

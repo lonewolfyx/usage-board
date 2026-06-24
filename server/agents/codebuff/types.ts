@@ -24,17 +24,17 @@ export interface CodebuffUsageRaw {
     totalTokens?: number
 }
 
-export interface CodebuffProviderOptionsRaw {
+interface CodebuffProviderOptionsRaw {
     codebuff?: { model?: string, usage?: CodebuffUsageRaw }
     usage?: CodebuffUsageRaw
 }
 
-export interface CodebuffRunStateMessageRaw {
+interface CodebuffRunStateMessageRaw {
     providerOptions?: CodebuffProviderOptionsRaw
     role?: string
 }
 
-export interface CodebuffRunStateRaw {
+interface CodebuffRunStateRaw {
     sessionState?: {
         mainAgentState?: {
             messageHistory?: CodebuffRunStateMessageRaw[]

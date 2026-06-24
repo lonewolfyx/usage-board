@@ -85,8 +85,6 @@ function loadCodexFacts(source: UsageSourceFile): UsageInteractionFact[] {
     const facts: UsageInteractionFact[] = []
     let previousTotals: RawUsage | null = null
     let currentModel: string | undefined
-    let currentModelIsFallback = false
-
     for (let index = 0; index < lines.length; index += 1) {
         const line = lines[index]!
         const payload = line.payload
@@ -98,7 +96,6 @@ function loadCodexFacts(source: UsageSourceFile): UsageInteractionFact[] {
 
             if (contextModel) {
                 currentModel = contextModel
-                currentModelIsFallback = false
             }
         }
 
@@ -107,7 +104,6 @@ function loadCodexFacts(source: UsageSourceFile): UsageInteractionFact[] {
 
         if (extractedModel) {
             currentModel = extractedModel
-            currentModelIsFallback = false
         }
 
         const rawUsage = getCodexRawUsage(line, previousTotals)
@@ -118,15 +114,10 @@ function loadCodexFacts(source: UsageSourceFile): UsageInteractionFact[] {
         }
 
         let model = extractedModel ?? currentModel
-        let isFallbackModel = false
 
         if (!model && rawUsage) {
             model = CODEX_FALLBACK_MODEL
-            // eslint-disable-next-line unused-imports/no-unused-vars
-            isFallbackModel = true
             currentModel = model
-            // eslint-disable-next-line unused-imports/no-unused-vars
-            currentModelIsFallback = true
         }
 
         const effectiveType = payloadType || lineType || 'event'
