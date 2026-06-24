@@ -1,4 +1,4 @@
-import { defineScopedAnalysisHandler } from '#server/utils/analysis'
+import { defineScopedAnalysisHandler } from '#server/runtime/analysis-handlers'
 
 export default defineScopedAnalysisHandler({
     agent: dashboard => dashboard.dailyTokenUsage,

@@ -1,5 +1,5 @@
-import { defineRequiredAgentAnalysisHandler, getRequiredAnalysisAgentTokenType } from '#server/utils/analysis'
-import { getPaginationQuery } from '#server/utils/pagination'
+import { defineRequiredAgentAnalysisHandler, getRequiredAnalysisAgentTokenType } from '#server/runtime/analysis-handlers'
+import { getPaginationQuery } from '#server/runtime/pagination'
 import { ANALYSIS_AGENT_TOKEN_ROW_KEYS } from '#shared/types/analysis'
 import { paginateItems } from '#shared/utils/pagination'
 

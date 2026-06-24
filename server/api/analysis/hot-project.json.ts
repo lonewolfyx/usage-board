@@ -1,4 +1,4 @@
-import { defineScopedAnalysisHandler } from '#server/utils/analysis'
+import { defineScopedAnalysisHandler } from '#server/runtime/analysis-handlers'
 
 const HOT_PROJECT_LIMIT = 6
 

@@ -9,6 +9,7 @@ export interface UsageSessionIdentityInput {
 
 export interface UsageInteractionIdentityInput extends UsageSessionIdentityInput {
     interactionIndex: number
+    sourceFile: string
 }
 
 export function createUsageSessionIdentity(input: UsageSessionIdentityInput) {
@@ -16,7 +17,7 @@ export function createUsageSessionIdentity(input: UsageSessionIdentityInput) {
 }
 
 export function createUsageInteractionIdentity(input: UsageInteractionIdentityInput) {
-    return JSON.stringify([input.platform, input.repository, input.sessionId, input.interactionIndex])
+    return JSON.stringify([input.platform, input.repository, input.sessionId, input.sourceFile, input.interactionIndex])
 }
 
 export function inferUsageSessionIdentityPlatform(identity: string): ProjectUsagePlatform | null {

@@ -13,7 +13,7 @@ import { dirname, resolve } from 'node:path'
 import { roundCurrency, uniqueItems } from '#shared/utils/usage-dashboard'
 
 const MILLION = 1_000_000
-const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 1500
+const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 10_000
 const DEFAULT_LITELLM_PRICING_URL = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 const DEFAULT_MODELS_DEV_PRICING_URL = 'https://models.dev/api.json'
 const PRICING_DATA_DIR = process.env.USAGE_BOARD_PRICING_DATA_DIR?.trim()
@@ -313,8 +313,8 @@ async function loadPricingSnapshots(options: FetchLiteLLMPricingDatasetOptions =
             fetchLiteLLMPricingDataset(fetcher),
             fetchModelsDevPricingSnapshot(fetcher),
         ])
-        const liteLLM = mergeMissingPricing(liteLLMLocal, liteLLMRemote)
-        const modelsDev = mergeMissingModelsDevSnapshots(modelsDevLocal, modelsDevRemote)
+        const liteLLM = mergePricingSnapshots(liteLLMLocal, liteLLMRemote)
+        const modelsDev = mergeModelsDevSnapshots(modelsDevLocal, modelsDevRemote)
 
         await Promise.all([
             liteLLM.changed ? writePricingSnapshot(LITELLM_PRICING_SNAPSHOT_PATH, liteLLM.dataset) : Promise.resolve(),
@@ -426,12 +426,16 @@ function fetchPricingDatasetResponse(fetcher: typeof fetch, url: string) {
     return fetcher(url)
 }
 
-function mergeMissingPricing(localDataset: LiteLLMPricingDataset, remoteDataset: LiteLLMPricingDataset) {
+function mergePricingSnapshots(localDataset: LiteLLMPricingDataset, remoteDataset: LiteLLMPricingDataset) {
     const nextDataset: LiteLLMPricingDataset = { ...localDataset }
     let changed = false
 
     for (const [model, pricing] of Object.entries(remoteDataset)) {
-        if (nextDataset[model] || !hasNonZeroTokenPricing(pricing)) {
+        if (!hasNonZeroTokenPricing(pricing)) {
+            continue
+        }
+
+        if (JSON.stringify(nextDataset[model]) === JSON.stringify(pricing)) {
             continue
         }
 
@@ -445,7 +449,7 @@ function mergeMissingPricing(localDataset: LiteLLMPricingDataset, remoteDataset:
     }
 }
 
-function mergeMissingModelsDevSnapshots(localSnapshot: Record<string, unknown>, remoteSnapshot: Record<string, unknown>) {
+function mergeModelsDevSnapshots(localSnapshot: Record<string, unknown>, remoteSnapshot: Record<string, unknown>) {
     const nextSnapshot: Record<string, unknown> = { ...localSnapshot }
     let changed = false
 
@@ -467,7 +471,7 @@ function mergeMissingModelsDevSnapshots(localSnapshot: Record<string, unknown>, 
         let providerChanged = false
 
         for (const [modelName, modelRecord] of Object.entries(remoteModels)) {
-            if (localModels[modelName]) {
+            if (JSON.stringify(localModels[modelName]) === JSON.stringify(modelRecord)) {
                 continue
             }
 

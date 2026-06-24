@@ -1,4 +1,4 @@
-import { defineScopedAnalysisHandler } from '#server/utils/analysis'
+import { defineScopedAnalysisHandler } from '#server/runtime/analysis-handlers'
 import { buildOverviewCardsWithTodayTokenBreakdown } from '#shared/utils/usage-dashboard'
 
 export default defineScopedAnalysisHandler({

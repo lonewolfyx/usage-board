@@ -1,3 +1,3 @@
-import { defineHomeAnalysisHandler } from '#server/utils/analysis'
+import { defineHomeAnalysisHandler } from '#server/runtime/analysis-handlers'
 
 export default defineHomeAnalysisHandler(modules => modules.todayHourlyUsage)
