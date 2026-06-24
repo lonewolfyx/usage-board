@@ -6,7 +6,7 @@ import { normalizeStringList } from '#shared/utils/normalize'
 
 export default defineEventHandler(async (event) => {
     const runtimeConfig = useRuntimeConfig()
-    const config = resolveConfig(runtimeConfig.public)
+    const config = await resolveConfig(runtimeConfig.public)
     const project = decodeURIComponent(getRouterParam(event, 'project') || '').trim()
     const query = getQuery(event)
     const module = typeof query.module === 'string' && query.module.trim()

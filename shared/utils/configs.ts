@@ -17,8 +17,9 @@ import {
     getPiPaths,
     getQwenPaths,
 } from '#shared/utils/paths'
+import { detectActivePlatforms } from '#shared/utils/platform-detect'
 
-export function resolveConfig(rc: IRuntimeConfig): IConfig {
+export async function resolveConfig(rc: IRuntimeConfig): Promise<IConfig> {
     const claudeCodePaths = getClaudeCodePaths()
     return {
         version: rc.appVersion,
@@ -39,5 +40,6 @@ export function resolveConfig(rc: IRuntimeConfig): IConfig {
         openCodePaths: getOpenCodePaths(),
         piPaths: getPiPaths(),
         qwenPaths: getQwenPaths(),
+        activePlatforms: await detectActivePlatforms(),
     }
 }

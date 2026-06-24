@@ -2,9 +2,14 @@ import antfu from '@antfu/eslint-config'
 import withNuxt from './.nuxt/eslint.config.mjs'
 
 export default antfu({
+    ignores: [
+        'vendor/',
+        'vendor/**',
+        'vendor/**/*',
+    ],
     pnpm: true,
     typescript: true,
-    markdown: true,
+    markdown: false,
     vue: {
         overrides: {
             'vue/block-order': [

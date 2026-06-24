@@ -25,7 +25,7 @@ export default defineWebSocketHandler({
         try {
             const request = parseProjectRequest(message.json<unknown>())
             const runtimeConfig = useRuntimeConfig()
-            const config = resolveConfig(runtimeConfig.public)
+            const config = await resolveConfig(runtimeConfig.public)
             const runtime = getUsageDataRuntime(config)
 
             if (request.type === 'project') {
@@ -109,11 +109,11 @@ function sendData(
     }))
 }
 
-function subscribePeerToUsageUpdates(peer: { id: string, send: (data: string) => void }) {
+async function subscribePeerToUsageUpdates(peer: { id: string, send: (data: string) => void }) {
     unsubscribePeer(peer.id)
 
     const runtimeConfig = useRuntimeConfig()
-    const config = resolveConfig(runtimeConfig.public)
+    const config = await resolveConfig(runtimeConfig.public)
     const runtime = getUsageDataRuntime(config)
     const unsubscribe = runtime.subscribeToUpdates((update) => {
         peer.send(JSON.stringify({

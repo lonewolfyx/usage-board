@@ -6,14 +6,14 @@ import { resolveProjectUsagePlatform } from '#shared/platform/metadata'
 import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
 import { resolveConfig } from '#shared/utils/configs'
 
-export function getAnalysisRuntime(_event: Parameters<typeof getQuery>[0]) {
+export async function getAnalysisRuntime(_event: Parameters<typeof getQuery>[0]) {
     const runtimeConfig = useRuntimeConfig()
-    return getUsageDataRuntime(resolveConfig(runtimeConfig.public))
+    return getUsageDataRuntime(await resolveConfig(runtimeConfig.public))
 }
 
 export function defineHomeAnalysisHandler<T>(handler: (modules: HomeDashboardModules, event: Parameters<typeof getQuery>[0]) => T | Promise<T>) {
     return defineEventHandler(async (event) => {
-        return handler(await getAnalysisRuntime(event).getHomeDashboardModules(), event)
+        return handler(await (await getAnalysisRuntime(event)).getHomeDashboardModules(), event)
     })
 }
 
@@ -21,7 +21,7 @@ export function defineRequiredAgentAnalysisHandler<T>(handler: (dashboard: LoadU
     return defineEventHandler(async (event) => {
         const platform = getRequiredAnalysisAgent(event)
 
-        return handler(await getAnalysisRuntime(event).getAgentDashboard(platform), event, platform)
+        return handler(await (await getAnalysisRuntime(event)).getAgentDashboard(platform), event, platform)
     })
 }
 
@@ -33,10 +33,10 @@ export function defineScopedAnalysisHandler<T>(handlers: {
         const platform = getAnalysisAgent(event)
 
         if (platform) {
-            return handlers.agent(await getAnalysisRuntime(event).getAgentDashboard(platform), event, platform)
+            return handlers.agent(await (await getAnalysisRuntime(event)).getAgentDashboard(platform), event, platform)
         }
 
-        return handlers.home(await getAnalysisRuntime(event).getHomeDashboardModules(), event)
+        return handlers.home(await (await getAnalysisRuntime(event)).getHomeDashboardModules(), event)
     })
 }
 

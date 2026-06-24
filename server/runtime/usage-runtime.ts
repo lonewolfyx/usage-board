@@ -1,5 +1,5 @@
 import type { AgentAdapter, UsageInteractionFact } from '#server/agents/shared/fact'
-import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
 import type {
     ProjectUsageDataModuleResponse,
@@ -16,7 +16,6 @@ import { preparePricingSnapshot } from '#server/pricing/snapshot'
 import { UsageRuntimeConsoleReporter } from '#server/runtime/usage-reporter'
 import { buildSourceChangeSet } from '#server/sources/change-set'
 import { createEmptyLoadUsageResult } from '#shared/platform/defaults'
-import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { useDateFormat } from '#shared/utils/date'
 import chokidar from 'chokidar'
 
@@ -30,7 +29,7 @@ interface UsageRuntimeUpdate {
 }
 
 export class UsageDataRuntime {
-    private readonly adapters: ProjectUsagePlatformRecord<AgentAdapter>
+    private readonly adapters: Map<ProjectUsagePlatform, AgentAdapter>
     private readonly repository: UsageFactRepository
     private dashboardState: ReturnType<typeof buildDashboardState> | null = null
     private initializePromise: Promise<void> | null = null
@@ -162,7 +161,7 @@ export class UsageDataRuntime {
                 ...changeSet.changedSources.map(source => source.platform),
                 ...changeSet.removedSources.map(source => source.platform),
             ])
-            const updatedPlatforms = PROJECT_USAGE_PLATFORMS.filter(platform => changedPlatforms.has(platform))
+            const updatedPlatforms = [...this.config.activePlatforms].filter(platform => changedPlatforms.has(platform))
 
             reporter.foundSources({
                 cachedFiles: cachedSources.length,
@@ -235,7 +234,9 @@ export class UsageDataRuntime {
     }
 
     private async discoverSources() {
-        const groups = await Promise.all(PROJECT_USAGE_PLATFORMS.map(platform => this.adapters[platform].discoverSources()))
+        const groups = await Promise.all(
+            Array.from(this.adapters.entries()).map(([, adapter]) => adapter.discoverSources()),
+        )
 
         return groups.flat().sort((left, right) => left.path.localeCompare(right.path))
     }
@@ -245,7 +246,7 @@ export class UsageDataRuntime {
             return
         }
 
-        const watchPatterns = PROJECT_USAGE_PLATFORMS.flatMap(platform => this.adapters[platform].watchSourcePatterns())
+        const watchPatterns = Array.from(this.adapters.values()).flatMap(adapter => adapter.watchSourcePatterns())
 
         this.watcher = chokidar.watch(watchPatterns, {
             awaitWriteFinish: {

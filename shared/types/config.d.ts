@@ -1,3 +1,5 @@
+import type { ProjectUsagePlatform } from '#shared/types/ai'
+
 export interface IRuntimeConfig {
     appVersion: string
     home: string
@@ -22,4 +24,5 @@ export interface IConfig {
     openCodePaths: string[]
     piPaths: string[]
     qwenPaths: string[]
+    activePlatforms: ProjectUsagePlatform[]
 }
