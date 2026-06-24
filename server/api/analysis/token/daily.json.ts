@@ -1,5 +1,5 @@
-import { defineHomeAnalysisHandler } from '#server/utils/analysis'
-import { getPaginationQuery } from '#server/utils/pagination'
+import { defineHomeAnalysisHandler } from '#server/runtime/analysis-handlers'
+import { getPaginationQuery } from '#server/runtime/pagination'
 import { paginateItems } from '#shared/utils/pagination'
 
 export default defineHomeAnalysisHandler((modules, event) => {

@@ -1,6 +1,6 @@
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { prepareUsageStartupReady } from '#server/services/usage-startup-state'
+import { prepareUsageStartupReady } from '#server/runtime/startup-state'
 import { log } from '@clack/prompts'
 import cac from 'cac'
 import { createRuntimeServer } from 'nuxt-devkit-server'

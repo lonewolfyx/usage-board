@@ -1,4 +1,4 @@
-import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
+import { getUsageDataRuntime } from '#server/runtime/usage-runtime'
 import { resolveConfig } from '#shared/utils/configs'
 
 export default defineEventHandler(async () => {

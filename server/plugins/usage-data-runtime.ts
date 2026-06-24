@@ -1,5 +1,5 @@
-import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
-import { settleUsageStartupReady } from '#server/services/usage-startup-state'
+import { settleUsageStartupReady } from '#server/runtime/startup-state'
+import { getUsageDataRuntime } from '#server/runtime/usage-runtime'
 import { resolveConfig } from '#shared/utils/configs'
 
 export default defineNitroPlugin(async (nitroApp) => {
@@ -12,9 +12,7 @@ export default defineNitroPlugin(async (nitroApp) => {
         runtime.dispose()
     })
 
-    const startup = runtime.ensureFreshBootstrapForStartup({
+    await settleUsageStartupReady(runtime.ensureFreshBootstrapForStartup({
         verboseWhenChanged,
-    })
-
-    await settleUsageStartupReady(startup)
+    }))
 })

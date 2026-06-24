@@ -1,5 +1,5 @@
-import { defineRequiredAgentAnalysisHandler } from '#server/utils/analysis'
-import { getPaginationQuery } from '#server/utils/pagination'
+import { defineRequiredAgentAnalysisHandler } from '#server/runtime/analysis-handlers'
+import { getPaginationQuery } from '#server/runtime/pagination'
 import { paginateItems } from '#shared/utils/pagination'
 
 export default defineRequiredAgentAnalysisHandler((dashboard, event) => {

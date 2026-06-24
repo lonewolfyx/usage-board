@@ -1,6 +1,6 @@
 import type { ProjectDashboardScope } from '#shared/types/project-dashboard'
 import type { ProjectUsageDataModule, ProjectWebSocketRequest } from '#shared/types/ws'
-import { getUsageDataRuntime } from '#server/services/usage-data-runtime'
+import { getUsageDataRuntime } from '#server/runtime/usage-runtime'
 import { PROJECT_USAGE_PLATFORMS } from '#shared/types/ai'
 import { PROJECT_USAGE_DATA_MODULES } from '#shared/types/ws'
 import { resolveConfig } from '#shared/utils/configs'
