@@ -4,14 +4,8 @@ import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { log } from '@clack/prompts'
 
 export class UsageRuntimeConsoleReporter {
-    constructor(private readonly options: {
-        verboseProgress: boolean
-    }) {}
-
     start() {
-        if (this.options.verboseProgress) {
-            log.step('正在读取 AI Coding 会话记录...')
-        }
+        log.step('正在读取 AI Coding 会话记录...')
     }
 
     foundSources(stats: {
@@ -21,13 +15,7 @@ export class UsageRuntimeConsoleReporter {
         removedFiles: number
         updatedPlatforms: readonly ProjectUsagePlatform[]
     }) {
-        if (!this.options.verboseProgress) {
-            if (stats.updatedPlatforms.length > 0) {
-                log.info(`检测到更新的 agent：${formatPlatformLabels(stats.updatedPlatforms)}`)
-            }
-
-            return
-        }
+        log.info(`检测到更新的 agent：${formatPlatformLabels(stats.updatedPlatforms)}`)
 
         log.info(`查找到 ${stats.discoveredFiles} 个会话记录文件，${stats.cachedFiles} 个来自 DB`)
 
@@ -48,10 +36,6 @@ export class UsageRuntimeConsoleReporter {
         facts: UsageInteractionFact[]
         parsedFiles: number
     }) {
-        if (!this.options.verboseProgress) {
-            return
-        }
-
         const sessions = new Set(stats.facts.map(fact => fact.sessionId))
         log.success(`${PROJECT_USAGE_PLATFORM_META[platform].label} 数据清洗完成：解析 ${stats.parsedFiles} 个源文件，新增/更新 ${sessions.size} 个会话，${stats.facts.length} 条交互，用时 ${formatDurationMs(stats.durationMs)}`)
     }
@@ -63,10 +47,6 @@ export class UsageRuntimeConsoleReporter {
         sourceFileCount: number
         updatedSessions: Array<{ platform: ProjectUsagePlatform, repository: string, sessionId: string }>
     }) {
-        if (!this.options.verboseProgress) {
-            return
-        }
-
         log.success(`DB 写入完成：${stats.sourceFileCount} 个源文件，${stats.factCount} 条交互，${stats.projectCount} 个项目${formatUpdatedSessionSummary(stats.updatedSessions)}，用时 ${formatDurationMs(stats.durationMs)}`)
     }
 
@@ -76,9 +56,7 @@ export class UsageRuntimeConsoleReporter {
         sourceDiscoveryMs: number
         writeMs: number
     }) {
-        if (this.options.verboseProgress) {
-            log.success(`数据清洗完成，用时 ${formatDurationMs(stats.durationMs)}（发现/对比 ${formatDurationMs(stats.sourceDiscoveryMs)}，解析 ${formatDurationMs(stats.parseMs)}，写库 ${formatDurationMs(stats.writeMs)}）`)
-        }
+        log.success(`数据清洗完成，用时 ${formatDurationMs(stats.durationMs)}（发现/对比 ${formatDurationMs(stats.sourceDiscoveryMs)}，解析 ${formatDurationMs(stats.parseMs)}，写库 ${formatDurationMs(stats.writeMs)}）`)
     }
 
     fail(error: unknown) {

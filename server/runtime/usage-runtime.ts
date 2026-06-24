@@ -57,10 +57,8 @@ export class UsageDataRuntime {
         return this.initializePromise
     }
 
-    async ensureFreshBootstrapForStartup(options: { verboseWhenChanged?: boolean } = {}) {
-        await this.refreshNow({
-            forceLog: options.verboseWhenChanged !== false,
-        })
+    async ensureFreshBootstrapForStartup() {
+        await this.refreshNow()
     }
 
     async getBootstrap() {
@@ -133,9 +131,9 @@ export class UsageDataRuntime {
         }
     }
 
-    private async refreshNow(options: { forceLog?: boolean } = {}) {
+    private async refreshNow() {
         if (!this.refreshPromise) {
-            this.refreshPromise = this.refresh(options).finally(() => {
+            this.refreshPromise = this.refresh().finally(() => {
                 this.refreshPromise = null
             })
         }
@@ -143,12 +141,10 @@ export class UsageDataRuntime {
         return this.refreshPromise
     }
 
-    private async refresh(options: { forceLog?: boolean } = {}) {
+    private async refresh() {
         await this.initialize()
 
-        const reporter = new UsageRuntimeConsoleReporter({
-            verboseProgress: Boolean(options.forceLog),
-        })
+        const reporter = new UsageRuntimeConsoleReporter()
         const startedAt = Date.now()
         let sourceDiscoveryMs = 0
         let parseMs = 0
