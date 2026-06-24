@@ -1,4 +1,4 @@
-export type CopilotTimestampValue = [number, number] | number | string
+type CopilotTimestampValue = [number, number] | number | string
 export type CopilotAttributeValue = boolean | null | number | string
 
 export interface CopilotRecordRaw {

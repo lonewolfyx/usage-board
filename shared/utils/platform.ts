@@ -1,7 +1,6 @@
 import type {
     AggregateOptions,
     DailyUsageSummaryGroup,
-    GeminiSessionMessage,
     GeminiTokenSnapshot,
     ModelUsageSummary,
     PeriodRowGroup,
@@ -34,7 +33,6 @@ import {
     toIsoStringSafe,
     useDateFormat,
 } from '#shared/utils/date'
-import { parse } from '#shared/utils/parse'
 import {
     buildGrowthTrend,
     buildInputOutputTokenSubvalue,
@@ -48,57 +46,6 @@ import {
     uniqueItems,
 } from '#shared/utils/usage-dashboard'
 import { formatNumber } from '@lonewolfyx/utils'
-
-/**
- * Reads a JSONL file while ignoring empty lines and malformed JSON lines.
- *
- * @example
- * ```ts
- * const lines = parseJsonlFile<SessionLogLine>('/path/to/session.jsonl')
- * ```
- */
-export function parseJsonlFile<T = unknown>(filePath: string) {
-    const content = readFileSync(filePath, 'utf8')
-
-    if (!content.trim()) {
-        return [] as T[]
-    }
-
-    const lines: T[] = []
-
-    for (const rawLine of content.split('\n')) {
-        const line = rawLine.trim()
-
-        if (!line) {
-            continue
-        }
-
-        const parsed = parse(line) as T | null
-
-        if (parsed !== null) {
-            lines.push(parsed)
-        }
-    }
-
-    return lines
-}
-
-/**
- * Reads a JSON file and returns null when parsing fails.
- *
- * @example
- * ```ts
- * const data = parseJsonFile('/path/to/session.json')
- * ```
- */
-export function parseJsonFile<T = unknown>(filePath: string): T | null {
-    try {
-        return parse(readFileSync(filePath, 'utf8')) as T | null
-    }
-    catch {
-        return null
-    }
-}
 
 /**
  * Groups usage events by calendar day and totals tokens, cost, projects, models, and sessions.
@@ -596,7 +543,7 @@ function createAggregateGroup(label: string): SessionAggregateGroup {
  * const usage = createEmptyUsage()
  * ```
  */
-export function createEmptyUsage(): TokenUsageDelta {
+function createEmptyUsage(): TokenUsageDelta {
     return {
         cachedInputTokens: 0,
         inputTokens: 0,
@@ -615,7 +562,7 @@ export function createEmptyUsage(): TokenUsageDelta {
  * addUsage(total, event)
  * ```
  */
-export function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
+function addUsage(target: TokenUsageDelta, usage: TokenUsageDelta) {
     target.inputTokens += usage.inputTokens
     target.cachedInputTokens += usage.cachedInputTokens
     target.outputTokens += usage.outputTokens
@@ -680,29 +627,6 @@ export function normalizeRepositoryUrl(repositoryUrl: string | undefined) {
 }
 
 /**
- * Calculates minutes between two ISO timestamps, returning 0 for invalid or reversed ranges.
- *
- * @example
- * ```ts
- * getDurationMinutes('2026-04-16T10:00:00.000Z', '2026-04-16T10:45:00.000Z')
- * // 45
- * ```
- */
-export function getDurationMinutes(startedAt: string, endedAt?: string | null) {
-    if (!endedAt) {
-        return 0
-    }
-
-    const durationMs = Date.parse(endedAt) - Date.parse(startedAt)
-
-    if (!Number.isFinite(durationMs) || durationMs <= 0) {
-        return 0
-    }
-
-    return Math.round(durationMs / 60_000)
-}
-
-/**
  * Safely converts a string timestamp into an ISO string.
  *
  * @example
@@ -723,7 +647,7 @@ export function toIsoString(value: unknown) {
  * // '2026-04'
  * ```
  */
-export function getMonthKey(date: DateInput) {
+function getMonthKey(date: DateInput) {
     return useDateFormat(date, 'month-key') ?? getDateKey(date).slice(0, 7)
 }
 
@@ -947,22 +871,6 @@ export function getGeminiLookupCandidates(model: string) {
 }
 
 /**
- * Checks whether an OpenRouter model name represents a free model.
- *
- * @example
- * ```ts
- * isOpenRouterFreeModel('openrouter/qwen/qwen3-coder:free')
- * // true
- * ```
- */
-export function isOpenRouterFreeModel(model: string) {
-    const normalizedModel = model.trim().toLowerCase()
-
-    return normalizedModel === 'openrouter/free'
-        || (normalizedModel.startsWith('openrouter/') && normalizedModel.endsWith(':free'))
-}
-
-/**
  * Reads the real project root from the .project_root file beside the Gemini cache directory.
  *
  * @example
@@ -1061,30 +969,6 @@ function getOriginUrlFromGitConfig(config: string) {
     }
 
     return ''
-}
-
-/**
- * Converts Gemini message content into plain text.
- *
- * @example
- * ```ts
- * extractGeminiMessageText([{ text: 'hello' }, { text: 'world' }])
- * // 'hello\nworld'
- * ```
- */
-export function extractGeminiMessageText(content: GeminiSessionMessage['content']) {
-    if (typeof content === 'string') {
-        return content
-    }
-
-    if (!Array.isArray(content)) {
-        return ''
-    }
-
-    return content
-        .map(item => item.text?.trim())
-        .filter(Boolean)
-        .join('\n')
 }
 
 /**

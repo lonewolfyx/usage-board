@@ -6,7 +6,7 @@ export interface AmpThreadRaw {
     }
 }
 
-export interface AmpLedgerEventRaw {
+interface AmpLedgerEventRaw {
     id?: number | string
     model?: string
     timestamp?: string
@@ -26,7 +26,7 @@ export interface AmpMessageRaw {
     usage?: AmpMessageUsageRaw
 }
 
-export interface AmpMessageUsageRaw {
+interface AmpMessageUsageRaw {
     cacheCreationInputTokens?: number
     cacheReadInputTokens?: number
     inputTokens?: number

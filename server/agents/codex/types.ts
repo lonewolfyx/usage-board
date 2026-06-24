@@ -1,6 +1,6 @@
-import type { RawUsage, TokenUsageSnapshot } from '#shared/types/platform'
+import type { TokenUsageSnapshot } from '#shared/types/platform'
 
-export type CodexTimestamp = number | string
+type CodexTimestamp = number | string
 
 /**
  * Raw usage snapshot from either standard Codex `token_count` events or headless Codex usage records.
@@ -15,7 +15,7 @@ export interface CodexRawUsage extends TokenUsageSnapshot {
     reasoning_tokens?: number
 }
 
-export interface CodexInfoRaw {
+interface CodexInfoRaw {
     last_token_usage?: CodexRawUsage
     metadata?: { model?: string }
     model?: string
@@ -23,7 +23,7 @@ export interface CodexInfoRaw {
     total_token_usage?: CodexRawUsage
 }
 
-export interface CodexPayloadRaw {
+interface CodexPayloadRaw {
     cwd?: string
     git?: { repository_url?: string }
     id?: string
@@ -35,7 +35,7 @@ export interface CodexPayloadRaw {
     type?: 'token_count' | (string & {})
 }
 
-export interface CodexNestedRaw {
+interface CodexNestedRaw {
     created_at?: CodexTimestamp
     createdAt?: CodexTimestamp
     timestamp?: CodexTimestamp
@@ -57,5 +57,3 @@ export interface CodexSessionLineRaw {
     type: 'event_msg' | 'session_meta' | 'turn_context' | (string & {})
     usage?: CodexRawUsage
 }
-
-export type CodexRawUsageNormalized = RawUsage

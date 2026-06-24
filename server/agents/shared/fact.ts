@@ -1,6 +1,6 @@
 import type { ProjectUsagePlatform } from '#shared/types/ai'
 
-export type InteractionRole
+type InteractionRole
     = | 'assistant'
         | 'message'
         | 'system'
@@ -52,17 +52,6 @@ export interface UsageInteractionFact {
     timestamp: string
     type: string
     usage: InteractionUsage
-}
-
-export interface UsageSessionFact {
-    durationEndAt: string
-    interactions: UsageInteractionFact[]
-    platform: ProjectUsagePlatform
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
 }
 
 export interface AgentAdapterResult {

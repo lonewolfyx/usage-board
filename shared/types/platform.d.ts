@@ -33,12 +33,6 @@ export interface SessionLogLine {
     }
 }
 
-export interface CodexSessionIndexLine {
-    id?: string
-    thread_name?: string
-    updated_at?: string
-}
-
 export interface TokenUsageDelta {
     cachedInputTokens: number
     inputTokens: number
@@ -78,38 +72,6 @@ export interface RawUsage {
     total_tokens: number
 }
 
-export interface UsageSessionMeta {
-    durationMinutes: number
-    project: string
-    repository: string
-    sessionId: string
-    startedAt: string
-    threadName: string
-}
-
-export interface CodexSessionFileData {
-    events: UsageAggregateEvent[]
-    meta: UsageSessionMeta
-}
-
-export interface GeminiSessionFileData {
-    events: GeminiTokenUsageEvent[]
-    meta: UsageSessionMeta
-}
-
-export interface GeminiTokenUsageEvent extends UsageAggregateEvent {
-    costUSD: number
-    toolTokens: number
-}
-
-export interface GeminiSessionFile {
-    lastUpdated?: string
-    messages: GeminiSessionMessage[]
-    sessionId?: string
-    startTime?: string
-    summary?: string
-}
-
 export interface GeminiSessionMessage {
     content?: string | Array<{ text?: string }>
     model?: string
@@ -125,52 +87,6 @@ export interface GeminiTokenSnapshot {
     thoughts?: number
     tool?: number
     total?: number
-}
-
-export interface ClaudeUsageRecord {
-    costUSD?: number
-    cwd?: string
-    message: {
-        content?: Array<{ text?: string }>
-        id?: string
-        model?: string
-        usage: {
-            cache_creation_input_tokens?: number
-            cache_read_input_tokens?: number
-            input_tokens: number
-            output_tokens: number
-            speed?: 'fast' | 'standard'
-        }
-    }
-    requestId?: string
-    sessionId?: string
-    timestamp: string
-    version?: string
-}
-
-export interface ClaudeTokenTotals {
-    cacheCreationTokens: number
-    cacheReadTokens: number
-    inputTokens: number
-    outputTokens: number
-}
-
-export interface ClaudeUsageEntry extends ClaudeTokenTotals {
-    costUSD: number
-    cwd?: string
-    model: string
-    projectPath: string
-    rawModel?: string
-    sessionId: string
-    timestamp: string
-}
-
-export interface ClaudeAggregateEvent extends UsageAggregateEvent, ClaudeTokenTotals {
-    costUSD: number
-}
-
-export interface ClaudeModelUsageSummary extends TokenUsageDelta, ClaudeTokenTotals {
-    costUSD: number
 }
 
 export interface SessionAggregateGroup {
@@ -234,13 +150,6 @@ export interface SessionUsageSummaryLike {
 export interface SessionUsageOptions<TSession extends SessionUsageSummaryLike> {
     getCachedInputTokens?: (session: TSession) => number
     getReasoningOutputTokens?: (session: TSession) => number
-}
-
-export interface TokenCostUsage {
-    cachedInputTokens: number
-    cacheCreationTokens?: number
-    inputTokens: number
-    outputTokens: number
 }
 
 export interface ModelPricing {

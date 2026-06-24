@@ -1,4 +1,4 @@
-export interface UsageStartupState {
+interface UsageStartupState {
     ready?: Promise<void>
     reject?: (error: unknown) => void
     resolve?: () => void
@@ -6,7 +6,7 @@ export interface UsageStartupState {
 
 const USAGE_STARTUP_STATE_KEY = Symbol.for('usage-board.startup-state')
 
-export function getUsageStartupState() {
+function getUsageStartupState() {
     const globalWithUsageState = globalThis as typeof globalThis & {
         [USAGE_STARTUP_STATE_KEY]?: UsageStartupState
     }

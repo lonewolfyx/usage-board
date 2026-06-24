@@ -5,12 +5,10 @@ import type {
     LiteLLMPricingDataset,
     ModelPricing,
     ModelPricingResolver,
-    ResolvedCostSource,
-    TokenCostUsage,
 } from '#shared/types/platform'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import { roundCurrency, uniqueItems } from '#shared/utils/usage-dashboard'
+import { uniqueItems } from '#shared/utils/usage-dashboard'
 
 const MILLION = 1_000_000
 const DEFAULT_PRICING_FETCH_TIMEOUT_MS = 10_000
@@ -185,108 +183,6 @@ export async function createLiteLLMPricingResolver(options: CreateLiteLLMPricing
         }
 
         return createZeroPricing()
-    }
-}
-
-export function calculateUsageCostUSD(
-    usage: TokenCostUsage,
-    pricing: ModelPricing,
-    options: { defaultFastMultiplier?: number, speed?: 'fast' | 'standard' } = {},
-) {
-    const multiplier = options.speed === 'fast' ? (pricing.fastMultiplier ?? options.defaultFastMultiplier ?? 1) : 1
-    const inputCost = calculateTieredCost(usage.inputTokens, pricing.inputCostPerMTokens, pricing.inputCostPerMTokensAbove200K)
-    const cachedCost = calculateTieredCost(usage.cachedInputTokens, pricing.cachedInputCostPerMTokens, pricing.cachedInputCostPerMTokensAbove200K)
-    const cacheCreationCost = calculateTieredCost(usage.cacheCreationTokens ?? 0, pricing.cacheCreationInputCostPerMTokens, pricing.cacheCreationInputCostPerMTokensAbove200K)
-    const outputCost = calculateTieredCost(usage.outputTokens, pricing.outputCostPerMTokens, pricing.outputCostPerMTokensAbove200K)
-
-    return roundCurrency((inputCost + cachedCost + cacheCreationCost + outputCost) * multiplier)
-}
-
-export function eventCostUSD(
-    event: {
-        cacheCreationTokens?: number
-        cachedInputTokens: number
-        inputTokens: number
-        model: string
-        modelLookupCandidates?: string[] | null
-        outputTokens: number
-        rawCostUSD?: number | null
-        reasoningOutputTokens: number
-        speed?: 'fast' | 'standard' | null
-        toolTokens?: number
-    },
-    resolvePricing: ModelPricingResolver,
-    options: { defaultFastMultiplier?: number } = {},
-) {
-    return resolveUsageCostFromCandidates({
-        cacheCreationTokens: event.cacheCreationTokens ?? 0,
-        cachedInputTokens: event.cachedInputTokens,
-        inputTokens: event.inputTokens,
-        model: event.model,
-        modelLookupCandidates: event.modelLookupCandidates ?? undefined,
-        outputTokens: event.outputTokens + event.reasoningOutputTokens + (event.toolTokens ?? 0),
-        rawCostUSD: event.rawCostUSD ?? null,
-        speed: event.speed ?? undefined,
-    }, resolvePricing, options).costUSD
-}
-
-export function resolveUsageCostFromCandidates(
-    input: {
-        cacheCreationTokens?: number
-        cachedInputTokens: number
-        inputTokens: number
-        model: string | null
-        modelLookupCandidates?: string[]
-        outputTokens: number
-        rawCostUSD?: number | null
-        speed?: 'fast' | 'standard'
-    },
-    resolvePricing: ModelPricingResolver,
-    options: { defaultFastMultiplier?: number } = {},
-): { costSource: ResolvedCostSource, costUSD: number } {
-    if (input.rawCostUSD != null && Number.isFinite(input.rawCostUSD)) {
-        return {
-            costSource: 'raw',
-            costUSD: roundCurrency(input.rawCostUSD),
-        }
-    }
-
-    const candidates = uniqueItems(
-        [
-            ...(input.modelLookupCandidates ?? []),
-            input.model ?? '',
-        ].map(candidate => candidate.trim()).filter(Boolean),
-    )
-
-    if (!input.model || candidates.length === 0) {
-        return {
-            costSource: 'none',
-            costUSD: 0,
-        }
-    }
-
-    for (const candidate of candidates) {
-        const costUSD = calculateUsageCostUSD({
-            cacheCreationTokens: input.cacheCreationTokens ?? 0,
-            cachedInputTokens: input.cachedInputTokens,
-            inputTokens: input.inputTokens,
-            outputTokens: input.outputTokens,
-        }, resolvePricing(candidate), {
-            defaultFastMultiplier: options.defaultFastMultiplier,
-            speed: input.speed,
-        })
-
-        if (costUSD > 0) {
-            return {
-                costSource: 'calculated',
-                costUSD,
-            }
-        }
-    }
-
-    return {
-        costSource: 'none',
-        costUSD: 0,
     }
 }
 
@@ -869,19 +765,4 @@ function createZeroPricing(): ModelPricing {
         inputCostPerMTokens: 0,
         outputCostPerMTokens: 0,
     }
-}
-
-function calculateTieredCost(tokens: number | undefined, baseCostPerMTokens: number, above200KCostPerMTokens?: number) {
-    const safeTokens = Math.max(tokens ?? 0, 0)
-
-    if (safeTokens === 0) {
-        return 0
-    }
-
-    if (safeTokens > 200_000 && above200KCostPerMTokens != null) {
-        return (200_000 / MILLION) * baseCostPerMTokens
-            + ((safeTokens - 200_000) / MILLION) * above200KCostPerMTokens
-    }
-
-    return (safeTokens / MILLION) * baseCostPerMTokens
 }

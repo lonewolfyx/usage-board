@@ -65,7 +65,3 @@ export function readJsonlObjects<T>(filePath: string, marker?: Buffer) {
 
     return records
 }
-
-export function getDirectoryWatchPatterns(paths: string[]) {
-    return paths.map(path => `${path.replace(/\/$/u, '')}/**/*`)
-}
