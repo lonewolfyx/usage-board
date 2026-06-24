@@ -39,7 +39,7 @@
         "lint:fix": "nuxt prepare && eslint --fix",
         "dev:cli": "tsdown -w",
         "test": "vitest",
-        "prepare": "simple-git-hooks",
+        "prepare": "git submodule update --init --recursive && simple-git-hooks",
         "prepublishOnly": "pnpm build"
     },
     "publishConfig": {
@@ -52,7 +52,8 @@
         "crossws": "^0.4.5",
         "dayjs": "^1.11.21",
         "glob": "^13.0.6",
-        "nuxt-devkit-server": "^0.0.1"
+        "nuxt-devkit-server": "^0.0.1",
+        "xdg-basedir": "^5.1.0"
     },
     "devDependencies": {
         "@antfu/eslint-config": "^8.2.0",
@@ -80,8 +81,8 @@
         "embla-carousel-vue": "^8.6.0",
         "eslint": "^10.2.0",
         "get-port-please": "^3.2.0",
+        "lint-staged": "^17.0.8",
         "lucide-vue-next": "^0.545.0",
-        "nano-staged": "^1.0.2",
         "nuxt": "^4.4.2",
         "open": "^11.0.0",
         "path-type": "^6.0.0",
@@ -106,10 +107,11 @@
         "zod": "3.25.76"
     },
     "simple-git-hooks": {
-        "pre-commit": "npx nano-staged",
+        "pre-commit": "npx lint-staged",
         "commit-msg": "node scripts/verify-commit.js"
     },
-    "nano-staged": {
-        "*": "eslint --fix"
+    "lint-staged": {
+        "*": "eslint --fix",
+        "!vendor/**": ""
     }
 }

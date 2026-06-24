@@ -1,5 +1,5 @@
 import type { AgentAdapter } from '#server/agents/shared/fact'
-import type { ProjectUsagePlatform, ProjectUsagePlatformRecord } from '#shared/types/ai'
+import type { ProjectUsagePlatform } from '#shared/types/ai'
 import type { IConfig } from '#shared/types/config'
 import { AmpAdapter } from './amp/adapter'
 import { ClaudeCodeAdapter } from './claude-code/adapter'
@@ -17,34 +17,47 @@ import { OpenCodeAdapter } from './opencode/adapter'
 import { PiAdapter } from './pi/adapter'
 import { QwenAdapter } from './qwen/adapter'
 
-export function createAgentAdapters(config: IConfig): ProjectUsagePlatformRecord<AgentAdapter> {
-    const adapters = {
-        amp: new AmpAdapter(config),
-        claudeCode: new ClaudeCodeAdapter(config),
-        codebuff: new CodebuffAdapter(config),
-        codex: new CodexAdapter(config),
-        copilot: new CopilotAdapter(config),
-        droid: new DroidAdapter(config),
-        gemini: new GeminiAdapter(config),
-        goose: new GooseAdapter(config),
-        hermes: new HermesAdapter(config),
-        kilo: new KiloAdapter(config),
-        kimi: new KimiAdapter(config),
-        openclaw: new OpenClawAdapter(config),
-        opencode: new OpenCodeAdapter(config),
-        pi: new PiAdapter(config),
-        qwen: new QwenAdapter(config),
-    }
+const ADAPTER_CONSTRUCTORS: Record<ProjectUsagePlatform, new (config: IConfig) => AgentAdapter> = {
+    amp: AmpAdapter,
+    claudeCode: ClaudeCodeAdapter,
+    codebuff: CodebuffAdapter,
+    codex: CodexAdapter,
+    copilot: CopilotAdapter,
+    droid: DroidAdapter,
+    gemini: GeminiAdapter,
+    goose: GooseAdapter,
+    hermes: HermesAdapter,
+    kilo: KiloAdapter,
+    kimi: KimiAdapter,
+    openclaw: OpenClawAdapter,
+    opencode: OpenCodeAdapter,
+    pi: PiAdapter,
+    qwen: QwenAdapter,
+}
 
-    for (const [platform, adapter] of Object.entries(adapters) as Array<[ProjectUsagePlatform, AgentAdapter]>) {
+export function createAgentAdapters(config: IConfig): Map<ProjectUsagePlatform, AgentAdapter> {
+    const adapters = new Map<ProjectUsagePlatform, AgentAdapter>()
+
+    for (const platform of config.activePlatforms) {
+        const Adapter = ADAPTER_CONSTRUCTORS[platform]
+        const adapter = new Adapter(config)
+
         if (adapter.platform !== platform) {
             throw new Error(`Agent adapter platform mismatch: registered ${platform}, adapter declares ${adapter.platform}.`)
         }
+
+        adapters.set(platform, adapter)
     }
 
     return adapters
 }
 
-export function getAgentAdapterForPlatform(adapters: ProjectUsagePlatformRecord<AgentAdapter>, platform: ProjectUsagePlatform) {
-    return adapters[platform]
+export function getAgentAdapterForPlatform(adapters: Map<ProjectUsagePlatform, AgentAdapter>, platform: ProjectUsagePlatform) {
+    const adapter = adapters.get(platform)
+
+    if (!adapter) {
+        throw new Error(`No adapter found for platform: ${platform}`)
+    }
+
+    return adapter
 }
