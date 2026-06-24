@@ -9,19 +9,19 @@ export function preparePricingSnapshot() {
         startupPricingPromise = (async () => {
             const startedAt = Date.now()
 
-            log.step('正在刷新 pricing-data 快照...')
+            log.step('Refreshing pricing-data snapshot...')
 
             resetRemotePricingCache()
 
             try {
                 const resolver = await createLiteLLMPricingResolver({ forceRefresh: true })
 
-                log.info(`pricing-data 快照已准备完成 (${Date.now() - startedAt}ms)`)
+                log.info(`pricing-data snapshot ready (${Date.now() - startedAt}ms)`)
 
                 return resolver
             }
             catch (error) {
-                log.warn(`pricing-data 远程刷新失败，使用本地快照: ${error instanceof Error ? error.message : String(error)}`)
+                log.warn(`pricing-data remote refresh failed, using local snapshot: ${error instanceof Error ? error.message : String(error)}`)
 
                 return createLiteLLMPricingResolver()
             }
