@@ -29,7 +29,7 @@ export const PROJECT_USAGE_PLATFORM_META: Record<ProjectUsagePlatform, ProjectUs
     },
     codex: {
         aiIcon: 'ai:codex',
-        color: '#111827',
+        color: '#3941FF',
         label: 'Codex',
         slug: 'codex',
     },

@@ -39,6 +39,14 @@
                                 </NuxtLink>
                             </SidebarMenuButton>
                         </SidebarMenuItem>
+                        <SidebarMenuItem>
+                            <SidebarMenuButton tooltip="calendar" as-child :is-active="path === '/calendar'">
+                                <NuxtLink to="/calendar">
+                                    <Icon name="lucide:calendar-days" class="size-5" />
+                                    <span>Calendar</span>
+                                </NuxtLink>
+                            </SidebarMenuButton>
+                        </SidebarMenuItem>
                     </SidebarMenu>
                 </SidebarGroupContent>
             </SidebarGroup>

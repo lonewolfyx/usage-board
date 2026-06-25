@@ -13,6 +13,7 @@ import type {
     HomeDashboardCoreModules,
     HomeDashboardUsageModules,
 } from '#shared/types/analysis'
+import type { CalendarApiResponse } from '#shared/types/calendar'
 import type { DailyTokenUsage, HourlyUsagePoint, MonthlyModelUsage, ProjectUsageItem, UsageOverviewCard } from '#shared/types/usage-dashboard'
 import { PROJECT_USAGE_PLATFORM_META } from '#shared/platform/metadata'
 import { ANALYSIS_AGENT_TOKEN_TYPES } from '#shared/types/analysis'
@@ -21,6 +22,7 @@ import { DEFAULT_PAGE_SIZE } from '#shared/types/pagination'
 const analysisRouteMap = {
     agentSession: '/api/analysis/agent/session.json',
     agentToken: '/api/analysis/agent/token.json',
+    calendar: '/api/analysis/calendar.json',
     cache: '/api/analysis/cache.json',
     dailyTokenUsage: '/api/analysis/token/daily.json',
     hotProject: '/api/analysis/hot-project.json',
@@ -81,6 +83,10 @@ export function fetchHomeDashboardDailyTokenPage(page = 1) {
         page,
         pageSize: DEFAULT_PAGE_SIZE,
     })
+}
+
+export function fetchCalendarData(month: string, agent?: ProjectUsagePlatform) {
+    return requestAnalysis<CalendarApiResponse>('calendar', { month, agent })
 }
 
 export async function fetchAgentDashboardCoreModules(agent: ProjectUsagePlatform): Promise<AgentDashboardCoreModules> {
@@ -177,6 +183,7 @@ function requestAnalysis<T>(
     route: AnalysisRouteKey,
     options: {
         agent?: ProjectUsagePlatform
+        month?: string
         page?: number
         pageSize?: number
         type?: AnalysisAgentTokenType
@@ -189,6 +196,7 @@ function requestAnalysis<T>(
 
 function buildAnalysisQuery(options: {
     agent?: ProjectUsagePlatform
+    month?: string
     page?: number
     pageSize?: number
     type?: AnalysisAgentTokenType
@@ -197,6 +205,10 @@ function buildAnalysisQuery(options: {
 
     if (options.agent) {
         query.agent = PROJECT_USAGE_PLATFORM_META[options.agent].slug
+    }
+
+    if (options.month) {
+        query.month = options.month
     }
 
     if (options.type) {
